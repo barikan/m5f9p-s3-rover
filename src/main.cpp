@@ -66,22 +66,6 @@ static unsigned long mD9CLastCountMillis;
 //                         Arduino 初期化
 // ************************************************************
 
-// 異常リセット（パニック、ウォッチドッグ、電圧低下）かどうか
-//
-static bool isAbnormalReset( esp_reset_reason_t reason )
-{
-	switch( reason ){
-		case ESP_RST_PANIC:
-		case ESP_RST_INT_WDT:
-		case ESP_RST_TASK_WDT:
-		case ESP_RST_WDT:
-		case ESP_RST_BROWNOUT:
-			return true;
-		default:
-			return false;
-	}
-}
-
 // GPS受信テスト及び日時取得
 //
 // 戻り値＝ true:測位データ取得済
@@ -219,15 +203,10 @@ void setup() {
 	sdInit();
 	
 	// Runモード
+	// 実行パラメータが保存されていれば、それを使ってすぐに測位を始める。
+	// 保存されていない時と、ブート情報ページでSetupが押された後は、UIで選択する。
 	mRunMode = RUN_UI;
-	if ( readRunInfo( &mRunInfo ) == 0 ){
-		mRunMode = mRunInfo.bootMode;
-		if ( mRunMode == RUN_UI && isAbnormalReset( resetReason ) ) mRunMode = mRunInfo.rebootMode;
-	}
-
-	// ZED-F9Pをリセット。UARTのボーレートを初期値(38400bps)に戻す。
-	dbgPrintf( "Resetting ZED-F9P\r\n" );
-	gpsI2cReset();
+	if ( readRunInfo( &mRunInfo ) == 0 && ! mRunInfo.setupRequest ) mRunMode = RUN_NO_UI;
 
 	// 画面の初期化
 	if ( mRunMode == RUN_NO_UI ) {
@@ -266,7 +245,6 @@ void setup() {
 
 	// GPSデータ受信スレッド（core 0)
 	roverStartUartTask();
-	delay(3000);	// ZED-F9Pの再起動待ち
 
 	// ネット接続。
 	// GPS受信機の衛星捕捉の時間を取るために先に行う。
@@ -296,10 +274,13 @@ void setup() {
 	memset( &gpsData, 0, sizeof( gpsData ) );
 	double lat = 100;
 	double lon = 400;
-	if ( gpsTest( &gpsData ) ){
-		lat = gpsData.lat;
-		lon = gpsData.lon;
+	if ( mRunMode == RUN_UI ){
+		if ( gpsTest( &gpsData ) ){
+			lat = gpsData.lat;
+			lon = gpsData.lon;
+		}
 	}
+	else gpsGetPosition( &gpsData, 1500 );	// 測位を待たない。bootログの日時用
 	
 	// boot ログ書き込み
 	sprintf( buff, "<%d-%02d-%02d %02d:%02d:%02d UTC> boot (%d)\r\n", 
@@ -329,7 +310,7 @@ void setup() {
 		if ( mSolutionRate < 1 ) mSolutionRate = 1;
 		if ( mRunInfo.saving && mSdSaveReady ) sdSaveStart();
 	}
-	mRunInfo.rebootMode = mRebootMode;
+	mRunInfo.setupRequest = 0;
 	mRunInfo.saving = mFileSaving;
 	mRunInfo.solutionRate = mSolutionRate;
 	
@@ -344,7 +325,7 @@ void setup() {
 	
 	// 初期化終了
 	dbgPrintf("Heap Size = %d\r\n", esp_get_free_heap_size());
-	dbgPrintf("setup() exit\r\n");
+	dbgPrintf("setup() exit  %lu msec\r\n", millis());
 	lcdClear();
 	mStartMillis = millis();
 	mBaseRecvLastCountMillis = millis();
@@ -387,10 +368,6 @@ static void buttonMainPage( int button, bool longPress )
 		if ( mFileSaving ) sdSaveStop();
 		else sdSaveStart();
 		dbgPrintf( "File saving=%d\r\n", mFileSaving );
-		if ( mRunInfo.bootMode == 0 ){
-			mRunInfo.saving = mFileSaving;
-			saveRunInfo( &mRunInfo );
-		}
 	}
 	else if ( button == B_BUTTON ){
 		int pitch = longPress ? 5 : 1;
@@ -409,10 +386,16 @@ static void buttonMainPage( int button, bool longPress )
 //
 static void buttonBootInfo( int button )
 {
-	if ( button == A_BUTTON ) mRunInfo.bootMode = ! mRunInfo.bootMode;
-	else if ( button == B_BUTTON ) mRunInfo.saving = ! mRunInfo.saving;
-	else return;
-	saveRunInfo( &mRunInfo );
+	if ( button == A_BUTTON ){
+		// 再起動して、実行パラメータをUIで選択し直す
+		mRunInfo.setupRequest = 1;
+		saveRunInfo( &mRunInfo );
+		ESP.restart();
+	}
+	else if ( button == B_BUTTON ){
+		mRunInfo.saving = ! mRunInfo.saving;
+		saveRunInfo( &mRunInfo );
+	}
 }
 
 static void dispMainPage() 
@@ -470,8 +453,10 @@ static void dispInfo()
 	esp_read_mac( mac, ESP_MAC_WIFI_STA);
 	lcdDispText( lineNum++, "MAC:%02X:%02X:%02X:%02X:%02X:%02X", 
 							mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-	if ( mWifiConnected )
-		lcdDispText( lineNum++, "IP addr:%s", mWifiLocalIp.toString().c_str() );
+	if ( mRunInfo.wifiAp ){
+		if ( WiFi.status() == WL_CONNECTED ) lcdDispText( lineNum++, "IP addr:%s      ", WiFi.localIP().toString().c_str() );
+		else lcdDispText( lineNum++, "IP addr:(connecting)   " );
+	}
 	
 	lcdDispText( lineNum++, "AP IP:%s", mSoftApIp.toString().c_str() );
 	lcdDispText( lineNum++, "Server port:%d", mServerPort );
@@ -489,7 +474,7 @@ static void dispBootInfo()
 {
 	const char* saveStr[4] = { "NMEA", "RAW", "RTCM", "CSV" };
 
-	lcdDispButtonText( "BootMode", "Save", "NextPage" );
+	lcdDispButtonText( "Setup", "Save", "NextPage" );
 	int lineNum = 0;
 	lcdDispText( lineNum++, " *** Boot info ***" );
 	lcdDispText2( lineNum++, "Lcd rotation = ", "%d deg", mRunInfo.lcdRotation ? 180 : 0 );
@@ -508,8 +493,7 @@ static void dispBootInfo()
 	lcdDispText2( lineNum++, "Solution rate = ", "%dHz ", mRunInfo.solutionRate );
 	lineNum++;
 
-	lcdDispText2( lineNum++, "Boot mode = ", "%s", mRunInfo.bootMode ? "nonstop     " : "step by step" );
-	lcdDispText2( lineNum++, "Save to file = ", "%s", mRunInfo.saving ? "On " : "Off" );
+	lcdDispText2( lineNum++, "Save at boot = ", "%s", mRunInfo.saving ? "On " : "Off" );
 }
 
 // 動作状況を10秒毎にデバグ出力する（USBからNMEAを出力している時は出さない）

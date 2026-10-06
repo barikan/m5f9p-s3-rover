@@ -70,7 +70,6 @@ int gpsInit();
 int gpsRawInit( int saveFormat );
 int gpsGetPosition( struct stGpsData *gpsData, int msecTimeout );
 int gpsSetSolutionRate( int rate );
-int gpsSetBaudrate( int baudrate );
 int gpsWrite( char *buff, int numBytes );
 int gpsReset();
 int gpsI2cReset();

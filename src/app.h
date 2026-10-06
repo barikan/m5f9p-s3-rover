@@ -38,8 +38,8 @@ struct stBaseSource {
 #define RUN_NO_UI 1
 
 struct stRunInfo {
-	int bootMode;		// 通常ブートの際、直前の動作モードで実行する時１。UIで選択する時0．
-	int rebootMode;		// 異常リブートの際、直前の動作モードで実行する時１。UIで選択する時0．
+	int setupRequest;	// 次回の起動時に、UIで実行パラメータを選択する時１。
+						// 0の時は、保存されている実行パラメータで起動する。
 	int lcdRotation;	// 画面の向き 0:回転無 1:180度回転
 	int wifiAp;			// Wifiアクセスポイント　INIファイルのWIFI接続先番号(1から)。0:Wifiを使わない
 	struct stBaseSource baseSrc;	// 基準局データ取得先。valid=falseの時は接続しない
@@ -88,7 +88,6 @@ extern int mCsvFormat;
 extern unsigned long mSaveEndSec;
 extern int mPhUartBaudrate;
 extern int mPhUartFormat;
-extern int mRebootMode;
 extern char mRtk2goUser[32];
 extern char mRtk2goPassword[32];
 
@@ -101,10 +100,8 @@ int readIniFile( const char *path );
 //                        net.cpp
 // ************************************************************
 
-extern bool mWifiConnected;
 extern char* mSsid;
 extern char* mPassword;
-extern IPAddress mWifiLocalIp;
 extern char mSoftApSsid[16];
 extern char mSoftApPassword[16];
 

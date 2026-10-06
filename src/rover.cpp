@@ -414,7 +414,8 @@ int roverStartTasks()
 
 	// 基準局データ受信スタート（core 0）
 	if ( mBaseSrc.valid ){
-		mBaseRecvLastMillis = millis();
+		// 未接続で開始する時は、すぐに接続を試みるようにする
+		mBaseRecvLastMillis = mBaseReconnecting ? millis() - 5000 : millis();
 		xTaskCreatePinnedToCore(taskBaseRecv, "taskBaseRecv", 8192, NULL, 1, NULL, 0);
 	}
 	return 0;

@@ -36,9 +36,6 @@ unsigned long mSaveEndSec = 0;		// ファイル保存最大秒数 0:制限無し
 int mPhUartBaudrate = 115200;
 int mPhUartFormat = PH_UART_NMEA;	// 移動局データ送信フォーマット
 
-// 異常リブート時の動作モード
-int mRebootMode = RUN_UI;
-
 // rtk2go.comのマウントポイントを画面で選択した時に使うユーザ名とパスワード
 char mRtk2goUser[32];
 char mRtk2goPassword[32];
@@ -187,9 +184,6 @@ int readIniFile( const char *path )
 	mPhUartBaudrate = iniFile->readInt( "jstph", "baudrate", mPhUartBaudrate );
 	mPhUartFormat = iniFile->readInt( "jstph", "format", mPhUartFormat );
 	
-	// 異常リブート時の動作モード
-	mRebootMode = iniFile->readInt( "reboot", "mode", 0 );
-
 	iniFile->close();
 	return 0;
 }

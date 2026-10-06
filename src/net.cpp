@@ -10,10 +10,8 @@
 #include "ui.h"
 #include "gis.h"
 
-bool mWifiConnected;
 char* mSsid;
 char* mPassword;
-IPAddress mWifiLocalIp;
 
 char mSoftApSsid[16];
 char mSoftApPassword[16] = "m5f9p123";
@@ -41,7 +39,9 @@ static void wifiLabel( int index, char *buff, int buffSize )
 
 // Wifiのアクセスポイントを選択した後、接続する
 //
-// 戻り値＝ 1以上: 接続済　値はINIファイルのWIFI接続先番号(1から)
+// ・UIで選択しないモードでは接続の完了を待たない。
+//
+// 戻り値＝ 1以上: 接続済または接続中　値はINIファイルのWIFI接続先番号(1から)
 //          0: 未接続
 //
 static int wifiConnect()
@@ -70,6 +70,9 @@ j1:
 		WiFi.config( ip, gateway, subnet, dns );
 	}
 	WiFi.begin( ssid, password );
+	mSsid = ssid;
+	mPassword = password;
+	if ( mRunMode != RUN_UI ) return idx + 1;
 
 	lcdClear();
 	lcdDispText( 3, "Connecting to %s", ssid );
@@ -83,23 +86,20 @@ j1:
 		}
 		delay(100);
 		if ( millis() - msecStart > 20000 ) {
-			if ( mRunMode == RUN_UI ) {
-				lcdClear();
-				lcdDispText( 3, "Continue connecting ?" );
-				lcdDispButtonText( "Yes", "No", "" );
-				int continu = waitButton( 1, 1, 0, YES, NO, 0 );
-				if ( ! continu  ) {
-					WiFi.disconnect();
-					goto j1;
-				}
+			lcdClear();
+			lcdDispText( 3, "Continue connecting ?" );
+			lcdDispButtonText( "Yes", "No", "" );
+			int continu = waitButton( 1, 1, 0, YES, NO, 0 );
+			if ( ! continu  ) {
+				WiFi.disconnect();
+				mSsid = NULL;
+				goto j1;
 			}
 			lcdClear();
 			msecStart = millis();
 			lcdDispText( 3, "Connecting to %s", ssid );
 		}
 	}
-	mSsid = ssid;
-	mPassword = password;
 	lcdClear();
 	
 	return idx + 1;
@@ -109,8 +109,8 @@ j1:
 //
 // ・soft APは常時有効。TCPサーバ（測位データ配信）への接続に使える。
 //
-// 戻り値＝ 1以上: Wifi接続済　値はINIファイルのWIFI接続先番号(1から)
-//          0: Wifi未接続
+// 戻り値＝ 1以上: Wifi接続済または接続中　値はINIファイルのWIFI接続先番号(1から)
+//          0: Wifiを使わない
 //
 int netStart()
 {
@@ -127,30 +127,24 @@ int netStart()
 		dbgPrintf("softAPConfig() failed\r\n");
 	}
 
-	mWifiConnected = false;
 	int wifiApNum = 0;
+	if ( mNumWifi > 0 ) wifiApNum = wifiConnect();
+	if ( mRunMode != RUN_UI ) return wifiApNum;
+
 	if ( mNumWifi == 0 ) {
 		lcdDispText( 3, "No wifi AP data in SDcard." );
 		lcdDispText( 4, "Can't use wifi." );
 	}
+	else if ( wifiApNum ) {
+		lcdDispText( 5, "> Wifi connected" );
+		dbgPrintf( "WiFi connected  IP=%s\r\n", WiFi.localIP().toString().c_str() );
+	}
 	else {
-		wifiApNum = wifiConnect();
-		if ( wifiApNum ) {
-			mWifiConnected = true;
-			mWifiLocalIp = WiFi.localIP();
-			lcdDispText( 5, "> Wifi connected" );
-			dbgPrintf( "WiFi connected  IP=%s\r\n", mWifiLocalIp.toString().c_str() );
-		}
-		else {
-			lcdDispText( 5, "> Wifi not connected" );
-			dbgPrintf("WiFi not connected !!!\r\n");
-		}
+		lcdDispText( 5, "> Wifi not connected" );
+		dbgPrintf("WiFi not connected !!!\r\n");
 	}
-
-	if ( mRunMode == RUN_UI ){
-		lcdDispText( 10, ">>> Touch screen" );
-		waitTouch();
-	}
+	lcdDispText( 10, ">>> Touch screen" );
+	waitTouch();
 	lcdClear();
 	return wifiApNum;
 }
@@ -360,7 +354,7 @@ int baseSrcSelect( double lat, double lon )
 
 	mBaseSrc.valid = false;
 	int numItems = mNumBaseSrc;
-	if ( mWifiConnected ) numItems++;	// rtk2go.comのマウントポイントを選択する項目
+	if ( WiFi.status() == WL_CONNECTED ) numItems++;	// rtk2go.comのマウントポイントを選択する項目
 	int idx = uiSelectList( ">>> Select base station", numItems, baseSrcLabel, "None" );
 	if ( idx < 0 ) return 0;
 
@@ -406,14 +400,19 @@ int baseSrcConnect()
 // 基準局に接続する
 //
 // ・接続先等は mBaseSrcに設定しておく
-// ・UIで選択しないモードで接続できなかった場合はmBaseReconnectingをセットして戻る。
-//   その後の再接続はtaskBaseRecv()が行う。
+// ・UIで選択しないモードでは接続を待たず、mBaseReconnectingをセットして戻る。
+//   接続はtaskBaseRecv()が行う。
 //
 // 戻り値＝ 0:正常終了(接続完了）
 //         負数：エラー
 //
 int connectBaseSource()
 {
+	if ( mRunMode != RUN_UI ) {
+		mBaseReconnecting = true;
+		return -1;
+	}
+
 	while(1){		
 		lcdClear();
 		lcdDispText( 3, "Connecting to base station %s %s", mBaseSrc.address, mBaseSrc.mountPoint );
@@ -423,10 +422,6 @@ int connectBaseSource()
 		lcdClear();
 		if ( nret == 0 ) return 0;
 
-		if ( mRunMode != RUN_UI ) {
-			mBaseReconnecting = true;
-			return -1;
-		}
 		lcdDispText( 3, "> Can't connect to %s (%d)", mBaseSrc.address, nret );
 		lcdDispText( 8, ">>> Do you retry ?" );
 		lcdDispButtonText( "Retry", "Cancel", "" );
@@ -456,22 +451,24 @@ int connectTcpServer()
 	if ( ! yes ) return 0;
 
 	mAgribusClient = new WiFiClient();
+	if ( mRunMode != RUN_UI ){
+		// 接続を待たない。taskRover()が測位データの送信時に接続する。
+		mAgribusReady = true;
+		return 0;
+	}
 	while(1){
 		lcdDispText( 3, "Connecting to TCP server (%s).",mAgribusIp );
 		if ( mAgribusClient->connect( mAgribusIp, mAgribusPort ) ){
 			mAgribusReady = true;
 			break;
 		}
-		if ( mRunMode == RUN_UI ){
-			lcdClear();
-			lcdDispText( 3, "> Can't connect to TCP Server." );
-			lcdDispText( 8, ">>> Do you retry ?" );
-			lcdDispButtonText( "Retry", "Cancel", "" );
-			int retry = waitButton( 1, 1, 0, YES, NO, 0 );
-			lcdClear();
-			if ( ! retry ) break;
-		}
-		else delay(1000);
+		lcdClear();
+		lcdDispText( 3, "> Can't connect to TCP Server." );
+		lcdDispText( 8, ">>> Do you retry ?" );
+		lcdDispButtonText( "Retry", "Cancel", "" );
+		int retry = waitButton( 1, 1, 0, YES, NO, 0 );
+		lcdClear();
+		if ( ! retry ) break;
 	}
 	lcdClear();
 	return 0;

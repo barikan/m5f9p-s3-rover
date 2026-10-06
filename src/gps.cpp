@@ -37,7 +37,7 @@ volatile bool mGpsCommandBusy = false;
 volatile bool mGpsUartReady = false;
 
 int byte2int( byte* pdata );
-static int gpsSetBaudrate2( int baudrate );
+static bool gpsSyncBaudrate( int baudrate );
 static int gpsSetRtcmMessage();
 
 // ************************************************************
@@ -52,6 +52,8 @@ static int gpsSetRtcmMessage();
 
 // GPS受信機の初期化
 //
+// ・I2Cを使う事があるので、loopTaskから呼び出す事。
+//
 // 戻り値＝ 0:正常終了
 //         -1:ZED-F9Pが応答しない
 //         -2以下:設定エラー
@@ -61,17 +63,13 @@ int gpsInit()
 	int nret;
 
 	// GPS ZED-F9P　シリアルのボーレート設定
-	nret = gpsSetBaudrate( mGpsUartBaudrate );
-
-	// 接続確認
-	int i = 0;
-	for( ; i < 3; i++ ){
-		nret = gpsSetMessageRate( 0x01, 0x07, 1 );	// NAV-PVT
-		if ( nret == 0 ) break;
-		dbgPrintf("gpsInit() error nret=%d  retrying\r\n", nret);
-		delay(200);
+	if ( ! gpsSyncBaudrate( mGpsUartBaudrate ) ){
+		// 応答が無い時は、ZED-F9PをリセットしてUARTを初期値(38400bps)に戻す
+		dbgPrintf( "Resetting ZED-F9P\r\n" );
+		gpsI2cReset();
+		delay(2000);	// ZED-F9Pの再起動待ち
+		if ( ! gpsSyncBaudrate( mGpsUartBaudrate ) ) return -1;
 	}
-	if ( i == 3 ) return -1;
 
 	// input ubx:1 nmea:1 rtcm:1   output ubx:1 nmea:0 rtcm:0
 	nret = gpsSetUartPort( 1, mGpsUartBaudrate, 1, 1, 1, 1, 0, 0 );
@@ -102,8 +100,9 @@ int gpsRawInit( int saveFormat )
 
 	// ボーレートは230400でないとCheck sum errorが起きる
 	if ( mGpsUartBaudrate > 230400 ) {
-		nret = gpsSetBaudrate( 230400 );	// ボーレートを変更すると入出力メッセージの設定も変更されるので、最初に実行する
-		if ( nret == 0) mGpsUartBaudrate = 230400;
+		// ボーレートを変更すると入出力メッセージの設定も変更されるので、最初に実行する
+		if ( gpsSyncBaudrate( 230400 ) ) mGpsUartBaudrate = 230400;
+		else gpsSyncBaudrate( mGpsUartBaudrate );
 	}
 
 	// input ubx:1 nmea:1 rtcm:1   output ubx:1 nmea:0 rtcm:1
@@ -189,56 +188,53 @@ int gpsSetSolutionRate( int rate )
 	return nret;
 }
 
-// シリアルポート(UART1)のボーレートを設定する。
+// ZED-F9Pが応答するか調べる
 //
-// GPS側のボーレートが38400bps以外の場合に使用
+// 戻り値＝ true:Ackが返ってきた
 //
-int gpsSetBaudrate( int baudrate )
+static bool gpsProbe()
 {
-	int nret;
-
-	// GPSのボーレートを38400bpsにする
-	nret = gpsSetUartPort( 1, 38400, 1, 1, 1, 0, 0, 0 );
-	vTaskDelay(1000);
-	
-	return gpsSetBaudrate2( baudrate );
+	byte buff[3] = { 0x01, 0x07, 1 };	// NAV-PVTを出力
+	int numBytes = ubxSetCommand( 0x06, 0x01, 3, buff );
+	return ubxSendCommand( numBytes, 300 ) == numBytes;
 }
 
-
-// シリアルポート(UART1)のボーレートを設定する。
+// ZED-F9PのUARTのボーレートをbaudrateにし、Serial1も同じにする。
 //
-// ・GPS側は38400bpsの場合に使用
+// ZED-F9Pの現在のボーレートは分からない（電源投入直後は38400bps、
+// CoreS3だけがリセットされた場合は前回の設定のまま）ので、まずbaudrateで
+// 応答するか調べ、応答しなければ候補のボーレートで設定コマンドを送ってみる。
 //
-static int gpsSetBaudrate2( int baudrate )
+// 戻り値＝ true:baudrateで通信できる
+//
+static bool gpsSyncBaudrate( int baudrate )
 {
-	int nret;
-	if ( baudrate < 1 ) return -1;
+	static const int candidates[] = { 0, 38400, 460800, 230400, 115200 };	// 0:変更しない
 
-	// CoreS3側を38400bpsにする
-	mGpsUartReady = false;
-	vTaskDelay(20);		// taskUartRead()が読み出しを終えるのを待つ
-	Serial1.end();
-	vTaskDelay(1000);	// delay時間が少ないと次のSerial1.begin()でハングアップする
-	Serial1.setRxBufferSize( 4096 );
-	Serial1.begin( 38400, SERIAL_8N1, PIN_GPS_RX, PIN_GPS_TX );	// 工場出荷値とする。
-	mGpsUartReady = true;
-	dbgPrintf("Current Serial1 baudrate=%d\r\n", Serial1.baudRate());
-
-	for( int i=0; i < 3; i++ ){	// 1回ではボーレートが変わらない時がある。
-		nret = gpsSetUartPort( 1, baudrate, 1, 1, 1, 0, 0, 0 );	// 出力データがあるとSerial1.begin()がハングアップする場合ある
-		if ( nret < 0 ) return -3;
+	if ( ! mGpsUartReady ){
+		Serial1.setRxBufferSize( 4096 );
+		Serial1.begin( baudrate, SERIAL_8N1, PIN_GPS_RX, PIN_GPS_TX );
+		mGpsUartReady = true;
 	}
-	Serial1.flush();
 
-	Serial1.updateBaudRate( baudrate );
-	if ( abs( (int)Serial1.baudRate() - baudrate ) / (float)baudrate > 0.1 ){
-		dbgPrintf( "baudrate error : %d != %d\r\n", Serial1.baudRate(), baudrate );
-		return -3;
+	for( int current : candidates ){
+		if ( current == baudrate ) continue;
+		if ( current ){
+			Serial1.updateBaudRate( current );
+			for( int i=0; i < 3; i++ ){	// 1回ではボーレートが変わらない時がある。
+				// input ubx:1 nmea:1 rtcm:1   output ubx:1 nmea:0 rtcm:0
+				gpsSetUartPort( 1, baudrate, 1, 1, 1, 1, 0, 0 );
+			}
+			Serial1.flush();
+			delay(100);
+		}
+		Serial1.updateBaudRate( baudrate );
+		if ( gpsProbe() ) {
+			dbgPrintf( "ZED-F9P baudrate=%d (was %d)\r\n", baudrate, current ? current : baudrate );
+			return true;
+		}
 	}
-	dbgPrintf("New Serial1 baudrate=%d\r\n", Serial1.baudRate());
-	nret = gpsSetUartPort( 1, baudrate, 1, 1, 1, 1, 1, 0 );
-	
-	return 0;
+	return false;
 }
 
 
@@ -260,8 +256,8 @@ int gpsWrite( char *buff, int numBytes )
 
 // ZED-F9PをI2C経由でリセットする。
 //
-// ・UARTのボーレートが不明な起動直後に使用。リセット後のZED-F9Pの
-//   ボーレートは38400bpsになる。
+// ・UARTで応答が無い時に使用。リセット後のZED-F9Pのボーレートは
+//   38400bpsになる。
 //
 // 戻り値: 0=正常終了
 //         負数：エラー
