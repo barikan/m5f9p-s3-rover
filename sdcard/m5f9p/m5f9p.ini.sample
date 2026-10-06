@@ -1,0 +1,65 @@
+; m5f9p 設定ファイル（M5Stack CoreS3 移動局専用版）
+;
+; このファイルを m5f9p.ini という名前で、SDカードの /m5f9p/ に置く。
+; ; から行末まではコメント。
+
+[receiver]
+name=m5f9p          ; 受信機名称。soft APのSSIDになる（15文字以内）
+usb=0               ; USBシリアルの出力 0:デバグ情報のみ 1:NMEAも出力
+
+; Wifiアクセスポイント。[wifi] [wifi1] [wifi2] [wifi3] の4つまで。
+[wifi1]
+ssid=your-ssid
+password=your-password
+;ip=192.168.1.50    ; 固定IPにする場合。ゲートウェイは x.x.x.1 になる
+;dns=192.168.1.1
+
+; soft APのIPアドレス（既定値 192.168.4.1）。パスワードは m5f9p123
+;[softap]
+;ip=192.168.4.1
+
+; 基準局データ取得先。[source1]～[source9]
+; protocol: ntrip（既定値） または none（無手順のTCP）
+; gga: GGAセンテンスをキャスタに送る間隔（秒）。VRS方式のサービスで必要。0:送らない
+[source1]
+address=ntrip.example.com
+port=2101
+mount=MOUNTPOINT
+user=
+password=
+;gga=10
+;protocol=ntrip
+
+; 画面でrtk2go.comのマウントポイントを選択した時に使うユーザ名とパスワード
+;[rtk2go]
+;user=your-mail@example.com
+;password=none
+
+; 測位データ(NMEA)の送信先TCPサーバ（AgriBus-NAVI等）
+;[client]
+;ip=192.168.4.2
+;port=51020
+
+; 測位データ(NMEA)を配信するTCPサーバのポート番号（既定値 10000）
+;[server]
+;port=10000
+
+; csv=1 にすると、NMEAの代わりにCSV形式で保存する
+; 　日付,時刻,緯度,経度,楕円体高,Fix
+[format]
+csv=0
+
+; ファイルを分割して保存する場合の、１ファイルの秒数。0:分割しない
+[file]
+chunksec=0
+
+; ３ピンJST-PHコネクタ（UART）
+; format: 出力フォーマット 0:NMEA 1:CSV
+[jstph]
+baudrate=115200
+format=0
+
+; 異常リセット（パニック、ウォッチドッグ等）の後の動作
+; 0:起動時の選択画面を表示する 1:直前の設定で起動する
+[reboot]
+mode=0
