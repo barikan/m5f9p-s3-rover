@@ -20,12 +20,18 @@
 //   ・特性の権限で、暗号化されていない読み書きを拒否する。相手は拒否されると
 //     ペアリングを始める。初めての相手の時は、本体の画面に6桁の番号を表示し、
 //     相手がそれを入力する（LE Secure Connections、MITM保護）。番号は毎回変わる。
-//   ・本体からはペアリングを求めない。求めると、Androidではペアリングの画面が
-//     前面に出ず、通知になってしまう（アプリが始めたペアリングは前面に出る）。
+//   ・接続の直後には、本体からペアリングを求めない。求めると、Androidでは
+//     ペアリングの画面が前面に出ず、通知になってしまう（アプリが始めたペアリングは
+//     前面に出る）。Windowsでは、アプリの番号入力が呼ばれずに接続できなくなる。
+//   ・接続して数秒たっても暗号化されない時だけ、本体から求める（blePoll）。
 //   ・ペアリングした相手は本体が覚える（NVS）。次からは番号なしで暗号化される。
 //   ・暗号化が済むまで、コマンドは実行せず、状況も送らない。
 //   ・ペアリングのコールバックもBLEのタスクから呼ばれる。変数に入れるだけにし、
 //     画面への表示は loop() が blePasskey() を見て行う。
+//
+// 同時に接続できる相手は1台。接続中も、接続を受け付けないアドバタイズを続け、名前の
+// 後ろに BLE_BUSY_SUFFIX を付ける。ほかの端末のアプリは、これを見て「ほかの端末が
+// 接続中」と表示する（web/src/host.ts）。
 //
 // WifiとBLEは1つの無線を時分割で使う。Wifiの通信を妨げないよう、
 // アドバタイズと接続の間隔は長めにしている。
@@ -50,6 +56,8 @@
 #define BLE_STATUS_PERIOD_SMALL_MTU 3000
 #define BLE_AUTH_TIMEOUT 60000	// 接続してから暗号化が済むまで待つ時間（ミリ秒）。過ぎたら切断する
 #define BLE_BOND_MAX 15
+#define BLE_BUSY_SUFFIX " (in use)"	// 接続中に、アドバタイズする名前の後ろに付ける。web/src/host.ts と合わせる事
+#define BLE_SECURITY_REQUEST_DELAY 3000	// 接続してから、本体が暗号化を求めるまで待つ時間（ミリ秒）
 
 volatile bool mBleConnected;
 
@@ -71,6 +79,8 @@ static volatile int mPasskey = -1;			// 画面に表示する番号。-1:表示�
 static volatile bool mAuthFailed;			// ペアリングに失敗した（blePoll()で切断する）
 static volatile uint16_t mConnId;
 static volatile unsigned long mConnectMillis;
+static esp_bd_addr_t mPeerAddress;
+static volatile bool mSecurityRequested;	// この接続で、本体から暗号化を求めた
 
 class SecurityCallbacks : public BLESecurityCallbacks {
 	// 本体は番号を表示するだけ（入力はできない）
@@ -93,6 +103,8 @@ class ServerCallbacks : public BLEServerCallbacks {
 		mPeerMtu = 23;
 		mConnId = param->connect.conn_id;
 		mConnectMillis = millis();
+		memcpy( mPeerAddress, param->connect.remote_bda, sizeof(mPeerAddress) );
+		mSecurityRequested = false;
 		mAuthFailed = false;
 		mPasskey = -1;
 		mAuthenticated = ! mBlePairing;
@@ -175,6 +187,36 @@ int bleUnpairAll()
 	return num;
 }
 
+// アドバタイズを始める（内容を切り替える）
+//
+// busy  false:接続を受け付ける
+//       true:接続中。接続は受け付けず、名前の後ろに BLE_BUSY_SUFFIX を付ける。
+//            無線の占有を減らすため、間隔を長くする
+//
+static void bleAdvertise( bool busy )
+{
+	BLEAdvertising *advertising = BLEDevice::getAdvertising();
+	advertising->stop();
+
+	// アドバタイズ本体(31バイト)には、サービスのUUIDと名前の両方は入らない。
+	//   待ち受け中: 本体にUUID、スキャン応答に名前
+	//   接続中:     本体に名前（印つき）、スキャン応答にUUID
+	// 接続中は名前を本体に入れる。Windowsは、接続を受け付けないアドバタイズの
+	// スキャン応答から名前を取らず、「不明なデバイス」と表示するため。
+	BLEAdvertisementData name, service;
+	name.setName( std::string( mReceiverName ) + ( busy ? BLE_BUSY_SUFFIX : "" ) );
+	service.setCompleteServices( BLEUUID( NUS_SERVICE_UUID ) );
+	BLEAdvertisementData &main = busy ? name : service;
+	main.setFlags( ESP_BLE_ADV_FLAG_GEN_DISC | ESP_BLE_ADV_FLAG_BREDR_NOT_SPT );
+	advertising->setAdvertisementData( main );
+	advertising->setScanResponseData( busy ? service : name );
+
+	advertising->setAdvertisementType( busy ? ADV_TYPE_SCAN_IND : ADV_TYPE_IND );
+	advertising->setMinInterval( busy ? 0x320 : 0x140 );	// 単位0.625ms：接続中500ms、待ち受け200ms
+	advertising->setMaxInterval( busy ? 0x640 : 0x280 );	// 接続中1000ms、待ち受け400ms
+	advertising->start();
+}
+
 // BLEを開始する
 //
 // 戻り値＝ 0:正常終了
@@ -220,9 +262,7 @@ int bleStart()
 	BLEAdvertising *advertising = BLEDevice::getAdvertising();
 	advertising->addServiceUUID( NUS_SERVICE_UUID );
 	advertising->setScanResponse( true );
-	advertising->setMinInterval( 0x140 );	// 単位0.625ms：200ms
-	advertising->setMaxInterval( 0x280 );	// 400ms
-	BLEDevice::startAdvertising();
+	bleAdvertise( false );
 
 	dbgPrintf( "BLE started  name=%s pairing=%d bonded=%d\r\n", mReceiverName, mBlePairing, bleBondCount() );
 	return 0;
@@ -283,9 +323,13 @@ void blePoll()
 
 	if ( ! mServer ) return;
 
-	if ( mRestartAdvertising ){
+	// 接続の状態が変わったら、アドバタイズの内容を切り替える
+	static bool busyLast = false;
+	bool busy = mBleConnected;
+	if ( mRestartAdvertising || busy != busyLast ){
 		mRestartAdvertising = false;
-		BLEDevice::startAdvertising();
+		busyLast = busy;
+		bleAdvertise( busy );
 	}
 
 	// ペアリングに失敗した、または時間内に済まなかった時は切断する
@@ -294,6 +338,18 @@ void blePoll()
 		mAuthFailed = false;
 		mConnectMillis = millis();
 		mServer->disconnect( mConnId );
+	}
+
+	// 相手が暗号化を始めない時は、本体から求める。
+	// ペアリング済みのWindowsは、つなぎ直した時に自分からは暗号化を始めず、読み書きが
+	// 「Not paired」で失敗し続ける。本体から求めると、覚えている鍵で暗号化される。
+	// 接続の直後に求めると、初めての相手のペアリングを妨げる（ファイル先頭の説明を参照）ので、
+	// 少し待ち、ペアリングが始まっていない時（番号を表示していない時）だけ求める。
+	if ( mBleConnected && mBlePairing && ! mAuthenticated && ! mSecurityRequested && mPasskey < 0
+			&& millis() - mConnectMillis > BLE_SECURITY_REQUEST_DELAY ){
+		mSecurityRequested = true;
+		esp_ble_set_encryption( mPeerAddress, ESP_BLE_SEC_ENCRYPT_MITM );
+		dbgPrintf( "BLE security request\r\n" );
 	}
 
 	char *line;

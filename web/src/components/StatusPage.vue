@@ -76,10 +76,10 @@ function setRate(hz: unknown) {
     </div>
     <p v-if="scanning && !devices.length" class="text-muted-foreground mt-3 text-sm">探しています…　本体の電源が入っているか確認してください。</p>
     <Button
-      v-for="d in devices" :key="d.id" variant="outline" data-device
+      v-for="d in devices" :key="d.id" variant="outline" data-device :disabled="d.busy"
       class="mt-3 h-auto w-full justify-start gap-3 px-4 py-3 text-left whitespace-normal" @click="connectTo(d)">
       <span class="flex-1 font-semibold">{{ d.name || '(名称なし)' }}</span>
-      <span class="text-muted-foreground text-xs font-normal">{{ d.detail || '' }}</span>
+      <span class="text-muted-foreground text-xs font-normal">{{ d.busy ? 'ほかの端末が接続中' : (d.detail || '') }}</span>
     </Button>
   </div>
 

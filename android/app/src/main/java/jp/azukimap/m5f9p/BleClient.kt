@@ -146,6 +146,22 @@ class BleClient(private val context: Context) {
         gatt = device.connectGatt(context, autoConnect, gattCallback, BluetoothDevice.TRANSPORT_LE)
     }
 
+    /**
+     * Androidが覚えているサービスの一覧を捨てる。
+     *
+     * ペアリングした相手については、Androidがサービスの一覧を覚えていて、つなぎ直した時に
+     * 調べ直さない。覚えている内容が本体と合わなくなると、接続はできるのに、書き込みが
+     * 拒否され(status=3)、通知も届かなくなった。毎回調べ直すようにする。
+     * 公開されていないメソッドなので、使えない時はそのまま進む。
+     */
+    private fun refreshCache(g: BluetoothGatt) {
+        try {
+            g.javaClass.getMethod("refresh").invoke(g)
+        } catch (e: Exception) {
+            Log.w(TAG, "refresh failed: $e")
+        }
+    }
+
     private fun closeGatt() {
         gatt?.close()
         gatt = null
@@ -167,7 +183,10 @@ class BleClient(private val context: Context) {
                     // (空の時は、画面側が前回の接続で覚えた名前を表示する)
                     g.device.name?.let { deviceName = it }
                     // 既定のMTU(23)では1回に20バイトしか送れないので、最初に大きくする
-                    if (!g.requestMtu(MTU_REQUEST)) g.discoverServices()
+                    if (!g.requestMtu(MTU_REQUEST)) {
+                        refreshCache(g)
+                        g.discoverServices()
+                    }
                 } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                     Log.i(TAG, "disconnected status=$status")
                     // ペアリング済みなのに、つながる前に切れる事が続く時は、本体側の記憶が
@@ -192,6 +211,7 @@ class BleClient(private val context: Context) {
             handler.post {
                 if (g != gatt) return@post
                 if (status == BluetoothGatt.GATT_SUCCESS) mtu = newMtu
+                refreshCache(g)
                 g.discoverServices()
             }
         }
@@ -261,6 +281,7 @@ class BleClient(private val context: Context) {
         ) {
             handler.post {
                 if (g != gatt) return@post
+                if (status != BluetoothGatt.GATT_SUCCESS) Log.w(TAG, "write status=$status")
                 writing = false
                 writeNext()
             }

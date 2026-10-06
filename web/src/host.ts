@@ -14,6 +14,8 @@ const NUS_SERVICE = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
 const NUS_RX = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
 const NUS_TX = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
 const USB_VENDOR_ESPRESSIF = 0x303a;
+// ほかの端末が接続している間、本体が名前の後ろに付ける印（src/ble.cpp の BLE_BUSY_SUFFIX）
+const BLE_BUSY_SUFFIX = ' (in use)';
 const BLE_SILENT_MS = 6000;       // 接続してから、この時間何も届かなければつなぎ直す
 
 const android = window.AndroidBridge || null;
@@ -149,48 +151,67 @@ async function connectBle(id: string) {
   let rx: BluetoothRemoteGATTCharacteristic | null = null;
   let queue: Promise<unknown> = Promise.resolve();      // 書き込みは1つずつ順に行う
 
+  let session = 0;        // 接続のたびに増やす。古い接続の後始末が、新しい接続に手を出さないようにする
+
   async function open() {
+    const mine = ++session;
     conn.onState('connecting');
     const server = await gatt.connect();
     const service = await server.getPrimaryService(NUS_SERVICE);
     const tx = await service.getCharacteristic(NUS_TX);
-    rx = await service.getCharacteristic(NUS_RX);
+    const rxNew = await service.getCharacteristic(NUS_RX);
     const split = lineSplitter(line => conn.onLine(line));
     let received = false;
     tx.addEventListener('characteristicvaluechanged', () => {
+      if (mine !== session) return;
       received = true;
       const v = tx.value;
       if (v) split(new Uint8Array(v.buffer, v.byteOffset, v.byteLength));
     });
     await tx.startNotifications();
+    if (mine !== session || !gatt.connected) throw new Error('disconnected while connecting');
+    rx = rxNew;
     conn.onState('connected');
 
     // ペアリングした直後の接続では、通知が届かない事があった（つなぎ直すと届く）。
     // 本体は1秒毎に状況を送るので、しばらく何も届かなければつなぎ直す
     setTimeout(() => {
-      if (!received && !closed && gatt.connected && server === device.gatt) {
+      if (mine === session && !received && !closed && gatt.connected) {
         console.warn('ble: no data. reconnecting');
         gatt.disconnect();
       }
     }, BLE_SILENT_MS);
   }
 
+  // つながるまで繰り返す。同時に2つは動かさない
+  let retrying = false;
   async function retry() {
-    while (!closed) {
-      try {
-        await open();
-        return;
-      } catch (e) {
-        console.warn('ble:', e instanceof Error ? `${e.name}: ${e.message}` : e);
-        await new Promise(resolve => setTimeout(resolve, 2000));
+    if (retrying) return;
+    retrying = true;
+    try {
+      while (!closed) {
+        try {
+          await open();
+          return;
+        } catch (e) {
+          console.warn('ble:', e instanceof Error ? `${e.name}: ${e.message}` : e);
+          conn.onState('connecting');
+          if (gatt.connected) gatt.disconnect();      // 途中まで進んだ接続は捨てて、最初からやり直す
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        }
       }
+    } finally {
+      retrying = false;
     }
   }
 
   device.addEventListener('gattserverdisconnected', () => {
     rx = null;
     if (closed) conn.onState('disconnected');
-    else retry();       // 本体の再起動などで切れた時はつなぎ直す
+    else {
+      conn.onState('connecting');
+      retry();       // 本体の再起動などで切れた時はつなぎ直す
+    }
   });
 
   conn.send = line => {
@@ -242,12 +263,15 @@ function connectAndroid(address: string | null, name?: string) {
  * 接続先の候補を探す。見つかる度に onDevices([{id, name, detail}]) を呼ぶ。
  * 利用者の操作（ボタンを押した時）の中から呼ぶ事。
  */
-export function scan(kind: ConnectionKind, onDevices: (list: FoundDevice[]) => void) {
+export function scan(kind: ConnectionKind, found: (list: FoundDevice[]) => void) {
+  // 名前に「接続中」の印が付いている本体は、印を外して busy にする
+  const onDevices = (list: FoundDevice[]) => found(list.map(d => (d.name.endsWith(BLE_BUSY_SUFFIX)
+    ? { ...d, name: d.name.slice(0, -BLE_BUSY_SUFFIX.length), busy: true } : d)));
   if (android) {
     nativeHandlers.devices = m => onDevices(m.list ?? []);
     android.startScan();
   } else if (kind === 'usb') {
-    onDevices([{ id: 'usb', name: 'USB で接続', detail: '本体をUSBケーブルでつないでください' }]);
+    found([{ id: 'usb', name: 'USB で接続', detail: '本体をUSBケーブルでつないでください' }]);
   } else {
     scanBle(onDevices);
   }

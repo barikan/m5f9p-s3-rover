@@ -81,13 +81,14 @@ mise run android-screenshot          # 端末の画面を screenshot.png に保�
 
 - WSL2 では USB 経由の adb が不安定(APK の転送中に切れる)。Wi-Fi 経由でつなぐ。アドレスはユーザーに端末の画面で確認してもらう。
 - 端末の画面が消灯しているとスクリーンショットは真っ黒になる。画面の点灯とロック解除はユーザーに頼む。
+- ペアリングした相手については、Android がサービスの一覧を覚えている。`BleClient.kt` の `refreshCache` を外さない(外すと、覚えている内容が本体と食い違ったときに、接続できるのに何も届かなくなる)。BLE の接続を確かめるときは、接続状態だけでなく、アプリに状況が表示されることまで見る。本体の `STAT` 行の `tx` は、相手に届いていなくても増える。
 - `BluetoothGatt` の操作は同時に1つしか行えない。`BleClient.kt` はすべてメインスレッドで順に行い、書き込みはキューで直列化している。
 - ライブラリのバージョンは、AGP 8.7.3 / Kotlin 2.0.21 / Gradle 8.10.2 / compileSdk 35 の組み合わせでビルドを確認している。
 
 ### 共通で気をつけること
 
 - **ユーザーが端末や PC を操作している最中に、`adb shell input tap` や `win-eval` で画面を動かさない。** 確認のために操作するときは、先に手を止めてもらう。Android は `adb shell getevent` で実際のタッチが分かる。
-- 本体は同時に1台としか BLE 接続できない。Windows アプリ、Android アプリ、nRF Connect のどれかがつながっていると、ほかからは見つからない。
+- 本体は同時に1台としか BLE 接続できない。Windows アプリ、Android アプリ、nRF Connect のどれかがつながっていると、ほかからは「ほかの端末が接続中」と表示されて接続できない(本体が名前に ` (in use)` を付けてアドバタイズする。`src/ble.cpp` と `web/src/host.ts` の印を揃える)。**確認のために片方を接続したら、終わったあとに切断しておく。** Android アプリは常駐して自動で再接続するので、つないだままにすると Windows から接続できない。
 - PC(WSL)には Bluetooth がない。BLE の確認は Windows アプリか Android アプリで行う。
 
 ## ハードウェア上の制約
@@ -126,7 +127,7 @@ mise run android-screenshot          # 端末の画面を screenshot.png に保�
 ### コマンドと BLE
 
 - コマンドは1行の JSON で、入口は USB シリアル(cmd.cpp)と BLE(ble.cpp)。どちらも `cmdExecute()` を通り、**実行は loopTask で行う。**
-- **ペアリングは相手(Android、Windows)から始めさせる。`BLEDevice::setEncryptionLevel()` を呼ばない。** 呼ぶと本体が接続のたびにペアリングを求め、Android では画面が通知になり、Windows ではアプリの番号入力が呼ばれずに接続できなくなる。
+- **ペアリングは相手(Android、Windows)から始めさせる。`BLEDevice::setEncryptionLevel()` を呼ばない。** 本体から暗号化を求めるのは、接続して数秒たっても暗号化されないときだけ(`blePoll`)。 呼ぶと本体が接続のたびにペアリングを求め、Android では画面が通知になり、Windows ではアプリの番号入力が呼ばれずに接続できなくなる。
 - ペアリングのコールバック(`SecurityCallbacks`)も BLE のタスクから呼ばれる。変数に入れるだけにし、番号の表示は `loop()` が `blePasskey()` を見て行う。
 - `ble.unpair` やペアリングの記憶を消す操作は、ユーザーの端末側でも登録の解除が必要になる。断らずに実行しない。
 - **BLE のコールバックは BLE のタスクから呼ばれる。そこでは受信した行をキューに積むだけにする。** I2C、画面、SD に触る処理をコールバックに書かない。送信も `blePoll()` からだけ行う。

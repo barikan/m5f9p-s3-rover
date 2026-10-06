@@ -134,6 +134,7 @@ export interface FoundDevice {
   id: string;
   name: string;
   detail?: string;
+  busy?: boolean;           // ほかの端末が接続中（接続できない）
 }
 
 /** 軌跡などのファイル。名前は "tracks/2026-10-06.csv" の形 */
