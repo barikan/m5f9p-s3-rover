@@ -10,23 +10,25 @@ u-blox ZED-F9P を載せた M5F9P モジュールを M5Stack CoreS3 に重ねて
 
 ## コマンド
 
-PlatformIO は mise 経由で入っている。このディレクトリでは `pio` のシムが効かないので、必ず `mise exec` を付ける。
+ツールと定型処理は `mise.toml` にまとめてある。`mise tasks` で一覧が出る。
 
 ```bash
-# ビルド
-mise exec pipx:platformio@6.1.19 -- pio run
+mise install            # PlatformIO と uv を入れる(初回のみ)
+mise run setup          # ESP32 のツールチェーンとライブラリを入れる(初回のみ)
 
-# 書き込み(ポートは lsusb / ls /dev/ttyACM* で確認。抜き差しで ACM0/ACM1 が変わる)
-mise exec pipx:platformio@6.1.19 -- pio run -t upload --upload-port /dev/ttyACM0
-
-# 追加の警告を出してビルド
-PLATFORMIO_BUILD_FLAGS="-Wall -Wextra -Wno-unused-parameter" mise exec pipx:platformio@6.1.19 -- pio run
+mise run build          # ビルド
+mise run check          # 追加の警告を有効にしてビルド
+mise run upload         # ビルドして書き込む(失敗時は3回まで再試行)
+mise run log 30 --reset # リセットして30秒間のシリアルログを読む
+mise run monitor        # 対話式のシリアルモニタ
+mise run usb-attach     # WSL2: USB を WSL に接続する
 ```
 
 - テストとリンタはない。確認手段はビルドと実機。
+- シリアルポートは `scripts/find-port.sh` が VID 303a で自動検出する。指定するときは `PORT=/dev/ttyACM1 mise run upload`。
 - `platform = espressif32@6.9.0` に固定している。6.13.0 はこの環境で esptool の導入に失敗する。
-- 開発機は WSL2。USB は Windows 側で `usbipd attach --wsl --busid <BUSID>` が必要で、抜き差しのたびにやり直す。書き込みは時々失敗するので再試行する。
-- シリアルを読むときは pyserial を使う(`pio device monitor` は対話式)。Python は `~/.local/share/mise/installs/pipx-platformio/6.1.19/platformio/bin/python`。RTS をパルスさせるとチップをリセットできる。
+- 開発機は WSL2。USB は抜き差しのたびに `mise run usb-attach` が必要(Windows 側の usbipd を呼ぶ)。書き込みは時々失敗するので、`upload` タスクは再試行する。
+- ログの確認には `mise run log` を使う。`monitor` は対話式なので、エージェントからは使えない。
 - 起動ウィザードは画面タッチで進むので、実機確認にはユーザーの操作が要る。メイン画面に入ると 10 秒ごとに `STAT ...` 行がシリアルに出る(`main.cpp` の `dbgStatus()`)。
 
 ## ハードウェア上の制約
@@ -60,15 +62,19 @@ PLATFORMIO_BUILD_FLAGS="-Wall -Wextra -Wno-unused-parameter" mise exec pipx:plat
 - **I2C と `M5.update()` は loopTask からだけ呼ぶ。** `buttonRead()` / `waitTouch()`(ui.cpp)が `M5.update()` を呼ぶ唯一の場所。D9C の読み出し(`d9cPoll()`、gps.cpp の I2C 関数)を他のタスクへ移さない。
 - **SD アクセスと画面描画は `spiLock()` / `spiUnlock()` で囲む**(storage.cpp、再帰ミューテックス)。`loop()` は描画部分だけをロックし、ボタン処理はロックの外で行う。
 - **UBX コマンドの Ack 待ち中は `mGpsCommandBusy` が立ち、`taskRover` はバッファを読まない。** コマンド送信は `ubxSendCommand()` を通す。
-- `Serial1` を `end()` / `begin()` する間は `mGpsUartReady` を落として `taskUartRead` を止める(`gpsSetBaudrate2()`)。
+- `taskUartRead` は `mGpsUartReady` が立つまで `Serial1` を読まない。`Serial1.begin()` は `gpsSyncBaudrate()`(gps.cpp)が1回だけ行い、以後のボーレート変更は `updateBaudRate()` で行う。
 
 ### 起動の流れ
 
-`setup()`(main.cpp)は対話式のウィザードで、画面の向き → Wi-Fi → F9P 初期化と受信テスト → 補正元 → 保存形式 → TCP クライアント、の順に進む。選んだ内容は `stRunInfo` として `/m5f9p/m5f9p.run` にバイナリで保存される。
+`setup()`(main.cpp)には2つの経路がある。選んだ内容は `stRunInfo` として `/m5f9p/m5f9p.run` にバイナリで保存される。
 
-- `mRunMode == RUN_NO_UI`(「nonstop」ブート、または異常リセット後)では、質問をせず `mRunInfo` の値で起動する。ウィザードに分岐を足すときは、この無人起動の経路も必ず用意する。
+- **通常の起動(`mRunMode == RUN_NO_UI`)**: 保存済みの `mRunInfo` を使い、質問なしで測位画面に入る。起動を遅らせないよう、ここでは何も待たない。Wi-Fi は `WiFi.begin()` だけ、補正元は `mBaseReconnecting` を立てるだけで、接続は `taskBaseRecv` が行う。測位の成立も待たない。
+- **ウィザード(`RUN_UI`)**: `m5f9p.run` が読めないとき、またはブート情報ページの「Setup」で `setupRequest` が立っているとき。画面の向き → Wi-Fi → F9P 初期化と受信テスト → 補正元 → 保存形式 → TCP クライアント、の順に質問する。
+
+ウィザードに質問を足すときは、通常の起動の経路(保存値を使う、待たない)も必ず用意する。
+
 - `stRunInfo` のサイズが変わると旧ファイルは読み捨てられ、ウィザードに戻る。
-- 起動時に I2C 経由で F9P をリセットする(`gpsI2cReset()`)。F9P を 38400bps に戻すためで、`gpsSetBaudrate()` はこれを前提にしている。
+- F9P のボーレートは起動時点で分からない(電源投入直後は 38400bps、CoreS3 だけリセットされたときは前回のまま)。`gpsSyncBaudrate()` が目的のボーレートで応答を確かめ、だめなら候補を順に試す。どれにも応答しないときだけ I2C 経由でリセットする(`gpsI2cReset()`)。
 
 ### 補正データの経路
 
