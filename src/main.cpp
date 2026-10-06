@@ -512,6 +512,19 @@ static void dispBootInfo()
 	lcdDispText2( lineNum++, "Save to file = ", "%s", mRunInfo.saving ? "On " : "Off" );
 }
 
+// 動作状況を10秒毎にデバグ出力する（USBからNMEAを出力している時は出さない）
+//
+static void dbgStatus()
+{
+	static unsigned long msecLast = 0;
+	if ( mUsbOutMode == 1 || millis() - msecLast < 10000 ) return;
+	msecLast = millis();
+	dbgPrintf( "STAT quality=%d sats=%d rate=%d base(valid=%d type=%d ready=%d reconnecting=%d bytes=%d) clas=%d saving=%d saved=%d qerr=%d\r\n",
+		mGpsData.quality, mGpsData.numSatelites, mSolutionRate,
+		(int)mBaseSrc.valid, mBaseSrc.type, (int)mBaseRecvReady, (int)mBaseReconnecting, (int)mBaseRecvCount,
+		mD9CAddress >= 0 ? mD9CRecvCount : -1, (int)mFileSaving, mFileSaved, mQueueFileErrorCount );
+}
+
 void loop() 
 {
 	bool longPress;
@@ -538,6 +551,7 @@ void loop()
 	spiUnlock();
 
 	d9cPoll();
+	dbgStatus();
 	delay(20);
 }
 
