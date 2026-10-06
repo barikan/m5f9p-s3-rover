@@ -34,7 +34,7 @@ mise run config-get / config-put  # 本体の SD カードの設定ファイル(
 - 起動ウィザードは画面タッチで進むので、そこだけはユーザーの操作が要る。メイン画面に入ったあとは、`mise run cmd` で画面に触らずに操作できる。Wi-Fi や補正元の切り替えは `run.set`(設定を書き換えて再起動)、設定ファイルの編集は `config-get` / `config-put` を使う。ウィザードの途中ではコマンドに応答しない。
 - メイン画面に入ると 10 秒ごとに `STAT ...` 行がシリアルに出る(`main.cpp` の `dbgStatus()`)。補正データの受信量、RTCM のエラー率、Wi-Fi、BLE、内蔵 RAM の空きが分かる。
 - PC(WSL)には Bluetooth がない。BLE の接続確認はユーザーのスマートフォン(nRF Connect)に頼る。
-- 取り出した設定ファイルには Wi-Fi のパスワードが入っている。リポジトリに置かず、作業後は消す。
+- 取り出した設定ファイルのパスワードは暗号化されているが、平文で書き戻すための控えを作ったときは、リポジトリに置かず、作業後は必ず消す(スクラッチ用のフォルダも含む)。
 
 ## クライアントアプリ
 
@@ -60,7 +60,6 @@ mise run android-screenshot          # 端末の画面を screenshot.png に保�
 - 画面の部品は Origin UI の Vue 版(`web/src/components/ui/`。Reka UI + Tailwind CSS の部品を写したもの)を使う。素の `<button>`、`<input>`、`<select>`、`<dialog>` を新しく書かない。見た目は Tailwind CSS のクラスで付け、独自の CSS を増やさない。
 - `components/ui/` の中は、写した元のままにしておく(直すと、元の更新を取り込めなくなる)。足りない部品は https://github.com/misbahansori/originui-vue の `app/registry/default/ui/` から写し、`@/registry/default/ui/` を `@/components/ui/` に置き換える。Context7 に Origin UI の Vue 版はない。動作の仕様は Reka UI(`/unovue/reka-ui`)を引く。
 - 画面は TypeScript で書く(`.vue` は `<script setup lang="ts">`)。本体とやり取りするデータの形は `web/src/types.ts`、アプリが渡す窓口の形は `web/src/env.d.ts` にあり、`src/cmd.cpp`、Kotlin の `Bridge`、`windows/preload.js` を変えたら合わせる。`windows/` は JavaScript のまま。
-- Windows では画面上部の見出しを出さない(`App.vue`)。接続先の名前と「切断」は状況タブにある。
 - `typescript` は 5.x のままにする。7.x にすると、Vue のコンパイラが部品の型を読めずビルドに失敗する。
 - `web/src/host.ts`: 動作環境の違い(接続、ファイル)を吸収する。Windows は Web Serial と Web Bluetooth を画面側で扱い、Android は `window.AndroidBridge` と `window.onNative` で Kotlin の `BleClient` とやり取りする。
 - 画面は両方とも `https://m5f9p.azukimap.jp/` から読み込んだ扱いにしている(Electron は `protocol.handle`、Android は `WebViewAssetLoader`)。地図の API キーの制限を同じ URL で登録できるようにするためで、変えるときは両方を揃える。
@@ -166,6 +165,8 @@ SD カードの `/m5f9p/m5f9p.yaml`。読み書きは `config.cpp`、書式の�
 - 設定は起動時に1回だけ読む。`config.put` / `file.put` はファイルを書くだけで、動作中の変数は変えない(一覧を使っているタスクがあるため)。反映は再起動で行う。
 - **パスワードは本体の外に返さない。** `config.get` は `password` の代わりに、一覧の中の番号 `id` と `hasPassword` を返す。`config.put` で `password` が書かれていない項目は、本体が `id` の番号のパスワードを保つ(`config.cpp` の `configRestoreSecrets`)。パスワードの項目を増やすときは、`configToJson`、`configRestoreSecrets`、画面の `ConfigEditor.vue` を揃える。
 - `file.get`(YAML をそのまま返す)はパスワードを含むので、USB からだけ受け付ける(`cmdExecute` の `channel`)。`mise run config-get` はこれを使う。
+- **設定ファイルのパスワードと API キーは暗号化して書く**(`src/secret.cpp`。AES-256-GCM、鍵は NVS)。書き出しは `configSave` が暗号化し、読み込みは `cfgSecret` が復号する。平文も読め、起動時に暗号化して書き直す。暗号化する項目を増やすときは、`config.cpp` の `encryptSecrets` と `configFromJson` の両方に足す。`m5f9p.run.json` の取得先のパスワードも同じ(`storage.cpp`)。
+- `secretInit()` は無線を始める前に呼ぶ(鍵を作るときの乱数源が、無線と同時に使えない)。内蔵フラッシュを全部消す操作(`pio run -t erase`)は鍵を消し、SD カードのパスワードが読めなくなる。ユーザーに断らずに行わない。
 - 設定を書き換えたあとは、再起動するまで `config.get` / `config.put` はエラーになる(本体が持っている一覧と `id` がずれるため)。
 - BLE のペアリングは未実装。近くにいれば誰でも接続でき、設定の書き換えや再起動ができる。
 - 旧形式の INI は、YAML がないときだけ読んで変換する(`settings.cpp` の `readIniFile()`)。

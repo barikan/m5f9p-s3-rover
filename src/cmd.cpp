@@ -20,6 +20,7 @@
 //               一覧（wifi, sources）の項目には、password の代わりに、一覧の中の番号 id と、
 //               設定済みかどうかの hasPassword が入る
 //   config.put  {"config":{...}}  設定を書き換える（再起動後に有効）。設定ファイルのコメントは消える
+//               パスワードとAPIキーは暗号化して書く（secret.cpp）
 //               一覧の項目で password を書かなければ、id の番号のパスワードを保つ
 //               （詳しくは config.cpp の configRestoreSecrets）
 //   file.get    設定ファイル(YAML)のテキストをそのまま返す。パスワードを含むので、USBのみ
@@ -28,6 +29,8 @@
 //   （本体が持っている一覧と id がずれるため）
 //   file.put    {"text":"..."}    設定ファイル(YAML)をテキストで書き換える（再起動後に有効）
 //                                 YAMLとして正しくない時は書き込まずにエラーを返す
+//   ini.remove  旧形式の設定ファイル(m5f9p.ini)をSDカードから削除する。USBのみ
+//               （パスワードが平文で書かれているため。YAMLへの移行が済んでいる事）
 //   run.get   起動時の実行パラメータと、選択できるWifi接続先、基準局データ取得先を返す
 //   run.set   実行パラメータを書き換えて再起動する。指定した項目のみ変更する
 //               {"wifi":"SSID"}  接続するWifi。"":使わない
@@ -105,6 +108,8 @@ static void cmdStatus( JsonDocument &re )
 	re["heap"] = heap_caps_get_free_size( MALLOC_CAP_INTERNAL );
 	re["bleNmea"] = mBleNmeaRateNow;
 	re["track"] = trackCount();
+	if ( mSecretError ) re["secretError"] = true;	// 復号できないパスワードがある
+	if ( mIniRemains ) re["iniRemains"] = true;		// 旧形式の設定ファイルが残っている
 }
 
 // 定期的に送る状況（{"ev":"status", ...}）を作る
@@ -319,6 +324,15 @@ void cmdExecute( char *line, String &reply, int channel )
 	else if ( strcmp( name, "config.put" ) == 0 ) cmdConfigPut( cmd, re );
 	else if ( strcmp( name, "file.get" ) == 0 ) cmdFileGet( re, channel );
 	else if ( strcmp( name, "file.put" ) == 0 ) cmdFilePut( cmd, re );
+	else if ( strcmp( name, "ini.remove" ) == 0 ){
+		if ( channel != CMD_USB ) re["error"] = "usb only";
+		else if ( ! mIniRemains ) re["error"] = "no ini file";
+		else if ( sdRemove( mIniPath ) < 0 ) re["error"] = "can't remove";
+		else {
+			mIniRemains = false;
+			re["ok"] = true;
+		}
+	}
 	else if ( strcmp( name, "run.get" ) == 0 ) cmdRunGet( re );
 	else if ( strcmp( name, "run.set" ) == 0 ) cmdRunSet( cmd, re );
 	else if ( strcmp( name, "map.key" ) == 0 ){

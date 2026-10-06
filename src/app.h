@@ -192,6 +192,7 @@ void sdSaveStop();
 int sdSave( const char *fileName, char *buff, int numBytes, const char* mode );
 int sdRead( const char *fileName, char *buff, int numBytes );
 int saveRunInfo( struct stRunInfo *runInfo );
+int sdRemove( const char *fileName );
 int readRunInfo( struct stRunInfo *runInfo );
 
 // ************************************************************
@@ -206,6 +207,18 @@ int setCsvData( struct stGpsData* pGpsData, char* buff, int buffSize );
 // ************************************************************
 
 void cmdPollUsb();
+// ************************************************************
+//                        secret.cpp
+// ************************************************************
+
+int secretInit();
+bool secretIsEncrypted( const char *text );
+String secretEncrypt( const char *plain );
+int secretDecrypt( const char *text, String &plain );
+
+extern bool mSecretError;		// 復号できないパスワードがあった（config.cpp）
+extern bool mIniRemains;		// 旧形式の設定ファイルがSDカードに残っている（config.cpp）
+
 // コマンドの入口
 #define CMD_USB 0
 #define CMD_BLE 1

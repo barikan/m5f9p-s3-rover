@@ -60,9 +60,6 @@ const sourceName = computed(() => {
 function setRate(hz: unknown) {
   if (hz) rover.setRate(Number(hz));
 }
-
-// Windowsでは上の見出しが無いので、接続先の名前と切断をここに出す
-const showConnection = host.platform === 'windows';
 </script>
 
 <template>
@@ -86,13 +83,18 @@ const showConnection = host.platform === 'windows';
     </Button>
   </div>
 
-  <div v-else-if="!s" class="flex items-center gap-3 text-sm">
-    <div class="flex-1">{{ state.conn === 'connecting' ? '接続しています…' : '本体からの状況を待っています…' }}</div>
-    <Button v-if="showConnection" variant="outline" @click="rover.disconnect()">切断</Button>
-  </div>
+  <p v-else-if="!s" class="text-sm">{{ state.conn === 'connecting' ? '接続しています…' : '本体からの状況を待っています…' }}</p>
 
+  <template v-else>
+    <!-- SDカードのパスワードについての警告 -->
+    <div v-if="s.secretError" class="border-destructive/50 text-destructive-foreground mb-4 rounded-lg border px-4 py-3 text-sm" role="alert">
+      設定ファイルのパスワードを読めません（別の本体で保存された SD カード、または本体の初期化のため）。「設定」タブの「本体の設定を編集」で、パスワードを入れ直してください。
+    </div>
+    <div v-if="s.iniRemains" class="border-destructive/50 text-destructive-foreground mb-4 rounded-lg border px-4 py-3 text-sm" role="alert">
+      SD カードに旧形式の設定ファイル（m5f9p.ini）が残っています。パスワードが暗号化されずに書かれているので、SD カードから削除してください。
+    </div>
   <!-- 幅に入るだけ横に並べ、折り返した行もページの幅いっぱいに広げる -->
-  <div v-else class="flex flex-wrap items-stretch gap-4 *:min-w-80 *:flex-1">
+  <div class="flex flex-wrap items-stretch gap-4 *:min-w-80 *:flex-1">
     <Section title="測位">
       <Badge class="mb-2 border-transparent text-white" :style="{ background: quality.color }">{{ quality.label }}</Badge>
       <template v-if="s.pos.valid">
@@ -142,10 +144,7 @@ const showConnection = host.platform === 'windows';
       <Item label="SDカード">{{ s.sdMB }} MB</Item>
       <Item label="バージョン">{{ s.ver }}</Item>
       <Item label="稼働時間">{{ Math.floor(s.uptime / 60) }} 分 {{ s.uptime % 60 }} 秒</Item>
-      <template v-if="showConnection">
-        <Item label="接続">{{ state.name }}</Item>
-        <Button variant="outline" class="mt-3" @click="rover.disconnect()">切断</Button>
-      </template>
     </Section>
   </div>
+  </template>
 </template>

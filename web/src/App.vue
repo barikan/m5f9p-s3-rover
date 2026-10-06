@@ -1,6 +1,5 @@
 <script setup lang="ts">
-// 全体の枠。上に本体名（Androidのみ）、下にタブ（Origin UI の Tabs）。
-// Windowsではウィンドウの題名があるので、上の見出しは出さない。接続先の名前と切断は状況タブにある。
+// 全体の枠。上に本体名と切断、下にタブ（Origin UI の Tabs）。
 //
 //   状況タブ … 接続先の選択、測位・補正データ・本体の状況、ログ保存と測位レートの操作
 //   地図タブ … 現在地と軌跡
@@ -10,7 +9,6 @@ import { Activity, Map, Settings } from 'lucide-vue-next';
 import { Button } from '@/components/ui/button';
 import { Toaster } from '@/components/ui/sonner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import * as host from './host';
 import * as rover from './rover';
 import { state } from './store';
 import StatusPage from './components/StatusPage.vue';
@@ -19,16 +17,12 @@ import SettingsPage from './components/SettingsPage.vue';
 import DialogHost from './components/DialogHost.vue';
 
 const tab = ref('status');
-const showHeader = host.platform !== 'windows';
-const page = [
-  'absolute inset-0 overflow-y-auto px-4 pb-4 data-[state=inactive]:hidden',
-  showHeader ? 'pt-1' : 'pt-4',
-];
+const page = 'absolute inset-0 overflow-y-auto px-4 pt-1 pb-4 data-[state=inactive]:hidden';
 </script>
 
 <template>
   <Tabs v-model="tab" class="h-full gap-0">
-    <header v-if="showHeader" class="flex items-center gap-2 px-4 py-3">
+    <header class="flex items-center gap-2 px-4 py-3">
       <h1 class="flex-1 truncate text-lg font-semibold">{{ state.conn === 'disconnected' ? 'M5F9P Rover' : state.name }}</h1>
       <Button v-if="state.conn !== 'disconnected'" variant="ghost" size="sm" @click="rover.disconnect()">切断</Button>
     </header>

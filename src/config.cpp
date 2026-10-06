@@ -17,6 +17,13 @@
 //     どうかの hasPassword を返す。
 //   ・config.put で password が書かれていない項目は、id の番号のパスワードを保つ
 //     （configRestoreSecrets）。
+//
+// 設定ファイルには、パスワードとAPIキーを暗号化して書く（secret.cpp）。
+//   ・書き出す時は、configSave が暗号化する。
+//   ・読み込む時は、暗号化されていれば復号し、平文ならそのまま使う。平文があった
+//     時は、読み込みの後で暗号化して書き直す（SDカードをPCで編集して、平文で
+//     書いておけるようにするため）。
+//   ・復号できない時（別の本体のSDカード等）は、空として扱い、mSecretError を立てる。
 
 #include <Arduino.h>
 #include <SD.h>
@@ -30,6 +37,10 @@ extern "C" {
 #include "app.h"
 
 #define CONFIG_SIZE_MAX 8192
+
+bool mSecretError = false;		// 復号できないパスワードがあった
+bool mIniRemains = false;		// 旧形式の設定ファイルがSDカードに残っている
+static bool mSecretPlain = false;	// 平文のパスワードがあった（書き直しが必要）
 
 // ---------------------------------------------------------------- 値の取り出し
 //
@@ -90,6 +101,48 @@ static String ipText( const byte *ip )
 	char buff[16];
 	snprintf( buff, sizeof(buff), "%d.%d.%d.%d", ip[0], ip[1], ip[2], ip[3] );
 	return buff;
+}
+
+// パスワード等の値を取り出す。暗号化されていれば復号する
+//
+static String cfgSecret( JsonVariantConst v, const char *def = "" )
+{
+	if ( v.isNull() ) return def;
+
+	String text = cfgStr( v ), plain;
+	int nret = secretDecrypt( text.c_str(), plain );
+	if ( nret < 0 ) mSecretError = true;
+	else if ( nret == 0 && plain.length() ) mSecretPlain = true;
+	return plain;
+}
+
+// 設定(JSON)の中の、暗号化して保存する値を1つ暗号化する
+//
+static void encryptValue( JsonVariant v )
+{
+	if ( v.isNull() ) return;
+	if ( v.is<const char*>() ) v.set( secretEncrypt( v.as<const char*>() ) );
+	else {
+		// 引用符なしで書かれた数字だけのパスワード等
+		String text;
+		serializeJson( v, text );
+		v.set( secretEncrypt( text.c_str() ) );
+	}
+}
+
+// 設定(JSON)の中の、パスワードとAPIキーを暗号化する
+//
+static void encryptSecrets( JsonDocument &config )
+{
+	// 書かれていない項目は増やさない（値がある事を確かめてから渡す）
+	for( JsonObject w : config["wifi"].as<JsonArray>() ){
+		if ( ! w["password"].isNull() ) encryptValue( w["password"] );
+	}
+	for( JsonObject s : config["sources"].as<JsonArray>() ){
+		if ( ! s["password"].isNull() ) encryptValue( s["password"] );
+	}
+	if ( ! config["rtk2go"]["password"].isNull() ) encryptValue( config["rtk2go"]["password"] );
+	if ( ! config["google"]["key"].isNull() ) encryptValue( config["google"]["key"] );
 }
 
 // ---------------------------------------------------------------- JSONとの変換
@@ -217,7 +270,7 @@ void configFromJson( JsonDocument &doc )
 			if ( ssid.length() == 0 || mNumWifi == CONFIG_LIST_MAX ) continue;
 			struct stWifi *p = &mWifiList[ mNumWifi++ ];
 			copyStr( p->ssid, sizeof(p->ssid), ssid );
-			copyStr( p->password, sizeof(p->password), cfgStr( w["password"] ) );
+			copyStr( p->password, sizeof(p->password), cfgSecret( w["password"] ) );
 			parseIp( cfgStr( w["ip"] ), p->ip );
 			parseIp( cfgStr( w["dns"] ), p->dns );
 		}
@@ -238,7 +291,7 @@ void configFromJson( JsonDocument &doc )
 			p->port = cfgInt( s["port"], 2101 );
 			copyStr( p->mountPoint, sizeof(p->mountPoint), cfgStr( s["mount"] ) );
 			copyStr( p->user, sizeof(p->user), cfgStr( s["user"] ) );
-			copyStr( p->password, sizeof(p->password), cfgStr( s["password"] ) );
+			copyStr( p->password, sizeof(p->password), cfgSecret( s["password"] ) );
 			p->ggaPeriod = cfgInt( s["gga"], 0 );
 			String protocol = cfgStr( s["protocol"], "ntrip" );
 			protocol.toLowerCase();
@@ -247,7 +300,7 @@ void configFromJson( JsonDocument &doc )
 	}
 
 	copyStr( mRtk2goUser, sizeof(mRtk2goUser), cfgStr( doc["rtk2go"]["user"], mRtk2goUser ) );
-	copyStr( mRtk2goPassword, sizeof(mRtk2goPassword), cfgStr( doc["rtk2go"]["password"], mRtk2goPassword ) );
+	copyStr( mRtk2goPassword, sizeof(mRtk2goPassword), cfgSecret( doc["rtk2go"]["password"], mRtk2goPassword ) );
 
 	mBleEnable = cfgBool( doc["ble"]["enable"], mBleEnable != 0 ) ? 1 : 0;
 	mBleNmeaRate = constrain( cfgInt( doc["ble"]["nmea"], mBleNmeaRate ), 0, BLE_NMEA_RATE_MAX );
@@ -257,7 +310,7 @@ void configFromJson( JsonDocument &doc )
 	parseIp( cfgStr( doc["softap"]["ip"] ), ip );
 	if ( ip[0] ) mSoftApIp = IPAddress( ip[0], ip[1], ip[2], ip[3] );
 
-	copyStr( mGoogleKey, sizeof(mGoogleKey), cfgStr( doc["google"]["key"], mGoogleKey ) );
+	copyStr( mGoogleKey, sizeof(mGoogleKey), cfgSecret( doc["google"]["key"], mGoogleKey ) );
 	mServerPort = cfgInt( doc["server"]["port"], mServerPort );
 	copyStr( mAgribusIp, sizeof(mAgribusIp), cfgStr( doc["client"]["ip"], mAgribusIp ) );
 	mAgribusPort = cfgInt( doc["client"]["port"], mAgribusPort );
@@ -389,8 +442,14 @@ int configSave( JsonVariantConst config )
 {
 	if ( ! config.is<JsonObjectConst>() ) return -1;
 
-	String text = "# M5F9P Rover の設定。アプリまたはコマンドから保存された。\n";
-	yamlEmit( text, config, 0 );
+	// パスワードとAPIキーは暗号化して書く
+	JsonDocument doc;
+	doc.set( config );
+	encryptSecrets( doc );
+
+	String text = "# M5F9P Rover の設定。アプリまたはコマンドから保存された。\n"
+				  "# パスワードとAPIキーは暗号化されている。書き換える時は平文で書けばよい（次の起動時に暗号化される）。\n";
+	yamlEmit( text, doc.as<JsonVariantConst>(), 0 );
 	if ( text.length() > CONFIG_SIZE_MAX ) return -2;
 	if ( sdSave( mConfigPath, (char*) text.c_str(), text.length(), FILE_WRITE ) != (int) text.length() ) return -3;
 	return 0;
@@ -422,6 +481,7 @@ int readConfig()
 		configToJson( doc, true );
 		int nret = configSave( doc.as<JsonVariantConst>() );
 		dbgPrintf( "INI file converted to %s (%d)\r\n", mConfigPath, nret );
+		mIniRemains = true;
 		return 1;
 	}
 	buff[n] = '\0';
@@ -440,5 +500,17 @@ int readConfig()
 		return -2;
 	}
 	configFromJson( doc );
+
+	if ( mSecretError ) dbgPrintf( "!! %s: some passwords can't be decrypted. Enter them again.\r\n", mConfigPath );
+	if ( mSecretPlain ){
+		// 平文のパスワードを暗号化して書き直す。読み込んだ内容(doc)を元にするので、
+		// 復号できなかった値もそのまま残る
+		int nret = configSave( doc.as<JsonVariantConst>() );
+		dbgPrintf( "Passwords in %s encrypted (%d)\r\n", mConfigPath, nret );
+	}
+	if ( SD.exists( mIniPath ) ){
+		mIniRemains = true;
+		dbgPrintf( "!! %s remains on the SD card. It may contain passwords in plain text.\r\n", mIniPath );
+	}
 	return 0;
 }

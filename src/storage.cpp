@@ -116,6 +116,19 @@ int sdRead( const char *fileName, char *buff, int numBytes )
 	return nret;
 }
 
+// SDカードのファイルを削除する
+//
+// 戻り値＝ 0:正常終了
+//         -1:削除できない
+//
+int sdRemove( const char *fileName )
+{
+	spiLock();
+	bool ok = SD.remove( fileName );
+	spiUnlock();
+	return ok ? 0 : -1;
+}
+
 // 実行パラメータを保存する
 //
 // ・JSONで保存する。Wifiは番号ではなくSSIDで覚えるので、設定ファイルの一覧を
@@ -141,7 +154,7 @@ int saveRunInfo( struct stRunInfo *runInfo )
 		source["port"] = src->port;
 		source["mount"] = src->mountPoint;
 		source["user"] = src->user;
-		source["password"] = src->password;
+		source["password"] = secretEncrypt( src->password );	// 暗号化して書く（secret.cpp）
 		source["gga"] = src->ggaPeriod;
 		source["protocol"] = src->protocol;
 	}
@@ -213,6 +226,7 @@ int readRunInfo( struct stRunInfo *runInfo )
 
 	JsonDocument doc;
 	if ( deserializeJson( doc, (const char*) buff ) || ! doc.is<JsonObject>() ) return -1;
+	bool plainPassword = false;
 
 	runInfo->setupRequest = doc["setup"] | false;
 	runInfo->lcdRotation = doc["rotation"] | 0;
@@ -232,7 +246,12 @@ int readRunInfo( struct stRunInfo *runInfo )
 		src->port = doc["source"]["port"] | 2101;
 		strlcpy( src->mountPoint, doc["source"]["mount"] | "", sizeof( src->mountPoint ) );
 		strlcpy( src->user, doc["source"]["user"] | "", sizeof( src->user ) );
-		strlcpy( src->password, doc["source"]["password"] | "", sizeof( src->password ) );
+		// パスワードは暗号化されている。平文で書かれていた時は、暗号化して書き直す
+		String password;
+		int nret = secretDecrypt( doc["source"]["password"] | "", password );
+		if ( nret < 0 ) mSecretError = true;
+		else if ( nret == 0 && password.length() ) plainPassword = true;
+		strlcpy( src->password, password.c_str(), sizeof( src->password ) );
 		src->ggaPeriod = doc["source"]["gga"] | 0;
 		src->protocol = doc["source"]["protocol"] | PROTO_NTRIP;
 	}
@@ -242,6 +261,7 @@ int readRunInfo( struct stRunInfo *runInfo )
 	runInfo->saving = ( doc["saveAtBoot"] | false ) ? 1 : 0;
 	runInfo->solutionRate = doc["rate"] | 1;
 	runInfo->agribusConnect = ( doc["tcpClient"] | false ) ? 1 : 0;
+	if ( plainPassword ) saveRunInfo( runInfo );
 	return 0;
 }
 

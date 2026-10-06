@@ -35,6 +35,8 @@ export interface Status {
   heap: number;
   bleNmea: number;
   track: number;
+  secretError?: boolean;    // 設定ファイルに、復号できないパスワードがある
+  iniRemains?: boolean;     // 旧形式の設定ファイル(m5f9p.ini)がSDカードに残っている
 }
 
 /** 起動時の設定（run.get の応答） */

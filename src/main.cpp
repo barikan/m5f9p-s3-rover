@@ -203,7 +203,8 @@ void setup() {
 	// SD
 	sdInit();
 
-	// 設定ファイル
+	// 設定ファイル。パスワードの復号に使う鍵を先に用意する（無線を始める前に行う事）
+	secretInit();
 	int configResult = readConfig();
 	
 	// Runモード
@@ -519,6 +520,10 @@ static void dispBootInfo()
 	lineNum++;
 
 	lcdDispText2( lineNum++, "Save at boot = ", "%s", mRunInfo.saving ? "On " : "Off" );
+
+	// SDカードのパスワードについての警告
+	if ( mSecretError ) lcdDispText( lineNum++, "!! Password unreadable" );
+	if ( mIniRemains ) lcdDispText( lineNum++, "!! Old .ini file remains" );
 }
 
 // 動作状況を10秒毎にデバグ出力する（USBからNMEAを出力している時は出さない）
