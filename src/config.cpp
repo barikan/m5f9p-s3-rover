@@ -11,6 +11,12 @@
 //   ・YAMLが無くINIファイル（旧形式）がある時は、INIを読んでYAMLに書き出す。
 //
 // USB、BLEとのやり取りは、同じ内容のJSONで行う（configToJson）。
+//
+// パスワードは本体の外に返さない。
+//   ・config.get の応答では password の代わりに、一覧の中の番号 id と、設定済みか
+//     どうかの hasPassword を返す。
+//   ・config.put で password が書かれていない項目は、id の番号のパスワードを保つ
+//     （configRestoreSecrets）。
 
 #include <Arduino.h>
 #include <SD.h>
@@ -90,7 +96,10 @@ static String ipText( const byte *ip )
 
 // 現在の設定をJSONにする
 //
-void configToJson( JsonDocument &doc )
+// secrets  true:パスワードを含める（設定ファイルへの書き出し用）
+//          false:パスワードの代わりに id と hasPassword を入れる（本体の外に返す用）
+//
+void configToJson( JsonDocument &doc, bool secrets )
 {
 	doc["receiver"]["name"] = mReceiverName;
 	doc["receiver"]["usbNmea"] = ( mUsbOutMode == 1 );
@@ -99,7 +108,11 @@ void configToJson( JsonDocument &doc )
 	for( int i=0; i < mNumWifi; i++ ){
 		JsonObject w = wifi.add<JsonObject>();
 		w["ssid"] = mWifiList[i].ssid;
-		w["password"] = mWifiList[i].password;
+		if ( secrets ) w["password"] = mWifiList[i].password;
+		else {
+			w["id"] = i;
+			w["hasPassword"] = ( mWifiList[i].password[0] != '\0' );
+		}
 		if ( mWifiList[i].ip[0] ) w["ip"] = ipText( mWifiList[i].ip );
 		if ( mWifiList[i].dns[0] ) w["dns"] = ipText( mWifiList[i].dns );
 	}
@@ -112,13 +125,18 @@ void configToJson( JsonDocument &doc )
 		s["port"] = src->port;
 		s["mount"] = src->mountPoint;
 		s["user"] = src->user;
-		s["password"] = src->password;
+		if ( secrets ) s["password"] = src->password;
+		else {
+			s["id"] = i - 1;
+			s["hasPassword"] = ( src->password[0] != '\0' );
+		}
 		s["gga"] = src->ggaPeriod;
 		s["protocol"] = ( src->protocol == PROTO_NONE ) ? "none" : "ntrip";
 	}
 
 	doc["rtk2go"]["user"] = mRtk2goUser;
-	doc["rtk2go"]["password"] = mRtk2goPassword;
+	if ( secrets ) doc["rtk2go"]["password"] = mRtk2goPassword;
+	else doc["rtk2go"]["hasPassword"] = ( mRtk2goPassword[0] != '\0' );
 	doc["ble"]["enable"] = ( mBleEnable != 0 );
 	doc["ble"]["nmea"] = mBleNmeaRate;
 	doc["softap"]["enable"] = ( mSoftApEnable != 0 );
@@ -131,6 +149,54 @@ void configToJson( JsonDocument &doc )
 	doc["log"]["chunkSec"] = (int) mSaveEndSec;
 	doc["jstph"]["baudrate"] = mPhUartBaudrate;
 	doc["jstph"]["format"] = ( mPhUartFormat == PH_UART_CSV ) ? "csv" : "nmea";
+}
+
+// 本体の外から受け取った設定（config.put）に、書かれていないパスワードを補う
+//
+// ・一覧（wifi, sources）の項目
+//     password がある            その値にする（空文字なら、パスワードなし）
+//     password が無く id がある  本体が持っている id 番目のパスワードを保つ
+//     どちらも無い               パスワードなし
+// ・rtk2go.password が無い時は、現在の値を保つ
+// ・id と hasPassword は取り除く（設定ファイルには書かない）
+//
+// 戻り値＝ 0:正常終了
+//         -1:id が正しくない
+//
+int configRestoreSecrets( JsonDocument &config )
+{
+	for( JsonObject w : config["wifi"].as<JsonArray>() ){
+		if ( ! w["password"].is<const char*>() ){
+			if ( w["id"].is<int>() ){
+				int id = w["id"];
+				if ( id < 0 || id >= mNumWifi ) return -1;
+				w["password"] = mWifiList[id].password;
+			}
+			else w["password"] = "";
+		}
+		w.remove( "id" );
+		w.remove( "hasPassword" );
+	}
+
+	for( JsonObject s : config["sources"].as<JsonArray>() ){
+		if ( ! s["password"].is<const char*>() ){
+			if ( s["id"].is<int>() ){
+				int id = s["id"];
+				if ( id < 0 || id + 1 >= mNumBaseSrc ) return -1;	// 0番目はUART
+				s["password"] = mBaseSrcList[ id + 1 ].password;
+			}
+			else s["password"] = "";
+		}
+		s.remove( "id" );
+		s.remove( "hasPassword" );
+	}
+
+	if ( config["rtk2go"].is<JsonObject>() ){
+		JsonObject r = config["rtk2go"];
+		if ( ! r["password"].is<const char*>() ) r["password"] = mRtk2goPassword;
+		r.remove( "hasPassword" );
+	}
+	return 0;
 }
 
 // JSONの内容を設定に反映する
@@ -353,7 +419,7 @@ int readConfig()
 		// 旧形式からの移行
 		if ( readIniFile( mIniPath ) < 0 ) return -1;
 		JsonDocument doc;
-		configToJson( doc );
+		configToJson( doc, true );
 		int nret = configSave( doc.as<JsonVariantConst>() );
 		dbgPrintf( "INI file converted to %s (%d)\r\n", mConfigPath, nret );
 		return 1;

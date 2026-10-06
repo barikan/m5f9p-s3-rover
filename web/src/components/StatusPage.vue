@@ -39,6 +39,7 @@ function startScan() {
 
 async function connectTo(device: FoundDevice) {
   scanning.value = false;
+  devices.value = [];       // 切断した後に、古い候補を残さない
   try {
     rover.attach(await host.connect(scanKind.value, device));
     if (host.platform === 'android') localStorage.setItem('lastDevice', JSON.stringify(device));

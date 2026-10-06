@@ -52,19 +52,28 @@ export interface RunConfig {
 /** 起動時の設定のうち、画面から変えるもの（run.set） */
 export type RunValues = Pick<RunConfig, 'wifi' | 'source' | 'format' | 'saveAtBoot'>;
 
-export interface WifiEntry {
-  ssid: string;
+/**
+ * 一覧の項目に付く、パスワードの扱い。本体はパスワードを返さない。
+ *   config.get … password の代わりに、一覧の中の番号 id と、設定済みかどうかの hasPassword が入る
+ *   config.put … password を書かなければ、本体が id の番号のパスワードを保つ
+ */
+interface SecretEntry {
+  id?: number;
+  hasPassword?: boolean;
   password?: string;
+}
+
+export interface WifiEntry extends SecretEntry {
+  ssid: string;
   ip?: string;
   dns?: string;
 }
 
-export interface SourceEntry {
+export interface SourceEntry extends SecretEntry {
   address: string;
   port?: number;
   mount?: string;
   user?: string;
-  password?: string;
   gga?: number;
   protocol?: string;
 }
@@ -124,7 +133,7 @@ export interface Option {
 /** 設定の1項目の入力欄 */
 export interface Field {
   label: string;
-  type?: 'text' | 'number' | 'bool' | 'select';
+  type?: 'text' | 'password' | 'number' | 'bool' | 'select';
   options?: Option[];
   help?: string;
   required?: boolean;

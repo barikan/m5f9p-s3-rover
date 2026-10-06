@@ -196,7 +196,7 @@ void blePoll()
 	char *line;
 	while( xQueueReceive( mQueueRxLine, &line, 0 ) == pdPASS ){
 		String reply;
-		cmdExecute( line, reply );
+		cmdExecute( line, reply, CMD_BLE );
 		free( line );
 		bleSendLine( reply );
 		cmdRestartIfRequested();

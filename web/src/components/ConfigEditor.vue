@@ -1,15 +1,19 @@
 <script setup lang="ts">
 // 本体の設定（設定ファイルの内容）を項目ごとに編集する。保存すると本体は再起動する。
+//
+// 本体はパスワードを返さない（設定済みかどうかの hasPassword だけが来る）。設定済みの
+// パスワードの欄は空で表示し、入力した時だけ送る。送らなければ本体が元の値を保つ。
 // 項目を増やす時は、src/config.cpp と sdcard/m5f9p/m5f9p.yaml.sample も揃える。
 import { reactive, ref } from 'vue';
 import * as rover from '../rover';
 import { toast } from '../store';
 import { confirmDialog, formDialog } from '../dialogs';
 import type { ConfigValue, DeviceConfig, Field, FormField, FormValues, SourceEntry, WifiEntry } from '../types';
-import { ArrowDown, ArrowUp } from 'lucide-vue-next';
+import { ArrowDown, ArrowUp, Lock } from 'lucide-vue-next';
 import { Button } from '@/components/ui/button';
 import FieldInput from './FieldInput.vue';
 import Section from './Section.vue';
+import SwitchField from './SwitchField.vue';
 
 const props = defineProps<{ config: DeviceConfig }>();
 const emit = defineEmits<{ close: [] }>();
@@ -32,7 +36,7 @@ interface PathField extends Field {
 
 const WIFI_FIELDS: FormField[] = [
   { key: 'ssid', label: 'SSID', required: true },
-  { key: 'password', label: 'パスワード' },
+  { key: 'password', label: 'パスワード', type: 'password' },
   { key: 'ip', label: '固定 IP アドレス', help: '空欄なら自動（DHCP）。指定した時のゲートウェイは x.x.x.1 になります' },
   { key: 'dns', label: 'DNS', help: '固定 IP アドレスを指定した時に使います' },
 ];
@@ -42,7 +46,7 @@ const SOURCE_FIELDS: FormField[] = [
   { key: 'port', label: 'ポート', type: 'number', default: 2101 },
   { key: 'mount', label: 'マウントポイント' },
   { key: 'user', label: 'ユーザー名' },
-  { key: 'password', label: 'パスワード' },
+  { key: 'password', label: 'パスワード', type: 'password' },
   { key: 'gga', label: 'GGA を送る間隔（秒）', type: 'number', default: 0, help: 'VRS 方式のサービスで必要です。0 は送りません' },
   {
     key: 'protocol', label: 'プロトコル', type: 'select', default: 'ntrip',
@@ -106,7 +110,7 @@ const OTHER_GROUPS: { title: string; fields: PathField[] }[] = [
   {
     title: 'rtk2go.com', fields: [
       { path: ['rtk2go', 'user'], label: 'ユーザー名', help: '本体の画面で rtk2go.com のマウントポイントを選んだ時に使います' },
-      { path: ['rtk2go', 'password'], label: 'パスワード' },
+      { path: ['rtk2go', 'password'], label: 'パスワード', type: 'password' },
     ],
   },
   {
@@ -134,14 +138,52 @@ function setPath([group, key]: PathField['path'], value: ConfigValue) {
 }
 
 /** 一覧の項目を編集する。index が負の時は追加 */
+const KEEP_HELP = '設定済みです。変更する時だけ入力してください';
+const CLEAR_LABEL = 'パスワードを消す';
+
+/** 本体にパスワードが設定されていて、この画面でまだ変えていない */
+const keepsPassword = (entry: Entry) => !!entry.hasPassword && entry.password === undefined;
+const hasPassword = (entry: Entry) => keepsPassword(entry) || !!entry.password;
+
 async function editEntry(list: ListDef, index: number) {
   const entries = entriesOf(list);
-  const before = index < 0 ? {} : entries[index] as unknown as FormValues;
-  const values = await formDialog(index < 0 ? list.addLabel : `${list.title}の編集`, list.fields, before);
+  const old = index < 0 ? null : entries[index];
+  const keeps = !!old && keepsPassword(old);
+
+  // 本体のパスワードを保っている項目は、欄を空にして「消す」の入・切を足す
+  const fields = !keeps ? list.fields : list.fields.flatMap<FormField>(f => (f.key !== 'password' ? [f]
+    : [{ ...f, help: KEEP_HELP }, { key: 'clearPassword', label: CLEAR_LABEL, type: 'bool' }]));
+  const values = await formDialog(old ? `${list.title}の編集` : list.addLabel, fields, (old ?? {}) as unknown as FormValues);
   if (!values) return;
-  if (index < 0) entries.push(values as unknown as Entry);
-  else entries[index] = values as unknown as Entry;
+
+  const { clearPassword, password, ...rest } = values;
+  const entry = rest as unknown as Entry;
+  if (old?.id !== undefined) entry.id = old.id;
+  if (keeps && !clearPassword && password === '') entry.hasPassword = true;     // 送らない。本体が保つ
+  else entry.password = clearPassword ? '' : String(password ?? '');
+  if (old) entries[index] = entry;
+  else entries.push(entry);
   dirty.value = true;
+}
+
+// rtk2go のパスワード（一覧ではないので id は無い。送らなければ本体が保つ）
+const rtk2goKeeps = !!groupOf('rtk2go')?.hasPassword;
+const rtk2goClear = ref(false);
+const isRtk2goPassword = (f: PathField) => f.path[0] === 'rtk2go' && f.path[1] === 'password';
+
+/** 本体に送る設定。画面だけで使う印を取り除く */
+function payload(): DeviceConfig {
+  const config: DeviceConfig = JSON.parse(JSON.stringify(editing));
+  for (const key of ['wifi', 'sources'] as ListKey[]) {
+    for (const entry of (config[key] ?? []) as Entry[]) delete entry.hasPassword;
+  }
+  const rtk2go = config.rtk2go as Record<string, ConfigValue> | undefined;
+  if (rtk2go) {
+    delete rtk2go.hasPassword;
+    if (rtk2goClear.value) rtk2go.password = '';
+    else if (rtk2goKeeps && !rtk2go.password) delete rtk2go.password;
+  }
+  return config;
 }
 
 function moveEntry(list: ListDef, index: number, delta: number) {
@@ -164,7 +206,7 @@ async function close() {
 async function save() {
   if (!await confirmDialog('保存して本体を再起動しますか？',
     '本体の設定ファイルを書き換えます。手で書いたコメントは消えます。再起動の間、測位と記録が数秒止まります。', '保存')) return;
-  rover.saveConfig(JSON.parse(JSON.stringify(editing)));
+  rover.saveConfig(payload());
   toast('本体に送信しました');
   emit('close');
 }
@@ -181,6 +223,7 @@ async function save() {
       <div class="divide-y border-y">
         <div v-for="(entry, i) in entriesOf(list)" :key="i" class="flex items-center gap-1 py-2" data-entry>
           <div class="min-w-0 flex-1 break-words" data-name>{{ list.nameOf(entry) }}</div>
+          <Lock v-if="hasPassword(entry)" class="text-muted-foreground size-4 shrink-0" aria-label="パスワードあり" />
           <Button variant="ghost" size="icon-sm" :disabled="i === 0" aria-label="上へ" @click="moveEntry(list, i, -1)"><ArrowUp /></Button>
           <Button variant="ghost" size="icon-sm" :disabled="i === entriesOf(list).length - 1" aria-label="下へ" @click="moveEntry(list, i, 1)"><ArrowDown /></Button>
           <Button variant="outline" size="sm" @click="editEntry(list, i)">編集</Button>
@@ -193,9 +236,15 @@ async function save() {
 
     <Section v-for="group in OTHER_GROUPS" :key="group.title" :title="group.title">
       <div class="-mt-4">
-        <FieldInput
-          v-for="f in group.fields" :key="f.label" :field="f"
-          :model-value="getPath(f.path)" @update:model-value="setPath(f.path, $event)" />
+        <template v-for="f in group.fields" :key="f.label">
+          <template v-if="isRtk2goPassword(f) && rtk2goKeeps">
+            <FieldInput
+              v-if="!rtk2goClear" :field="{ ...f, help: KEEP_HELP }"
+              :model-value="getPath(f.path)" @update:model-value="setPath(f.path, $event)" />
+            <SwitchField v-model="rtk2goClear" :label="CLEAR_LABEL" @update:model-value="dirty = true" />
+          </template>
+          <FieldInput v-else :field="f" :model-value="getPath(f.path)" @update:model-value="setPath(f.path, $event)" />
+        </template>
       </div>
     </Section>
   </div>

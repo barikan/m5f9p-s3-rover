@@ -16,9 +16,16 @@
 //   rate      {"hz":1-20}        1秒あたりの測位回数を変更する
 //   nmea      {"hz":0-5}         BLEでNMEAを送る回数（1秒あたり）を変更する。0:送らない
 //                                設定ファイルの値は変えない。BLEを切断すると設定の値に戻る
-//   config.get  設定（設定ファイルの内容）をJSONで返す。パスワードを含む
+//   config.get  設定（設定ファイルの内容）をJSONで返す。パスワードは返さない。
+//               一覧（wifi, sources）の項目には、password の代わりに、一覧の中の番号 id と、
+//               設定済みかどうかの hasPassword が入る
 //   config.put  {"config":{...}}  設定を書き換える（再起動後に有効）。設定ファイルのコメントは消える
-//   file.get    設定ファイル(YAML)のテキストをそのまま返す
+//               一覧の項目で password を書かなければ、id の番号のパスワードを保つ
+//               （詳しくは config.cpp の configRestoreSecrets）
+//   file.get    設定ファイル(YAML)のテキストをそのまま返す。パスワードを含むので、USBのみ
+//
+//   設定を書き換えた後は、再起動するまで config.get / config.put は使えない
+//   （本体が持っている一覧と id がずれるため）
 //   file.put    {"text":"..."}    設定ファイル(YAML)をテキストで書き換える（再起動後に有効）
 //                                 YAMLとして正しくない時は書き込まずにエラーを返す
 //   run.get   起動時の実行パラメータと、選択できるWifi接続先、基準局データ取得先を返す
@@ -120,29 +127,47 @@ void cmdRestartIfRequested()
 	ESP.restart();
 }
 
-void configToJson( JsonDocument &doc );
+void configToJson( JsonDocument &doc, bool secrets );
+int configRestoreSecrets( JsonDocument &config );
 int configSave( JsonVariantConst config );
+
+static bool mConfigWritten = false;	// 設定ファイルを書き換えた（再起動するまで、本体の設定と合わない）
 bool configCheckYaml( const char *text, String &error );
 
 static void cmdConfigGet( JsonDocument &re )
 {
+	if ( mConfigWritten ) { re["error"] = "restart required"; return; }
+
 	JsonDocument config;
-	configToJson( config );
+	configToJson( config, false );
 	re["config"] = config;
 	re["ok"] = true;
 }
 
 static void cmdConfigPut( JsonDocument &cmd, JsonDocument &re )
 {
-	int nret = configSave( cmd["config"] );
+	if ( mConfigWritten ) { re["error"] = "restart required"; return; }
+	if ( ! cmd["config"].is<JsonObject>() ) { re["error"] = "no config"; return; }
+
+	// パスワードが書かれていない項目に、本体が持っているものを補う
+	JsonDocument config;
+	config.set( cmd["config"] );
+	if ( configRestoreSecrets( config ) < 0 ) { re["error"] = "bad id"; return; }
+
+	int nret = configSave( config.as<JsonVariantConst>() );
 	if ( nret == -1 ) re["error"] = "no config";
 	else if ( nret == -2 ) re["error"] = "too large";
 	else if ( nret < 0 ) re["error"] = "can't write config file";
-	else re["ok"] = true;
+	else {
+		mConfigWritten = true;
+		re["ok"] = true;
+	}
 }
 
-static void cmdFileGet( JsonDocument &re )
+static void cmdFileGet( JsonDocument &re, int channel )
 {
+	if ( channel != CMD_USB ) { re["error"] = "usb only"; return; }
+
 	char *buff = (char*) malloc( FILE_SIZE_MAX + 1 );
 	if ( ! buff ) { re["error"] = "no memory"; return; }
 
@@ -166,6 +191,7 @@ static void cmdFilePut( JsonDocument &cmd, JsonDocument &re )
 	String problem;
 	if ( ! configCheckYaml( text, problem ) ) { re["error"] = "YAML error: " + problem; return; }
 	if ( sdSave( mConfigPath, (char*) text, n, FILE_WRITE ) != n ) { re["error"] = "can't write config file"; return; }
+	mConfigWritten = true;
 	re["bytes"] = n;
 	re["ok"] = true;
 }
@@ -249,8 +275,9 @@ static void cmdRunSet( JsonDocument &cmd, JsonDocument &re )
 //
 // line: コマンド（JSON）。パースの際に書き換えられる
 // reply: 応答（JSON）
+// channel: 入口。CMD_USB または CMD_BLE
 //
-void cmdExecute( char *line, String &reply )
+void cmdExecute( char *line, String &reply, int channel )
 {
 	JsonDocument cmd, re;
 
@@ -290,7 +317,7 @@ void cmdExecute( char *line, String &reply )
 	}
 	else if ( strcmp( name, "config.get" ) == 0 ) cmdConfigGet( re );
 	else if ( strcmp( name, "config.put" ) == 0 ) cmdConfigPut( cmd, re );
-	else if ( strcmp( name, "file.get" ) == 0 ) cmdFileGet( re );
+	else if ( strcmp( name, "file.get" ) == 0 ) cmdFileGet( re, channel );
 	else if ( strcmp( name, "file.put" ) == 0 ) cmdFilePut( cmd, re );
 	else if ( strcmp( name, "run.get" ) == 0 ) cmdRunGet( re );
 	else if ( strcmp( name, "run.set" ) == 0 ) cmdRunSet( cmd, re );
@@ -338,7 +365,7 @@ void cmdPollUsb()
 		if ( line[0] != '{' ) continue;
 
 		String reply;
-		cmdExecute( line, reply );
+		cmdExecute( line, reply, CMD_USB );
 		Serial.println( reply );
 		cmdRestartIfRequested();
 	}

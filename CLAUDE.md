@@ -164,7 +164,10 @@ SD カードの `/m5f9p/m5f9p.yaml`。読み書きは `config.cpp`、書式の�
 - **書き出しは自前(`yamlEmit`)で行い、文字列は必ず引用符で囲む。** YAMLDuino の `serializeYml` は囲まないので、先頭が 0 の数字や `#`、`:` を含むパスワードが壊れる。
 - 起動時の設定(`stRunInfo`)は別のファイル `/m5f9p/m5f9p.run.json`。本体が測位レートの変更などで随時書き直すので、設定ファイルと分けてある(分けないと、そのたびに手書きのコメントが消える)。Wi-Fi は番号ではなく SSID で覚える。
 - 設定は起動時に1回だけ読む。`config.put` / `file.put` はファイルを書くだけで、動作中の変数は変えない(一覧を使っているタスクがあるため)。反映は再起動で行う。
-- `config.get` はパスワードを含む。BLE のペアリングは未実装なので、近くにいれば誰でも読める。
+- **パスワードは本体の外に返さない。** `config.get` は `password` の代わりに、一覧の中の番号 `id` と `hasPassword` を返す。`config.put` で `password` が書かれていない項目は、本体が `id` の番号のパスワードを保つ(`config.cpp` の `configRestoreSecrets`)。パスワードの項目を増やすときは、`configToJson`、`configRestoreSecrets`、画面の `ConfigEditor.vue` を揃える。
+- `file.get`(YAML をそのまま返す)はパスワードを含むので、USB からだけ受け付ける(`cmdExecute` の `channel`)。`mise run config-get` はこれを使う。
+- 設定を書き換えたあとは、再起動するまで `config.get` / `config.put` はエラーになる(本体が持っている一覧と `id` がずれるため)。
+- BLE のペアリングは未実装。近くにいれば誰でも接続でき、設定の書き換えや再起動ができる。
 - 旧形式の INI は、YAML がないときだけ読んで変換する(`settings.cpp` の `readIniFile()`)。
 
 ## コードの書き方

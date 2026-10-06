@@ -206,7 +206,11 @@ int setCsvData( struct stGpsData* pGpsData, char* buff, int buffSize );
 // ************************************************************
 
 void cmdPollUsb();
-void cmdExecute( char *line, String &reply );
+// コマンドの入口
+#define CMD_USB 0
+#define CMD_BLE 1
+
+void cmdExecute( char *line, String &reply, int channel );
 void cmdStatusEvent( String &line );
 void cmdRestartIfRequested();
 
