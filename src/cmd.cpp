@@ -29,6 +29,7 @@
 //   （本体が持っている一覧と id がずれるため）
 //   file.put    {"text":"..."}    設定ファイル(YAML)をテキストで書き換える（再起動後に有効）
 //                                 YAMLとして正しくない時は書き込まずにエラーを返す
+//   ble.unpair  BLEのペアリングの記憶を全て消す。USBのみ
 //   ini.remove  旧形式の設定ファイル(m5f9p.ini)をSDカードから削除する。USBのみ
 //               （パスワードが平文で書かれているため。YAMLへの移行が済んでいる事）
 //   run.get   起動時の実行パラメータと、選択できるWifi接続先、基準局データ取得先を返す
@@ -324,6 +325,14 @@ void cmdExecute( char *line, String &reply, int channel )
 	else if ( strcmp( name, "config.put" ) == 0 ) cmdConfigPut( cmd, re );
 	else if ( strcmp( name, "file.get" ) == 0 ) cmdFileGet( re, channel );
 	else if ( strcmp( name, "file.put" ) == 0 ) cmdFilePut( cmd, re );
+	else if ( strcmp( name, "ble.unpair" ) == 0 ){
+		if ( channel != CMD_USB ) re["error"] = "usb only";
+		else if ( ! mBleEnable ) re["error"] = "BLE disabled";
+		else {
+			re["removed"] = bleUnpairAll();
+			re["ok"] = true;
+		}
+	}
 	else if ( strcmp( name, "ini.remove" ) == 0 ){
 		if ( channel != CMD_USB ) re["error"] = "usb only";
 		else if ( ! mIniRemains ) re["error"] = "no ini file";

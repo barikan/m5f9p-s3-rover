@@ -45,6 +45,8 @@ rtk2go:
 # BLE。スマートフォンやPCから状況の表示と操作を行う。
 ble:
   enable: true
+  pairing: true        # 初めて接続する相手に、本体の画面に出る6桁の番号の入力を求める。
+                       # false にすると、近くにいる誰でも接続して操作できる
   nmea: 1              # NMEA(GPRMC,GPGGA)を送る回数（1秒あたり）。0～5。0:送らない
 
 # soft AP。WifiルーターなしでTCPサーバに接続する時に使う。

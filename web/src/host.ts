@@ -8,12 +8,13 @@
 //
 // 画面側は、ここが返す「接続」（send, onLine, onState, close）だけを使う。
 
-import type { Connection, ConnectionKind, ConnState, FoundDevice, Storage } from './types';
+import type { Connection, ConnectionKind, ConnState, FoundDevice, PairingReply, PairingRequest, Storage } from './types';
 
 const NUS_SERVICE = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
 const NUS_RX = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
 const NUS_TX = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
 const USB_VENDOR_ESPRESSIF = 0x303a;
+const BLE_SILENT_MS = 6000;       // 接続してから、この時間何も届かなければつなぎ直す
 
 const android = window.AndroidBridge || null;
 const electron = window.host || null;
@@ -51,7 +52,7 @@ function lineSplitter(onLine: (line: string) => void) {
 // }
 
 function makeConnection(name: string): Connection {
-  return { name, onLine: () => {}, onState: () => {}, send: () => {}, close: () => {} };
+  return { name, onLine: () => {}, onState: () => {}, onMessage: () => {}, send: () => {}, close: () => {} };
 }
 
 // ---------------------------------------------------------------- Windows: USB
@@ -108,6 +109,24 @@ async function connectUsb() {
 }
 
 // ---------------------------------------------------------------- Windows: BLE
+//
+// 本体はペアリングを求める（本体の画面に6桁の番号が出る）。Windowsでは、番号の入力を
+// アプリが受け持つ（windows/main.js の setBluetoothPairingHandler）。入力の画面は
+// setPairingPrompt() で渡してもらう（ここは画面の部品に依存しないため）。
+
+/** ペアリングの番号を利用者に尋ねる関数を登録する（Windows） */
+export function setPairingPrompt(prompt: (request: PairingRequest) => Promise<PairingReply>) {
+  if (!electron) return;
+  electron.onBlePairing(async request => {
+    let reply: PairingReply = { confirmed: false };
+    try {
+      reply = await prompt(request);
+    } catch (e) {
+      console.warn('pairing:', e);
+    }
+    electron.replyBlePairing(reply);
+  });
+}
 
 let bleRequest: Promise<BluetoothDevice> | null = null;      // 接続先の選択待ちになっている requestDevice()
 
@@ -137,12 +156,23 @@ async function connectBle(id: string) {
     const tx = await service.getCharacteristic(NUS_TX);
     rx = await service.getCharacteristic(NUS_RX);
     const split = lineSplitter(line => conn.onLine(line));
+    let received = false;
     tx.addEventListener('characteristicvaluechanged', () => {
+      received = true;
       const v = tx.value;
       if (v) split(new Uint8Array(v.buffer, v.byteOffset, v.byteLength));
     });
     await tx.startNotifications();
     conn.onState('connected');
+
+    // ペアリングした直後の接続では、通知が届かない事があった（つなぎ直すと届く）。
+    // 本体は1秒毎に状況を送るので、しばらく何も届かなければつなぎ直す
+    setTimeout(() => {
+      if (!received && !closed && gatt.connected && server === device.gatt) {
+        console.warn('ble: no data. reconnecting');
+        gatt.disconnect();
+      }
+    }, BLE_SILENT_MS);
   }
 
   async function retry() {
@@ -151,7 +181,7 @@ async function connectBle(id: string) {
         await open();
         return;
       } catch (e) {
-        console.warn('ble:', e);
+        console.warn('ble:', e instanceof Error ? `${e.name}: ${e.message}` : e);
         await new Promise(resolve => setTimeout(resolve, 2000));
       }
     }
@@ -181,6 +211,7 @@ async function connectBle(id: string) {
 
 // ---------------------------------------------------------------- Android
 
+// Kotlin側からの通知。{type:'devices',list} | {type:'state',state,name} | {type:'line',text} | {type:'message',text}
 type NativeMessage = { type: string; list?: FoundDevice[]; state?: ConnState; name?: string; text?: string };
 const nativeHandlers: Record<string, (message: NativeMessage) => void> = {};
 
@@ -194,6 +225,7 @@ function connectAndroid(address: string | null, name?: string) {
   const bridge = android!;
   const conn = makeConnection(name || address || 'Bluetooth');
   nativeHandlers.line = m => conn.onLine(m.text ?? '');
+  nativeHandlers.message = m => conn.onMessage(m.text ?? '');
   nativeHandlers.state = m => {
     if (m.name) conn.name = m.name;
     if (m.state) conn.onState(m.state);

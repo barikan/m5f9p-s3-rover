@@ -192,6 +192,7 @@ void configToJson( JsonDocument &doc, bool secrets )
 	else doc["rtk2go"]["hasPassword"] = ( mRtk2goPassword[0] != '\0' );
 	doc["ble"]["enable"] = ( mBleEnable != 0 );
 	doc["ble"]["nmea"] = mBleNmeaRate;
+	doc["ble"]["pairing"] = ( mBlePairing != 0 );
 	doc["softap"]["enable"] = ( mSoftApEnable != 0 );
 	doc["softap"]["ip"] = mSoftApIp.toString();
 	doc["google"]["key"] = mGoogleKey;
@@ -303,6 +304,7 @@ void configFromJson( JsonDocument &doc )
 	copyStr( mRtk2goPassword, sizeof(mRtk2goPassword), cfgSecret( doc["rtk2go"]["password"], mRtk2goPassword ) );
 
 	mBleEnable = cfgBool( doc["ble"]["enable"], mBleEnable != 0 ) ? 1 : 0;
+	mBlePairing = cfgBool( doc["ble"]["pairing"], mBlePairing != 0 ) ? 1 : 0;
 	mBleNmeaRate = constrain( cfgInt( doc["ble"]["nmea"], mBleNmeaRate ), 0, BLE_NMEA_RATE_MAX );
 
 	mSoftApEnable = cfgBool( doc["softap"]["enable"], mSoftApEnable != 0 ) ? 1 : 0;

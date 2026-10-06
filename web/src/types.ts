@@ -101,6 +101,22 @@ export interface TrackPoint {
 /** rover.ts の state のうち、変わったものの名前 */
 export type Change = 'conn' | 'status' | 'runConfig' | 'config' | 'mapsKey' | 'track' | 'message';
 
+/**
+ * BLEのペアリングで、利用者に求める事（Windows）
+ *   providePin … 本体の画面に出ている番号を入力する
+ *   confirmPin … pin が本体の画面の番号と同じか確かめる
+ *   confirm    … ペアリングしてよいか確かめる
+ */
+export interface PairingRequest {
+  kind: 'providePin' | 'confirmPin' | 'confirm';
+  pin: string;
+}
+
+export interface PairingReply {
+  confirmed: boolean;
+  pin?: string;
+}
+
 /** 本体との接続。動作環境ごとの実装は host.ts */
 export interface Connection {
   name: string;                           // 表示用の名前
@@ -108,6 +124,7 @@ export interface Connection {
   close(): void;                          // 切断する（再接続もしない）
   onLine: (line: string) => void;         // 受信した行の通知先
   onState: (state: ConnState) => void;    // 状態の通知先
+  onMessage: (text: string) => void;      // 利用者に見せる文言の通知先（ペアリングの失敗など）
 }
 
 export type ConnectionKind = 'usb' | 'ble';

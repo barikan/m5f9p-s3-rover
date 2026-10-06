@@ -16,6 +16,17 @@
 // BLEのコールバックはBLEのタスクから呼ばれる。そこではコマンドをキューに
 // 積むだけにし、実行と送信はloop()から呼ばれるblePoll()で行う。
 //
+// ペアリング（設定 ble.pairing が true の時。既定）
+//   ・特性の権限で、暗号化されていない読み書きを拒否する。相手は拒否されると
+//     ペアリングを始める。初めての相手の時は、本体の画面に6桁の番号を表示し、
+//     相手がそれを入力する（LE Secure Connections、MITM保護）。番号は毎回変わる。
+//   ・本体からはペアリングを求めない。求めると、Androidではペアリングの画面が
+//     前面に出ず、通知になってしまう（アプリが始めたペアリングは前面に出る）。
+//   ・ペアリングした相手は本体が覚える（NVS）。次からは番号なしで暗号化される。
+//   ・暗号化が済むまで、コマンドは実行せず、状況も送らない。
+//   ・ペアリングのコールバックもBLEのタスクから呼ばれる。変数に入れるだけにし、
+//     画面への表示は loop() が blePasskey() を見て行う。
+//
 // WifiとBLEは1つの無線を時分割で使う。Wifiの通信を妨げないよう、
 // アドバタイズと接続の間隔は長めにしている。
 
@@ -23,6 +34,8 @@
 #include <BLEDevice.h>
 #include <BLEServer.h>
 #include <BLE2902.h>
+#include <BLESecurity.h>
+#include <esp_gap_ble_api.h>
 
 #include "app.h"
 
@@ -35,6 +48,8 @@
 #define BLE_MTU_SMALL 100		// 相手のMTUがこれ未満の時は送る量を減らす
 #define BLE_STATUS_PERIOD 1000	// 状況を送る間隔（ミリ秒）
 #define BLE_STATUS_PERIOD_SMALL_MTU 3000
+#define BLE_AUTH_TIMEOUT 60000	// 接続してから暗号化が済むまで待つ時間（ミリ秒）。過ぎたら切断する
+#define BLE_BOND_MAX 15
 
 volatile bool mBleConnected;
 
@@ -50,9 +65,37 @@ static QueueHandle_t mQueueNmea;		// 送信待ちのNMEA。最新の1つだけ�
 static volatile bool mRestartAdvertising;
 static volatile uint16_t mPeerMtu = 23;
 
+// ペアリング
+static volatile bool mAuthenticated;		// 暗号化が済んだ（ペアリングを使わない時は、接続した時点でtrue）
+static volatile int mPasskey = -1;			// 画面に表示する番号。-1:表示しない
+static volatile bool mAuthFailed;			// ペアリングに失敗した（blePoll()で切断する）
+static volatile uint16_t mConnId;
+static volatile unsigned long mConnectMillis;
+
+class SecurityCallbacks : public BLESecurityCallbacks {
+	// 本体は番号を表示するだけ（入力はできない）
+	uint32_t onPassKeyRequest() { return 0; }
+	bool onConfirmPIN( uint32_t pin ) { return false; }
+	bool onSecurityRequest() { return true; }
+
+	void onPassKeyNotify( uint32_t passkey ) {
+		mPasskey = (int) passkey;
+	}
+	void onAuthenticationComplete( esp_ble_auth_cmpl_t result ) {
+		mPasskey = -1;
+		if ( result.success ) mAuthenticated = true;
+		else mAuthFailed = true;
+	}
+};
+
 class ServerCallbacks : public BLEServerCallbacks {
 	void onConnect( BLEServer* server, esp_ble_gatts_cb_param_t *param ) {
 		mPeerMtu = 23;
+		mConnId = param->connect.conn_id;
+		mConnectMillis = millis();
+		mAuthFailed = false;
+		mPasskey = -1;
+		mAuthenticated = ! mBlePairing;
 		mBleConnected = true;
 
 		// 接続間隔を長めにして、Wifiが使える時間を確保する（単位1.25ms：30～50ms）
@@ -67,6 +110,8 @@ class ServerCallbacks : public BLEServerCallbacks {
 	}
 	void onDisconnect( BLEServer* server ) {
 		mBleConnected = false;
+		mAuthenticated = false;
+		mPasskey = -1;
 		mBleNmeaRateNow = mBleNmeaRate;
 		mRestartAdvertising = true;
 	}
@@ -97,6 +142,39 @@ class RxCallbacks : public BLECharacteristicCallbacks {
 	}
 };
 
+// 画面に表示するペアリングの番号
+//
+// 戻り値＝ 0～999999:表示する番号
+//         -1:表示しない
+//
+int blePasskey()
+{
+	return mPasskey;
+}
+
+// ペアリングを覚えている相手の数
+//
+int bleBondCount()
+{
+	return esp_ble_get_bond_device_num();
+}
+
+// 覚えているペアリングを全て消す
+//
+// ・接続中の相手は、次の接続からペアリングし直しになる。
+// ・相手の側（スマートフォン、PC）にも記憶が残るので、そちらでも登録を消す必要がある。
+//
+// 戻り値＝ 消した数
+//
+int bleUnpairAll()
+{
+	esp_ble_bond_dev_t list[ BLE_BOND_MAX ];
+	int num = BLE_BOND_MAX;
+	if ( esp_ble_get_bond_device_list( &num, list ) != ESP_OK ) return 0;
+	for( int i=0; i < num; i++ ) esp_ble_remove_bond_device( list[i].bd_addr );
+	return num;
+}
+
 // BLEを開始する
 //
 // 戻り値＝ 0:正常終了
@@ -116,10 +194,27 @@ int bleStart()
 
 	BLEService *service = mServer->createService( NUS_SERVICE_UUID );
 	mTxChar = service->createCharacteristic( NUS_TX_UUID, BLECharacteristic::PROPERTY_NOTIFY );
-	mTxChar->addDescriptor( new BLE2902() );
+	BLE2902 *cccd = new BLE2902();
+	mTxChar->addDescriptor( cccd );
 	BLECharacteristic *rxChar = service->createCharacteristic( NUS_RX_UUID,
 						BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_WRITE_NR );
 	rxChar->setCallbacks( new RxCallbacks() );
+
+	if ( mBlePairing ){
+		// 暗号化されていない読み書き（通知を受け取る設定を含む）を拒否する
+		mTxChar->setAccessPermissions( ESP_GATT_PERM_READ_ENC_MITM );
+		cccd->setAccessPermissions( ESP_GATT_PERM_READ_ENC_MITM | ESP_GATT_PERM_WRITE_ENC_MITM );
+		rxChar->setAccessPermissions( ESP_GATT_PERM_WRITE_ENC_MITM );
+
+		// BLEDevice::setEncryptionLevel() は呼ばない。呼ぶと、ライブラリが接続のたびに本体から
+		// ペアリングを求める（ファイル先頭の説明を参照）
+		BLEDevice::setSecurityCallbacks( new SecurityCallbacks() );
+		BLESecurity security;
+		security.setAuthenticationMode( ESP_LE_AUTH_REQ_SC_MITM_BOND );
+		security.setCapability( ESP_IO_CAP_OUT );		// 番号を表示する
+		security.setInitEncryptionKey( ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK );
+		security.setRespEncryptionKey( ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK );
+	}
 	service->start();
 
 	BLEAdvertising *advertising = BLEDevice::getAdvertising();
@@ -129,7 +224,7 @@ int bleStart()
 	advertising->setMaxInterval( 0x280 );	// 400ms
 	BLEDevice::startAdvertising();
 
-	dbgPrintf( "BLE started  name=%s\r\n", mReceiverName );
+	dbgPrintf( "BLE started  name=%s pairing=%d bonded=%d\r\n", mReceiverName, mBlePairing, bleBondCount() );
 	return 0;
 }
 
@@ -193,16 +288,38 @@ void blePoll()
 		BLEDevice::startAdvertising();
 	}
 
+	// ペアリングに失敗した、または時間内に済まなかった時は切断する
+	if ( mBleConnected && ! mAuthenticated && ( mAuthFailed || millis() - mConnectMillis > BLE_AUTH_TIMEOUT ) ){
+		dbgPrintf( "BLE pairing %s\r\n", mAuthFailed ? "failed" : "timeout" );
+		mAuthFailed = false;
+		mConnectMillis = millis();
+		mServer->disconnect( mConnId );
+	}
+
 	char *line;
 	while( xQueueReceive( mQueueRxLine, &line, 0 ) == pdPASS ){
-		String reply;
-		cmdExecute( line, reply, CMD_BLE );
+		if ( mAuthenticated ){		// 暗号化が済むまでは実行しない
+			String reply;
+			cmdExecute( line, reply, CMD_BLE );
+			bleSendLine( reply );
+		}
 		free( line );
-		bleSendLine( reply );
 		cmdRestartIfRequested();
 	}
 
-	if ( ! mBleConnected ) return;
+	// ペアリングの経過をデバグ出力する（番号は本体の画面にも出ている）
+	static int passkeyLast = -1;
+	static bool authenticatedLast = false;
+	if ( mPasskey != passkeyLast ){
+		passkeyLast = mPasskey;
+		if ( passkeyLast >= 0 ) dbgPrintf( "BLE pairing code %06d\r\n", passkeyLast );
+	}
+	if ( mAuthenticated != authenticatedLast ){
+		authenticatedLast = mAuthenticated;
+		if ( authenticatedLast && mBlePairing ) dbgPrintf( "BLE encrypted  bonded=%d\r\n", bleBondCount() );
+	}
+
+	if ( ! mBleConnected || ! mAuthenticated ) return;
 
 	static char nmea[ SAVE_BUFF_MAX ];
 	if ( xQueueReceive( mQueueNmea, nmea, 0 ) == pdPASS ) bleSend( nmea, strlen( nmea ) );

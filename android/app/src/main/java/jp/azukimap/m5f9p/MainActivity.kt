@@ -118,6 +118,8 @@ class MainActivity : ComponentActivity(), BleClient.Listener {
 
     override fun onLine(line: String) = notifyPage(JSONObject().put("type", "line").put("text", line))
 
+    override fun onMessage(text: String) = notifyPage(JSONObject().put("type", "message").put("text", text))
+
     // ---------------------------------------------------------------- 画面 → アプリ
     //
     // WebViewのスレッドから呼ばれる。BLEの操作はメインスレッドで行う。

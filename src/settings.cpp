@@ -30,6 +30,7 @@ int mBleEnable = 1;
 
 // BLEでNMEAを送る回数（1秒あたり）。0:送らない
 int mBleNmeaRate = 1;
+int mBlePairing = 1;			// BLEのペアリング 0:使わない 1:使う
 
 struct stBaseSource mBaseSrcList[ CONFIG_LIST_MAX + 1 ];	// 0番目はUART
 int mNumBaseSrc;

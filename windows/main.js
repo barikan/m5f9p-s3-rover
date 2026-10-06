@@ -21,6 +21,7 @@ const USB_VENDOR_ESPRESSIF = 0x303a;
 
 let mainWindow = null;
 let bleSelect = null;       // BLEの接続先の選択待ちになっているコールバック
+let blePairing = null;      // BLEのペアリングの入力待ちになっているコールバック
 
 // APP_URL へのアクセスを web/ のファイルに差し替える。それ以外の https は通常どおり通信する。
 function handleHttps(request) {
@@ -75,7 +76,21 @@ function setupDevices(window) {
     bleSelect = callback;
     window.webContents.send('ble-devices', deviceList.map(d => ({ id: d.deviceId, name: d.deviceName, detail: d.deviceId })));
   });
+
+  // BLEのペアリング。本体の画面に出る番号を、画面のダイアログで入力してもらう。
+  // これを用意しないと、Windowsでは番号の要るペアリングが自動で取り消される。
+  //   kind: 'providePin'（番号を入力する） | 'confirmPin'（番号が同じか確かめる） | 'confirm'
+  session.setBluetoothPairingHandler((details, callback) => {
+    if (blePairing) blePairing({ confirmed: false });
+    blePairing = callback;
+    window.webContents.send('ble-pairing', { kind: details.pairingKind, pin: details.pin || '' });
+  });
 }
+
+ipcMain.on('ble-pairing-reply', (event, reply) => {
+  if (blePairing) blePairing({ confirmed: !!reply.confirmed, pin: reply.pin || null });
+  blePairing = null;
+});
 
 ipcMain.on('ble-select', (event, id) => {
   if (bleSelect) bleSelect(id);       // '' は「選ばずにやめる」

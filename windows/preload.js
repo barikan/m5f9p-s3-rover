@@ -20,4 +20,12 @@ contextBridge.exposeInMainWorld('host', {
     ipcRenderer.on('ble-devices', (event, list) => callback(list));
   },
   selectBleDevice: id => ipcRenderer.send('ble-select', id),
+
+  // BLEのペアリング。番号の入力を求められた時に callback({kind, pin}) が呼ばれる。
+  // 結果は replyBlePairing({confirmed, pin}) で返す
+  onBlePairing: callback => {
+    ipcRenderer.removeAllListeners('ble-pairing');
+    ipcRenderer.on('ble-pairing', (event, request) => callback(request));
+  },
+  replyBlePairing: reply => ipcRenderer.send('ble-pairing-reply', reply),
 });

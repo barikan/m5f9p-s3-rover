@@ -100,6 +100,7 @@ export function attach(conn: Connection) {
   connection = conn;
   state.name = conn.name;
   conn.onLine = onLine;
+  conn.onMessage = say;
   conn.onState = s => {
     state.conn = s;
     state.name = conn.name;

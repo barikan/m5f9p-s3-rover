@@ -76,6 +76,10 @@ const OTHER_GROUPS: { title: string; fields: PathField[] }[] = [
   {
     title: 'BLE', fields: [
       { path: ['ble', 'enable'], label: 'BLE を使う', type: 'bool', help: '切ると、このアプリから BLE で接続できなくなります' },
+      {
+        path: ['ble', 'pairing'], label: 'ペアリングを使う', type: 'bool',
+        help: '初めて接続する時に、本体の画面に出る番号の入力を求めます。切ると、近くにいる誰でも接続して操作できます',
+      },
       { path: ['ble', 'nmea'], label: 'NMEA を送る回数（1秒あたり。0〜5）', type: 'number' },
     ],
   },

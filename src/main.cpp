@@ -488,7 +488,7 @@ static void dispInfo()
 		lcdDispText( lineNum++, "AP ssid:%s", mSoftApSsid );
 		lcdDispText( lineNum++, "AP passwd:%s", mSoftApPassword );
 	}
-	if ( mBleEnable ) lcdDispText( lineNum++, "BLE:%s  ", mBleConnected ? "connected" : "waiting" );
+	if ( mBleEnable ) lcdDispText( lineNum++, "BLE:%s paired=%d ", mBleConnected ? "connected" : "waiting", bleBondCount() );
 	lcdDispText( lineNum++, "Heap: %d KB  ", esp_get_free_heap_size() / 1000 );
 	lcdDispText( lineNum++, "SD card: %d MB", (int)(mSdTotalBytes / 1E6) );
 	if ( millis() - mRtcmLastMillis > 10 * 1000 ) 
@@ -553,8 +553,23 @@ void loop()
 	}
 
 	// 画面表示。SDカードとSPIバスを共用しているので排他制御する。
+	// BLEのペアリング中は、相手に入力してもらう番号を表示する。
+	static bool pairingShown = false;
+	int passkey = mBleEnable ? blePasskey() : -1;
 	spiLock();
-	switch( mLcdPage ){
+	if ( passkey >= 0 ){
+		if ( ! pairingShown ) lcdClear();
+		pairingShown = true;
+		lcdDispText( 1, " *** BLE pairing ***" );
+		lcdDispText( 3, " Enter this code on" );
+		lcdDispText( 4, " your phone or PC." );
+		lcdDispText2( 7, "       ", "%03d %03d", passkey / 1000, passkey % 1000 );
+	}
+	else if ( pairingShown ){
+		pairingShown = false;
+		lcdClear();
+	}
+	else switch( mLcdPage ){
 		case PAGE_MAIN: 
 			dispMainPage();
 			break;

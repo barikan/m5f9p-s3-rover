@@ -126,6 +126,9 @@ mise run android-screenshot          # 端末の画面を screenshot.png に保�
 ### コマンドと BLE
 
 - コマンドは1行の JSON で、入口は USB シリアル(cmd.cpp)と BLE(ble.cpp)。どちらも `cmdExecute()` を通り、**実行は loopTask で行う。**
+- **ペアリングは相手(Android、Windows)から始めさせる。`BLEDevice::setEncryptionLevel()` を呼ばない。** 呼ぶと本体が接続のたびにペアリングを求め、Android では画面が通知になり、Windows ではアプリの番号入力が呼ばれずに接続できなくなる。
+- ペアリングのコールバック(`SecurityCallbacks`)も BLE のタスクから呼ばれる。変数に入れるだけにし、番号の表示は `loop()` が `blePasskey()` を見て行う。
+- `ble.unpair` やペアリングの記憶を消す操作は、ユーザーの端末側でも登録の解除が必要になる。断らずに実行しない。
 - **BLE のコールバックは BLE のタスクから呼ばれる。そこでは受信した行をキューに積むだけにする。** I2C、画面、SD に触る処理をコールバックに書かない。送信も `blePoll()` からだけ行う。
 - 測位データを BLE に流すときも同じで、`taskRover` は `bleQueueNmea()` で渡すだけ。
 - Wi-Fi と BLE は無線を共用する。BLE の送信量を増やす変更(通知の頻度、NMEA のレート上限 `BLE_NMEA_RATE_MAX`、接続間隔)は、NTRIP の受信に影響しないか `STAT` 行で確かめる。測定結果は `DEVELOPE.md` にある。
@@ -168,7 +171,7 @@ SD カードの `/m5f9p/m5f9p.yaml`。読み書きは `config.cpp`、書式の�
 - **設定ファイルのパスワードと API キーは暗号化して書く**(`src/secret.cpp`。AES-256-GCM、鍵は NVS)。書き出しは `configSave` が暗号化し、読み込みは `cfgSecret` が復号する。平文も読め、起動時に暗号化して書き直す。暗号化する項目を増やすときは、`config.cpp` の `encryptSecrets` と `configFromJson` の両方に足す。`m5f9p.run.json` の取得先のパスワードも同じ(`storage.cpp`)。
 - `secretInit()` は無線を始める前に呼ぶ(鍵を作るときの乱数源が、無線と同時に使えない)。内蔵フラッシュを全部消す操作(`pio run -t erase`)は鍵を消し、SD カードのパスワードが読めなくなる。ユーザーに断らずに行わない。
 - 設定を書き換えたあとは、再起動するまで `config.get` / `config.put` はエラーになる(本体が持っている一覧と `id` がずれるため)。
-- BLE のペアリングは未実装。近くにいれば誰でも接続でき、設定の書き換えや再起動ができる。
+- BLE はペアリングが必要(`ble.pairing`、既定は `true`)。仕組みと、確かめた挙動は `DEVELOPE.md` の「BLE のペアリング」にある。
 - 旧形式の INI は、YAML がないときだけ読んで変換する(`settings.cpp` の `readIniFile()`)。
 
 ## コードの書き方

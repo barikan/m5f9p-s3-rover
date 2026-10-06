@@ -3,7 +3,7 @@
 /// <reference types="w3c-web-serial" />
 /// <reference types="web-bluetooth" />
 
-import type { FoundDevice, Storage } from './types';
+import type { FoundDevice, PairingReply, PairingRequest, Storage } from './types';
 
 /** Androidアプリ(MainActivity.kt の Bridge)が渡す窓口 */
 interface AndroidBridge {
@@ -25,6 +25,8 @@ interface ElectronHost {
   storage: Storage;
   onBleDevices(callback: (list: FoundDevice[]) => void): void;
   selectBleDevice(id: string): void;
+  onBlePairing(callback: (request: PairingRequest) => void): void;
+  replyBlePairing(reply: PairingReply): void;
 }
 
 declare global {

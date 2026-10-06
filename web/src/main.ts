@@ -11,10 +11,26 @@ import App from './App.vue';
 import * as host from './host';
 import * as rover from './rover';
 import './store';
+import { confirmDialog, formDialog } from './dialogs';
 import 'vue-sonner/style.css';
 import './tailwind.css';
 
 createApp(App).mount('#app');
+
+// BLEのペアリング（Windows）。本体の画面に出る番号を入力してもらう
+host.setPairingPrompt(async request => {
+  if (request.kind === 'providePin') {
+    const values = await formDialog('ペアリング', [
+      { key: 'pin', label: '本体の画面に表示されている6桁の番号', type: 'text', required: true },
+    ]);
+    const pin = String(values?.pin ?? '').replace(/\D/g, '');
+    return pin ? { confirmed: true, pin } : { confirmed: false };
+  }
+  if (request.kind === 'confirmPin') {
+    return { confirmed: await confirmDialog('ペアリング', `本体の画面の番号が ${request.pin} であることを確かめてください。`, '同じ') };
+  }
+  return { confirmed: await confirmDialog('ペアリング', '本体とペアリングしますか？', 'ペアリング') };
+});
 
 // 画面が前面に戻った時、止まっていた間の軌跡を本体から取得する（Android）
 document.addEventListener('visibilitychange', () => {

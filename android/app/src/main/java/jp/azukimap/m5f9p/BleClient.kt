@@ -12,12 +12,16 @@ import android.bluetooth.BluetoothStatusCodes
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.ParcelUuid
 import android.util.Log
+import androidx.core.content.ContextCompat
 import java.io.ByteArrayOutputStream
 import java.util.UUID
 
@@ -43,6 +47,8 @@ class BleClient(private val context: Context) {
         fun onState(state: String, name: String)
         fun onDevices(devices: List<FoundDevice>)
         fun onLine(line: String)
+        /** 利用者に見せる文言（ペアリングの失敗など） */
+        fun onMessage(text: String)
     }
 
     var listener: Listener? = null
@@ -117,6 +123,7 @@ class BleClient(private val context: Context) {
     fun connect(address: String) {
         stopScan()
         wantAddress = address
+        failedBonded = 0
         deviceName = devices.find { it.address == address }?.name ?: deviceName
         openGatt(address, autoConnect = false)
     }
@@ -143,6 +150,8 @@ class BleClient(private val context: Context) {
         gatt?.close()
         gatt = null
         rxChar = null
+        pendingCccd = null
+        cccdRetries = 0
         mtu = 23
         writeQueue.clear()
         writing = false
@@ -161,6 +170,11 @@ class BleClient(private val context: Context) {
                     if (!g.requestMtu(MTU_REQUEST)) g.discoverServices()
                 } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                     Log.i(TAG, "disconnected status=$status")
+                    // ペアリング済みなのに、つながる前に切れる事が続く時は、本体側の記憶が
+                    // 消されている（本体はこちらを知らない）可能性が高い
+                    if (state == STATE_CONNECTING && g.device.bondState == BluetoothDevice.BOND_BONDED) {
+                        if (++failedBonded == STALE_BOND_COUNT) listener?.onMessage(MESSAGE_STALE_BOND)
+                    }
                     closeGatt()
                     val address = wantAddress
                     if (address == null) {
@@ -196,22 +210,33 @@ class BleClient(private val context: Context) {
                 }
                 rxChar = rx
                 g.setCharacteristicNotification(tx, true)
-                val enable = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    g.writeDescriptor(cccd, enable)
-                } else {
-                    @Suppress("DEPRECATION")
-                    cccd.value = enable
-                    @Suppress("DEPRECATION")
-                    g.writeDescriptor(cccd)
-                }
+                enableNotification(g, cccd)
             }
         }
 
         override fun onDescriptorWrite(g: BluetoothGatt, descriptor: BluetoothGattDescriptor, status: Int) {
             handler.post {
                 if (g != gatt) return@post
-                setState(STATE_CONNECTED)
+                if (status == BluetoothGatt.GATT_SUCCESS) {
+                    pendingCccd = null
+                    failedBonded = 0
+                    setState(STATE_CONNECTED)
+                    return@post
+                }
+                // 本体はペアリング（暗号化）が済むまで受け付けない。ペアリングが終わったら
+                // やり直す（bondReceiver）。すでにペアリング済みなら、暗号化を待ってやり直す
+                Log.i(TAG, "notification not enabled status=$status bond=${g.device.bondState}")
+                pendingCccd = descriptor
+                when (g.device.bondState) {
+                    // まだペアリングしていない。アプリから始めると、番号を入力する画面が前面に出る
+                    // （Androidが自分で始めた時は、通知になる事がある）
+                    BluetoothDevice.BOND_NONE -> g.device.createBond()
+                    BluetoothDevice.BOND_BONDED ->
+                        if (cccdRetries++ < CCCD_RETRY_MAX) {
+                            handler.postDelayed({ retryNotification() }, RECONNECT_TOKEN, 1000)
+                        }
+                    // BOND_BONDING の時は、終わるのを待つ（bondReceiver）
+                }
             }
         }
 
@@ -240,6 +265,64 @@ class BleClient(private val context: Context) {
                 writeNext()
             }
         }
+    }
+
+    // ---------------------------------------------------------------- ペアリング
+    //
+    // 本体は、ペアリング（暗号化）していない相手の読み書きを拒否する。拒否されたら
+    // ペアリングを始める。番号（本体の画面に出る）の入力は、Androidの標準の画面が
+    // 受け持つ。ここでは、結果を受けて続きを行う。
+
+    private var pendingCccd: BluetoothGattDescriptor? = null    // 通知の有効化がやり直し待ち
+    private var cccdRetries = 0
+    private var failedBonded = 0        // ペアリング済みなのに、つながる前に切れた回数
+
+    private fun enableNotification(g: BluetoothGatt, cccd: BluetoothGattDescriptor) {
+        val enable = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            g.writeDescriptor(cccd, enable)
+        } else {
+            @Suppress("DEPRECATION")
+            cccd.value = enable
+            @Suppress("DEPRECATION")
+            g.writeDescriptor(cccd)
+        }
+    }
+
+    private fun retryNotification() {
+        val g = gatt ?: return
+        val cccd = pendingCccd ?: return
+        enableNotification(g, cccd)
+    }
+
+    private val bondReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            val device = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
+            }
+            if (device?.address != gatt?.device?.address) return
+            val now = intent.getIntExtra(BluetoothDevice.EXTRA_BOND_STATE, BluetoothDevice.BOND_NONE)
+            val before = intent.getIntExtra(BluetoothDevice.EXTRA_PREVIOUS_BOND_STATE, BluetoothDevice.BOND_NONE)
+            Log.i(TAG, "bond $before -> $now")
+            if (now == BluetoothDevice.BOND_BONDED) {
+                cccdRetries = 0
+                retryNotification()
+            } else if (now == BluetoothDevice.BOND_NONE && before == BluetoothDevice.BOND_BONDING) {
+                // 番号が違う、やめた、時間切れ
+                listener?.onMessage(MESSAGE_PAIRING_FAILED)
+                disconnect()
+            }
+        }
+    }
+
+    init {
+        ContextCompat.registerReceiver(
+            context, bondReceiver, IntentFilter(BluetoothDevice.ACTION_BOND_STATE_CHANGED),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
     }
 
     // ---------------------------------------------------------------- 受信
@@ -306,6 +389,11 @@ class BleClient(private val context: Context) {
         private const val MTU_REQUEST = 247
         private const val SCAN_TIMEOUT_MS = 30_000L
         private const val LINE_MAX = 16384
+        private const val CCCD_RETRY_MAX = 5
+        private const val STALE_BOND_COUNT = 3
+        private const val MESSAGE_PAIRING_FAILED = "ペアリングできませんでした。本体の画面に表示される番号を入力してください。"
+        private const val MESSAGE_STALE_BOND =
+            "接続できません。本体のペアリングを消した場合は、この端末の Bluetooth の設定で本体の登録を解除してから、つなぎ直してください。"
         private val RECONNECT_TOKEN = Any()
         private val SCAN_TOKEN = Any()
 
