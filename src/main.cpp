@@ -33,9 +33,9 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 //                        モジュール変数
 // ************************************************************
 
-static byte mVersionMajor = 2;
-static byte mVersionMinor = 0;
-static byte mVersionPatch = 0;
+byte mVersionMajor = 2;
+byte mVersionMinor = 0;
+byte mVersionPatch = 0;
 
 // 2.0.0 M5Stack CoreS3用に書き換え。移動局専用とし、基準局、Moving Base、
 //       モデム(3G,920MHz)、複数受信機、Webサーバ、地図表示を削除した。
@@ -174,7 +174,8 @@ void setup() {
 	char buff[256];
 	struct stGpsData gpsData;
 	
-	Serial.begin( 115200 );		// USB CDC。デバグ出力とNMEA出力に使う
+	Serial.setRxBufferSize( 8192 );	// INIファイルを含むコマンドを受け取れる大きさにする
+	Serial.begin( 115200 );		// USB CDC。デバグ出力、NMEA出力、コマンドの受付に使う
 
 	auto cfg = M5.config();
 	cfg.internal_spk = false;	// G13(I2S_DOUT)をZED-F9Pのイネーブルに使うため
@@ -319,6 +320,9 @@ void setup() {
 	// 移動局タスクスタート
 	roverStartTasks();
 
+	// BLE
+	if ( mBleEnable ) bleStart();
+
 	// 動作モード等の実行環境保存
 	// 画面の向き、Wifi接続先、基準局データ取得先、保存形式
 	saveRunInfo( &mRunInfo );
@@ -344,15 +348,32 @@ static void nextPage()
 	if ( mLcdPage == PAGE_MAX ) mLcdPage = 0;
 	lcdClear();
 	
-	switch( mLcdPage ){
-		case PAGE_INFO:
-			gpsSetMessageRate( 0x02, 0x32, 1 );	// output RTCM Input status
-			mRtcmLastMillis = millis();
-			break;
-		case PAGE_BOOTINFO:
-			gpsSetMessageRate( 0x02, 0x32, 0 );	// disable RTCM Input status
-			break;
-	}
+}
+
+// ファイルへの保存を開始、停止する
+//
+void appSetSaving( bool on )
+{
+	if ( ! mSdSaveReady || on == (bool)mFileSaving ) return;
+	if ( on ) sdSaveStart();
+	else sdSaveStop();
+	dbgPrintf( "File saving=%d\r\n", mFileSaving );
+}
+
+// 1秒あたりの測位回数を変更する
+//
+// 戻り値＝ 0:正常終了
+//         負数:エラー
+//
+int appSetSolutionRate( int rate )
+{
+	if ( rate < 1 || rate > 20 ) return -1;
+	int nret = gpsSetSolutionRate( rate );
+	if ( nret < 0 ) return nret;
+	mSolutionRate = rate;
+	mRunInfo.solutionRate = rate;
+	saveRunInfo( &mRunInfo );
+	return 0;
 }
 
 // メインページでボタンが押された時の処理
@@ -365,20 +386,14 @@ static void buttonMainPage( int button, bool longPress )
 			lcdClear();
 			return;
 		}
-		if ( mFileSaving ) sdSaveStop();
-		else sdSaveStart();
-		dbgPrintf( "File saving=%d\r\n", mFileSaving );
+		appSetSaving( ! mFileSaving );
 	}
 	else if ( button == B_BUTTON ){
 		int pitch = longPress ? 5 : 1;
-		if ( mSolutionRate == 1 && pitch == 5 ) mSolutionRate = pitch;
-		else {
-			mSolutionRate += pitch;
-			if ( mSolutionRate > 20 ) mSolutionRate = 1;
-		}
-		gpsSetSolutionRate( mSolutionRate );
-		mRunInfo.solutionRate = mSolutionRate;
-		saveRunInfo( &mRunInfo );
+		int rate = mSolutionRate + pitch;
+		if ( mSolutionRate == 1 && pitch == 5 ) rate = pitch;
+		else if ( rate > 20 ) rate = 1;
+		appSetSolutionRate( rate );
 	}
 }
 
@@ -458,10 +473,13 @@ static void dispInfo()
 		else lcdDispText( lineNum++, "IP addr:(connecting)   " );
 	}
 	
-	lcdDispText( lineNum++, "AP IP:%s", mSoftApIp.toString().c_str() );
 	lcdDispText( lineNum++, "Server port:%d", mServerPort );
-	lcdDispText( lineNum++, "AP ssid:%s", mSoftApSsid );
-	lcdDispText( lineNum++, "AP passwd:%s", mSoftApPassword );
+	if ( mSoftApEnable ){
+		lcdDispText( lineNum++, "AP IP:%s", mSoftApIp.toString().c_str() );
+		lcdDispText( lineNum++, "AP ssid:%s", mSoftApSsid );
+		lcdDispText( lineNum++, "AP passwd:%s", mSoftApPassword );
+	}
+	if ( mBleEnable ) lcdDispText( lineNum++, "BLE:%s  ", mBleConnected ? "connected" : "waiting" );
 	lcdDispText( lineNum++, "Heap: %d KB  ", esp_get_free_heap_size() / 1000 );
 	lcdDispText( lineNum++, "SD card: %d MB", (int)(mSdTotalBytes / 1E6) );
 	if ( millis() - mRtcmLastMillis > 10 * 1000 ) 
@@ -503,10 +521,13 @@ static void dbgStatus()
 	static unsigned long msecLast = 0;
 	if ( mUsbOutMode == 1 || millis() - msecLast < 10000 ) return;
 	msecLast = millis();
-	dbgPrintf( "STAT quality=%d sats=%d rate=%d base(valid=%d type=%d ready=%d reconnecting=%d bytes=%d) clas=%d saving=%d saved=%d qerr=%d\r\n",
+	dbgPrintf( "STAT quality=%d sats=%d rate=%d base(valid=%d type=%d ready=%d reconnecting=%d bytes=%d reconn=%d) rtcm(err=%d%% age=%lums) clas=%d saving=%d saved=%d qerr=%d wifi(st=%d rssi=%d) ble(conn=%d tx=%d) heap(int=%u)\r\n",
 		mGpsData.quality, mGpsData.numSatelites, mSolutionRate,
-		(int)mBaseSrc.valid, mBaseSrc.type, (int)mBaseRecvReady, (int)mBaseReconnecting, (int)mBaseRecvCount,
-		mD9CAddress >= 0 ? mD9CRecvCount : -1, (int)mFileSaving, mFileSaved, mQueueFileErrorCount );
+		(int)mBaseSrc.valid, mBaseSrc.type, (int)mBaseRecvReady, (int)mBaseReconnecting, (int)mBaseRecvCount, (int)mBaseReconnectCount,
+		mRtcmCrcErrorPercent, millis() - mRtcmLastMillis,
+		mD9CAddress >= 0 ? mD9CRecvCount : -1, (int)mFileSaving, mFileSaved, mQueueFileErrorCount,
+		(int)WiFi.status(), (int)WiFi.RSSI(), (int)mBleConnected, mBleNotifyCount,
+		(unsigned)heap_caps_get_free_size( MALLOC_CAP_INTERNAL ) );
 }
 
 void loop() 
@@ -535,6 +556,8 @@ void loop()
 	spiUnlock();
 
 	d9cPoll();
+	cmdPollUsb();
+	blePoll();
 	dbgStatus();
 	delay(20);
 }

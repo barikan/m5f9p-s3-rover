@@ -107,7 +107,8 @@ j1:
 
 // ネットワークを開始する
 //
-// ・soft APは常時有効。TCPサーバ（測位データ配信）への接続に使える。
+// ・soft APはINIファイルで有効にした時のみ使う。TCPサーバ（測位データ配信）への
+//   接続に使える。
 //
 // 戻り値＝ 1以上: Wifi接続済または接続中　値はINIファイルのWIFI接続先番号(1から)
 //          0: Wifiを使わない
@@ -116,16 +117,19 @@ int netStart()
 {
 	strcpy( mSoftApSsid, mReceiverName );
 
-	WiFi.mode( WIFI_AP_STA );
-	if ( ! WiFi.softAP( mSoftApSsid, mSoftApPassword ) ){
-		dbgPrintf("softAP() failed\r\n");
-		lcdDispText( 1, "Can't use soft AP." );
-	}
+	if ( mSoftApEnable ){
+		WiFi.mode( WIFI_AP_STA );
+		if ( ! WiFi.softAP( mSoftApSsid, mSoftApPassword ) ){
+			dbgPrintf("softAP() failed\r\n");
+			lcdDispText( 1, "Can't use soft AP." );
+		}
 
-	// softAPConfig()はWiFi.softAP()の後で実行しないと有効にならない
-	if ( ! WiFi.softAPConfig( mSoftApIp, mSoftApIp, IPAddress( 255, 255, 255, 0 ) ) ){
-		dbgPrintf("softAPConfig() failed\r\n");
+		// softAPConfig()はWiFi.softAP()の後で実行しないと有効にならない
+		if ( ! WiFi.softAPConfig( mSoftApIp, mSoftApIp, IPAddress( 255, 255, 255, 0 ) ) ){
+			dbgPrintf("softAPConfig() failed\r\n");
+		}
 	}
+	else WiFi.mode( WIFI_STA );
 
 	int wifiApNum = 0;
 	if ( mNumWifi > 0 ) wifiApNum = wifiConnect();
@@ -333,6 +337,28 @@ static void baseSrcLabel( int index, char *buff, int buffSize )
 	else snprintf( buff, buffSize, "%d rtk2go.com", index );
 }
 
+// INIファイルの基準局データ取得先(mBaseSrcList)からsrcを作る
+//
+// index: 0:UART(JST-PHコネクタ)  1以上:INIファイルに書かれた順
+//
+// 戻り値＝ 0:正常終了
+//         -1:indexが範囲外
+//
+int baseSrcFromList( int index, struct stBaseSource *src )
+{
+	if ( index < 0 || index >= mNumBaseSrc ) return -1;
+
+	memcpy( src, &mBaseSrcList[index], sizeof(*src) );
+	src->valid = true;
+	if ( src->type == BASE_TYPE_TCP ){
+		if ( strstr( src->address, "rtk2go" ) ) src->protocol = PROTO_NTRIP;
+		if ( strstr( src->address, "ales" ) ) src->protocol = PROTO_NTRIP_GGA;
+		if ( src->ggaPeriod > 0 && src->protocol == PROTO_NTRIP ) src->protocol = PROTO_NTRIP_GGA;
+		if ( src->protocol == PROTO_NTRIP_GGA && src->ggaPeriod <= 0 ) src->ggaPeriod = 10;
+	}
+	return 0;
+}
+
 // 基準局データ取得先を選択する
 //
 // lat,lon: 現在位置（度）
@@ -363,14 +389,7 @@ int baseSrcSelect( double lat, double lon )
 		return 1;
 	}
 
-	memcpy( &mBaseSrc, &mBaseSrcList[idx], sizeof(mBaseSrc) );
-	mBaseSrc.valid = true;
-	if ( mBaseSrc.type == BASE_TYPE_TCP ){
-		if ( strstr( mBaseSrc.address, "rtk2go" ) ) mBaseSrc.protocol = PROTO_NTRIP;
-		if ( strstr( mBaseSrc.address, "ales" ) ) mBaseSrc.protocol = PROTO_NTRIP_GGA;
-		if ( mBaseSrc.ggaPeriod > 0 && mBaseSrc.protocol == PROTO_NTRIP ) mBaseSrc.protocol = PROTO_NTRIP_GGA;
-		if ( mBaseSrc.protocol == PROTO_NTRIP_GGA && mBaseSrc.ggaPeriod <= 0 ) mBaseSrc.ggaPeriod = 10;
-	}
+	baseSrcFromList( idx, &mBaseSrc );
 	return 1;
 }
 

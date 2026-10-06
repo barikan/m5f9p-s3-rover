@@ -59,6 +59,8 @@ extern bool mSetupDone;
 extern unsigned long mStartMillis;
 
 void dbgPrintf( const char* format, ... );
+void appSetSaving( bool on );
+int appSetSolutionRate( int rate );
 
 // ************************************************************
 //                        settings.cpp
@@ -88,6 +90,8 @@ extern int mCsvFormat;
 extern unsigned long mSaveEndSec;
 extern int mPhUartBaudrate;
 extern int mPhUartFormat;
+extern int mSoftApEnable;
+extern int mBleEnable;
 extern char mRtk2goUser[32];
 extern char mRtk2goPassword[32];
 
@@ -114,6 +118,7 @@ extern bool mAgribusReady;
 extern WiFiClient *mAgribusClient;
 
 int netStart();
+int baseSrcFromList( int index, struct stBaseSource *src );
 int baseSrcSelect( double lat, double lon );
 int baseSrcConnect();
 int connectBaseSource();
@@ -131,6 +136,7 @@ extern struct stGpsData mGpsData;
 extern int mSolutionRate;
 
 extern volatile int mBaseRecvCount;
+extern volatile int mBaseReconnectCount;
 extern int mD9CAddress;
 extern int mD9CRecvCount;
 extern int mRtcmCrcErrorPercent;
@@ -164,6 +170,7 @@ int sdSaveInit();
 void sdSaveStart();
 void sdSaveStop();
 int sdSave( const char *fileName, char *buff, int numBytes, const char* mode );
+int sdRead( const char *fileName, char *buff, int numBytes );
 int saveRunInfo( struct stRunInfo *runInfo );
 int readRunInfo( struct stRunInfo *runInfo );
 
@@ -173,5 +180,24 @@ int readRunInfo( struct stRunInfo *runInfo );
 
 int setNmeaData( struct stGpsData* pGpsData, char* buff, int buffSize );
 int setCsvData( struct stGpsData* pGpsData, char* buff, int buffSize );
+
+// ************************************************************
+//                        cmd.cpp
+// ************************************************************
+
+void cmdPollUsb();
+void cmdExecute( char *line, String &reply );
+void cmdStatusEvent( String &line );
+void cmdRestartIfRequested();
+
+// ************************************************************
+//                        ble.cpp
+// ************************************************************
+
+extern volatile bool mBleConnected;
+extern int mBleNotifyCount;
+
+int bleStart();
+void blePoll();
 
 #endif

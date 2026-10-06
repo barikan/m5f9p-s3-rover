@@ -99,7 +99,7 @@ int sdSave( const char *fileName, char *buff, int numBytes, const char* mode )
 // 戻り値＝読み出したバイト数
 //         負数：エラー
 //
-static int sdRead( const char *fileName, char *buff, int numBytes )
+int sdRead( const char *fileName, char *buff, int numBytes )
 {
 	if ( ! mSdTotalBytes ) return -1;
 

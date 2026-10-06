@@ -78,3 +78,33 @@ opts=()
 if [ "${usage_reset:-false}" = "true" ]; then opts+=(--reset); fi
 uv run --quiet scripts/serial_log.py "$port" "${usage_seconds?}" "${opts[@]}"
 '''
+
+[tasks.cmd]
+description = "本体にコマンド(JSON)を送る。例: mise run cmd '{\"cmd\":\"status\"}'"
+usage = 'arg "<json>" help="コマンド。一覧は src/cmd.cpp の先頭にある"'
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+port=$(scripts/find-port.sh)
+uv run --quiet scripts/devcmd.py "$port" "${usage_json?}"
+'''
+
+[tasks.ini-get]
+description = "本体のSDカードからINIファイルを取り出す"
+usage = 'arg "[file]" help="保存先。省略時は標準出力"'
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+port=$(scripts/find-port.sh)
+uv run --quiet scripts/devcmd.py "$port" ini-get ${usage_file:+"$usage_file"}
+'''
+
+[tasks.ini-put]
+description = "本体のSDカードにINIファイルを書き込む(反映には再起動が必要)"
+usage = 'arg "<file>" help="書き込むINIファイル"'
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+port=$(scripts/find-port.sh)
+uv run --quiet scripts/devcmd.py "$port" ini-put "${usage_file?}"
+'''

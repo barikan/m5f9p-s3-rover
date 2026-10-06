@@ -30,6 +30,7 @@ static int mServerReadIndex;
 
 // 基準局データ受信用
 volatile int mBaseRecvCount;
+volatile int mBaseReconnectCount;	// 基準局へ再接続した回数
 static unsigned long mBaseRecvLastMillis;
 
 // NEO-D9C
@@ -271,6 +272,7 @@ static void taskBaseRecv(void* param)
 			nret = baseSrcConnect();
 			if ( nret == 0 ){
 				dbgPrintf("source reconnected\r\n");
+				mBaseReconnectCount++;
 				mBaseRecvReady = true;
 				mBaseReconnecting = false;
 			}

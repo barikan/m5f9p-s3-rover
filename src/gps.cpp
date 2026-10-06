@@ -82,6 +82,7 @@ int gpsInit()
 	// output message
 	nret = gpsSetMessageRate( 0x01, 0x07, 1 );	// NAV-PVT
 	nret = gpsSetMessageRate( 0x01, 0x14, 1 );	// NAV-HPPOSLLH
+	nret = gpsSetMessageRate( 0x02, 0x32, 1 );	// RXM-RTCM (RTCM Input status)
 
 	// output rate = 1Hz
 	nret = gpsSetMeasurementRate( 1000 );

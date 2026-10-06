@@ -18,6 +18,13 @@ int mNumWifi;
 
 IPAddress mSoftApIp( 192,168,4,1 );		// 既定値 192.168.4.1
 
+// soft APを使う時 1。BLEと同時に使うと、soft APに端末が接続している間は
+// 通信が不安定になる事があるので、既定値は無効。
+int mSoftApEnable = 0;
+
+// BLEを使う時 1
+int mBleEnable = 1;
+
 struct stBaseSource mBaseSrcList[ BASE_SRC_MAX ];
 int mNumBaseSrc;
 
@@ -115,7 +122,11 @@ int readIniFile( const char *path )
 		if ( mNumWifi == WIFI_MAX ) break;
 	}
 	
+	// BLE
+	mBleEnable = iniFile->readInt( "ble", "enable", mBleEnable );
+
 	// Soft AP
+	mSoftApEnable = iniFile->readInt( "softap", "enable", mSoftApEnable );
 	nret = iniFile->readValue( "softap", "ip", buff, 256 );
 	if ( nret >= 0 && strlen(buff) <= 15) {
 		byte ip[4];
@@ -135,10 +146,11 @@ int readIniFile( const char *path )
 
 		nret = iniFile->readValue( section, "protocol", buff, 256 );
 		if ( strlen(buff) > 16) continue;
-		src->protocol = PROTO_NTRIP;
-		if ( nret >= 0 ){
+		// protocolの行が無い時はNTRIP。行があって値が空の時は無手順(元のプログラムと同じ)
+		if ( nret < 0 ) src->protocol = PROTO_NTRIP;
+		else {
 			strToLower( buff );
-			if ( strstr( buff, "none" ) ) src->protocol = PROTO_NONE;
+			src->protocol = strstr( buff, "ntrip" ) ? PROTO_NTRIP : PROTO_NONE;
 		}
 
 		src->ggaPeriod = iniFile->readInt( section, "gga", 0 );
