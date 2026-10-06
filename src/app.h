@@ -92,6 +92,7 @@ extern int mPhUartBaudrate;
 extern int mPhUartFormat;
 extern int mSoftApEnable;
 extern int mBleEnable;
+extern int mBleNmeaRate;
 extern char mRtk2goUser[32];
 extern char mRtk2goPassword[32];
 
@@ -199,5 +200,6 @@ extern int mBleNotifyCount;
 
 int bleStart();
 void blePoll();
+void bleQueueNmea( const char *nmea );
 
 #endif

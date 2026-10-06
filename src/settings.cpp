@@ -25,6 +25,9 @@ int mSoftApEnable = 0;
 // BLEを使う時 1
 int mBleEnable = 1;
 
+// BLEでNMEAを送る回数（1秒あたり）。0:送らない
+int mBleNmeaRate = 1;
+
 struct stBaseSource mBaseSrcList[ BASE_SRC_MAX ];
 int mNumBaseSrc;
 
@@ -124,6 +127,9 @@ int readIniFile( const char *path )
 	
 	// BLE
 	mBleEnable = iniFile->readInt( "ble", "enable", mBleEnable );
+	mBleNmeaRate = iniFile->readInt( "ble", "nmea", mBleNmeaRate );
+	if ( mBleNmeaRate < 0 ) mBleNmeaRate = 0;
+	if ( mBleNmeaRate > BLE_NMEA_RATE_MAX ) mBleNmeaRate = BLE_NMEA_RATE_MAX;
 
 	// Soft AP
 	mSoftApEnable = iniFile->readInt( "softap", "enable", mSoftApEnable );

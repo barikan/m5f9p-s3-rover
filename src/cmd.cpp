@@ -14,6 +14,8 @@
 //   status    動作状況を返す
 //   save      {"on":true/false}  ファイルへの保存を開始、停止する
 //   rate      {"hz":1-20}        1秒あたりの測位回数を変更する
+//   nmea      {"hz":0-5}         BLEでNMEAを送る回数（1秒あたり）を変更する。0:送らない
+//                                再起動するとINIファイルの値に戻る
 //   ini.get   INIファイルの内容を返す
 //   ini.put   {"text":"..."}     INIファイルを書き換える（再起動後に有効）
 //   run.get   起動時の実行パラメータを返す
@@ -84,6 +86,7 @@ static void cmdStatus( JsonDocument &re )
 
 	re["sdMB"] = (int)( mSdTotalBytes / 1000000 );
 	re["heap"] = heap_caps_get_free_size( MALLOC_CAP_INTERNAL );
+	re["bleNmea"] = mBleNmeaRate;
 }
 
 // 定期的に送る状況（{"ev":"status", ...}）を作る
@@ -222,6 +225,15 @@ void cmdExecute( char *line, String &reply )
 		if ( appSetSolutionRate( cmd["hz"] | 0 ) < 0 ) re["error"] = "bad hz";
 		else re["ok"] = true;
 		re["rate"] = mSolutionRate;
+	}
+	else if ( strcmp( name, "nmea" ) == 0 ){
+		int hz = cmd["hz"] | -1;
+		if ( hz < 0 || hz > BLE_NMEA_RATE_MAX ) re["error"] = "bad hz";
+		else {
+			mBleNmeaRate = hz;
+			re["ok"] = true;
+		}
+		re["hz"] = mBleNmeaRate;
 	}
 	else if ( strcmp( name, "ini.get" ) == 0 ) cmdIniGet( re );
 	else if ( strcmp( name, "ini.put" ) == 0 ) cmdIniPut( cmd, re );

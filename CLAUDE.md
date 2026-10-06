@@ -22,6 +22,8 @@ mise run upload         # ビルドして書き込む(失敗時は3回まで再�
 mise run log 30 --reset # リセットして30秒間のシリアルログを読む
 mise run monitor        # 対話式のシリアルモニタ
 mise run usb-attach     # WSL2: USB を WSL に接続する
+mise run cmd '{"cmd":"status"}'   # 本体にコマンドを送る(一覧は src/cmd.cpp の先頭)
+mise run ini-get / ini-put        # 本体の SD カードの INI を読み書きする
 ```
 
 - テストとリンタはない。確認手段はビルドと実機。
@@ -29,7 +31,10 @@ mise run usb-attach     # WSL2: USB を WSL に接続する
 - `platform = espressif32@6.9.0` に固定している。6.13.0 はこの環境で esptool の導入に失敗する。
 - 開発機は WSL2。USB は抜き差しのたびに `mise run usb-attach` が必要(Windows 側の usbipd を呼ぶ)。書き込みは時々失敗するので、`upload` タスクは再試行する。
 - ログの確認には `mise run log` を使う。`monitor` は対話式なので、エージェントからは使えない。
-- 起動ウィザードは画面タッチで進むので、実機確認にはユーザーの操作が要る。メイン画面に入ると 10 秒ごとに `STAT ...` 行がシリアルに出る(`main.cpp` の `dbgStatus()`)。
+- 起動ウィザードは画面タッチで進むので、そこだけはユーザーの操作が要る。メイン画面に入ったあとは、`mise run cmd` で画面に触らずに操作できる。Wi-Fi や補正元の切り替えは `run.set`(設定を書き換えて再起動)、INI の編集は `ini-get` / `ini-put` を使う。ウィザードの途中ではコマンドに応答しない。
+- メイン画面に入ると 10 秒ごとに `STAT ...` 行がシリアルに出る(`main.cpp` の `dbgStatus()`)。補正データの受信量、RTCM のエラー率、Wi-Fi、BLE、内蔵 RAM の空きが分かる。
+- PC(WSL)には Bluetooth がない。BLE の接続確認はユーザーのスマートフォン(nRF Connect)に頼る。
+- 取り出した INI には Wi-Fi のパスワードが入っている。リポジトリに置かず、作業後は消す。
 
 ## ハードウェア上の制約
 
@@ -53,7 +58,7 @@ mise run usb-attach     # WSL2: USB を WSL に接続する
 | `taskBaseRecv` | 0 | rover.cpp | NTRIP/TCP または PH コネクタの補正データを F9P へ書く。GGA 送信と再接続も行う |
 | `taskWifiServer` | 0 | rover.cpp | TCP サーバ(既定ポート 10000)でクライアントへ配信 |
 | `taskSdSave` | 1 | storage.cpp | SD への保存 |
-| loopTask | 1 | main.cpp | タッチ、画面描画、`d9cPoll()` |
+| loopTask | 1 | main.cpp | タッチ、画面描画、`d9cPoll()`、コマンドの実行(`cmdPollUsb()` / `blePoll()`) |
 
 `mUartBuff` は読み手が複数いる。`taskRover` と `gpsGetAck()` は `mUartReadIndex` を共有し、RAW/RTCM 保存は別のインデックス(`mUartSaveIndex`)で同じバッファをそのまま SD に書く。
 
@@ -63,6 +68,15 @@ mise run usb-attach     # WSL2: USB を WSL に接続する
 - **SD アクセスと画面描画は `spiLock()` / `spiUnlock()` で囲む**(storage.cpp、再帰ミューテックス)。`loop()` は描画部分だけをロックし、ボタン処理はロックの外で行う。
 - **UBX コマンドの Ack 待ち中は `mGpsCommandBusy` が立ち、`taskRover` はバッファを読まない。** コマンド送信は `ubxSendCommand()` を通す。
 - `taskUartRead` は `mGpsUartReady` が立つまで `Serial1` を読まない。`Serial1.begin()` は `gpsSyncBaudrate()`(gps.cpp)が1回だけ行い、以後のボーレート変更は `updateBaudRate()` で行う。
+
+### コマンドと BLE
+
+- コマンドは1行の JSON で、入口は USB シリアル(cmd.cpp)と BLE(ble.cpp)。どちらも `cmdExecute()` を通り、**実行は loopTask で行う。**
+- **BLE のコールバックは BLE のタスクから呼ばれる。そこでは受信した行をキューに積むだけにする。** I2C、画面、SD に触る処理をコールバックに書かない。送信も `blePoll()` からだけ行う。
+- 測位データを BLE に流すときも同じで、`taskRover` は `bleQueueNmea()` で渡すだけ。
+- Wi-Fi と BLE は無線を共用する。BLE の送信量を増やす変更(通知の頻度、NMEA のレート上限 `BLE_NMEA_RATE_MAX`、接続間隔)は、NTRIP の受信に影響しないか `STAT` 行で確かめる。測定結果は `DEVELOPE.md` にある。
+- SoftAP は既定で無効(`[softap] enable`)。SoftAP に端末が接続している間は BLE との同時利用が不安定になり得る。
+- BLE は標準のライブラリ(Bluedroid)を使っている。内蔵 RAM を約 93KB 使う。
 
 ### 起動の流れ
 

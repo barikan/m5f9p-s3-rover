@@ -98,6 +98,9 @@ static void distributeGpsData()
 		ringBuffCopy( (byte*)mSaveBuff, numOutBytes, (byte*)mServerBuff, &mServerWriteIndex, SERVER_BUFF_MAX );
 	}
 	
+	// BLEでの配信
+	bleQueueNmea( mSaveBuff );
+
 	// TCP Clientとしての配信
 	if ( mAgribusReady ){
 		if ( mAgribusClient->connected() ){

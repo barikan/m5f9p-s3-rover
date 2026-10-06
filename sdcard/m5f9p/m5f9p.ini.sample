@@ -15,8 +15,10 @@ password=your-password
 ;dns=192.168.1.1
 
 ; BLE。スマートフォンから状況の表示と操作を行う。0:使わない 1:使う（既定値）
+; nmea: BLEでNMEA(GPRMC,GPGGA)を送る回数（1秒あたり）。0～5。0:送らない（既定値 1）
 ;[ble]
 ;enable=1
+;nmea=1
 
 ; soft AP。WifiルーターなしでTCPサーバに接続する時に使う。
 ; enable: 0:使わない（既定値） 1:使う
