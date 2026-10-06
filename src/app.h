@@ -41,7 +41,7 @@ struct stRunInfo {
 	int setupRequest;	// 次回の起動時に、UIで実行パラメータを選択する時１。
 						// 0の時は、保存されている実行パラメータで起動する。
 	int lcdRotation;	// 画面の向き 0:回転無 1:180度回転
-	int wifiAp;			// Wifiアクセスポイント　INIファイルのWIFI接続先番号(1から)。0:Wifiを使わない
+	char wifiSsid[33];	// 接続するWifiのSSID。""の時はWifiを使わない
 	struct stBaseSource baseSrc;	// 基準局データ取得先。valid=falseの時は接続しない
 	int saveFormat;		// データ保存形式　SAVE_NMEA,SAVE_RAW,SAVE_RTCM,SAVE_CSV
 	int saving;			// SDカード保存 0:保存していない　1:保存中
@@ -66,7 +66,6 @@ int appSetSolutionRate( int rate );
 //                        settings.cpp
 // ************************************************************
 
-#define WIFI_MAX 4
 struct stWifi {
 	char ssid[33];
 	char password[65];
@@ -74,14 +73,12 @@ struct stWifi {
 	byte dns[4];
 };
 
-#define BASE_SRC_MAX 10
-
 extern char mReceiverName[16];
 extern int mUsbOutMode;
-extern struct stWifi mWifiList[ WIFI_MAX ];
+extern struct stWifi mWifiList[ CONFIG_LIST_MAX ];
 extern int mNumWifi;
 extern IPAddress mSoftApIp;
-extern struct stBaseSource mBaseSrcList[ BASE_SRC_MAX ];
+extern struct stBaseSource mBaseSrcList[ CONFIG_LIST_MAX + 1 ];	// 0番目はUART
 extern int mNumBaseSrc;
 extern char mAgribusIp[18];
 extern int mAgribusPort;
@@ -101,6 +98,13 @@ extern char mRtk2goPassword[32];
 #define PH_UART_CSV 1
 
 int readIniFile( const char *path );
+int wifiIndexOf( const char *ssid );
+
+// ************************************************************
+//                        config.cpp
+// ************************************************************
+
+int readConfig();
 
 // ************************************************************
 //                        net.cpp
@@ -121,6 +125,8 @@ extern WiFiClient *mAgribusClient;
 
 int netStart();
 int baseSrcFromList( int index, struct stBaseSource *src );
+void baseSrcName( const struct stBaseSource *src, char *buff, int buffSize );
+int baseSrcFind( const char *name );
 int baseSrcSelect( double lat, double lon );
 int baseSrcConnect();
 int connectBaseSource();
@@ -174,6 +180,7 @@ extern QueueHandle_t mQueueFileSave;
 extern int mQueueFileErrorCount;
 
 extern const char *mIniPath;
+extern const char *mConfigPath;
 extern const char *mBootLogPath;
 
 void spiLock();

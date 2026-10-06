@@ -202,6 +202,9 @@ void setup() {
 
 	// SD
 	sdInit();
+
+	// 設定ファイル
+	int configResult = readConfig();
 	
 	// Runモード
 	// 実行パラメータが保存されていれば、それを使ってすぐに測位を始める。
@@ -237,8 +240,8 @@ void setup() {
 	dbgPrintf("SD card totalBytes=%llu\r\n", mSdTotalBytes);
 
 	// INIファイル
-	lcdDispText( 6, "Reading INI file" );
-	if ( readIniFile( mIniPath ) < 0 ) lcdDispText( 7, "INI file not found" );
+	if ( configResult == -1 ) lcdDispText( 7, "Config file not found" );
+	else if ( configResult == -2 ) lcdDispText( 7, "Config file error" );
 	
 	// JST-PHコネクタ
 	Serial2.begin( mPhUartBaudrate, SERIAL_8N1, PIN_PH_RX, PIN_PH_TX );
@@ -250,7 +253,12 @@ void setup() {
 	// ネット接続。
 	// GPS受信機の衛星捕捉の時間を取るために先に行う。
 	lcdClear();
-	mRunInfo.wifiAp = netStart();
+	nret = netStart();
+	if ( mRunMode == RUN_UI ){
+		// UIで選択しない時は書き換えない。設定ファイルが読めずに起動した時に、
+		// 保存してあるSSIDを消してしまわないようにする。
+		strlcpy( mRunInfo.wifiSsid, nret > 0 ? mWifiList[ nret - 1 ].ssid : "", sizeof( mRunInfo.wifiSsid ) );
+	}
 
 	// GPS受信機の初期化
 	lcdDispText( 3, "Check ZED-F9P UART");
@@ -468,7 +476,7 @@ static void dispInfo()
 	esp_read_mac( mac, ESP_MAC_WIFI_STA);
 	lcdDispText( lineNum++, "MAC:%02X:%02X:%02X:%02X:%02X:%02X", 
 							mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-	if ( mRunInfo.wifiAp ){
+	if ( strlen( mRunInfo.wifiSsid ) ){
 		if ( WiFi.status() == WL_CONNECTED ) lcdDispText( lineNum++, "IP addr:%s      ", WiFi.localIP().toString().c_str() );
 		else lcdDispText( lineNum++, "IP addr:(connecting)   " );
 	}
@@ -497,8 +505,7 @@ static void dispBootInfo()
 	lcdDispText( lineNum++, " *** Boot info ***" );
 	lcdDispText2( lineNum++, "Lcd rotation = ", "%d deg", mRunInfo.lcdRotation ? 180 : 0 );
 	
-	int i = mRunInfo.wifiAp;
-	lcdDispText2( lineNum++, "Ssid = ", "%s", ( i > 0 && i <= mNumWifi ) ? mWifiList[i-1].ssid : "(none)" );
+	lcdDispText2( lineNum++, "Ssid = ", "%s", strlen( mRunInfo.wifiSsid ) ? mRunInfo.wifiSsid : "(none)" );
 	
 	struct stBaseSource *src = &mRunInfo.baseSrc;
 	lcdDispText2( lineNum++, "Base source = ", "" );
@@ -506,7 +513,7 @@ static void dispBootInfo()
 	else if ( src->type == BASE_TYPE_UART ) lcdDispText( lineNum++, " Uart" );
 	else lcdDispText( lineNum++, " %.12s/%.12s", src->address, src->mountPoint );
 	
-	i = mRunInfo.saveFormat;
+	int i = mRunInfo.saveFormat;
 	if ( i >= 0 && i < 4 ) lcdDispText2( lineNum++, "Save format = ", "%s", saveStr[i] );
 	lcdDispText2( lineNum++, "Solution rate = ", "%dHz ", mRunInfo.solutionRate );
 	lineNum++;

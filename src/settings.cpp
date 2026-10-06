@@ -1,6 +1,9 @@
 // ************************************************************
-//                    INIファイルの読み込み
+//          設定の変数と、INIファイル（旧形式）の読み込み
 // ************************************************************
+//
+// 設定ファイルはYAML（config.cpp）。INIファイルの読み込みは、旧形式から
+// YAMLへ移行するためだけに残している。
 
 #include <Arduino.h>
 
@@ -13,7 +16,7 @@ char mReceiverName[16] = "m5f9p";		// AP名として使用
 // USBポートからの出力
 int mUsbOutMode = 0;		// 0:デバグ情報  1:NMEA
 
-struct stWifi mWifiList[ WIFI_MAX ];
+struct stWifi mWifiList[ CONFIG_LIST_MAX ];
 int mNumWifi;
 
 IPAddress mSoftApIp( 192,168,4,1 );		// 既定値 192.168.4.1
@@ -28,12 +31,12 @@ int mBleEnable = 1;
 // BLEでNMEAを送る回数（1秒あたり）。0:送らない
 int mBleNmeaRate = 1;
 
-struct stBaseSource mBaseSrcList[ BASE_SRC_MAX ];
+struct stBaseSource mBaseSrcList[ CONFIG_LIST_MAX + 1 ];	// 0番目はUART
 int mNumBaseSrc;
 
 // 測位データ配信用
 char mAgribusIp[18];
-int mAgribusPort;
+int mAgribusPort = 51020;
 
 int mServerPort = 10000;	// サーバのポート番号　既定値
 
@@ -72,6 +75,19 @@ static int iniGetIp( char* buff, byte* ip )
 	return 0;
 }
 
+// SSIDがWifi接続先の一覧の何番目かを返す
+//
+// 戻り値＝ 0以上:番号  -1:一覧に無い
+//
+int wifiIndexOf( const char *ssid )
+{
+	if ( ! ssid || strlen( ssid ) == 0 ) return -1;
+	for( int i=0; i < mNumWifi; i++ ){
+		if ( strcmp( mWifiList[i].ssid, ssid ) == 0 ) return i;
+	}
+	return -1;
+}
+
 // INIファイルを読み込む
 //
 // 戻り値＝ 0:正常終了
@@ -107,11 +123,11 @@ int readIniFile( const char *path )
 	// Wifi
 	mNumWifi = 0;
 	memset( mWifiList, 0, sizeof( mWifiList ) );
-	for( int i=0; i < WIFI_MAX; i++ ){
+	for( int i=0; i < 10; i++ ){
 		if ( i == 0 ) strcpy( section, "wifi" );
 		else sprintf( section, "wifi%d", i );
 		nret = iniFile->readValue( section, "ssid", buff, 256 );
-		if ( nret < 0 || strlen(buff) > 32) continue;
+		if ( nret < 0 || strlen(buff) == 0 || strlen(buff) > 32) continue;
 		strcpy( mWifiList[ mNumWifi ].ssid, buff );
 
 		nret = iniFile->readValue( section, "password", buff, 256 );
@@ -125,7 +141,7 @@ int readIniFile( const char *path )
 		if ( nret >= 0 && strlen(buff) <= 15) iniGetIp( buff, mWifiList[ mNumWifi ].dns );
 		
 		mNumWifi++;
-		if ( mNumWifi == WIFI_MAX ) break;
+		if ( mNumWifi == CONFIG_LIST_MAX ) break;
 	}
 	
 	// BLE
@@ -143,14 +159,14 @@ int readIniFile( const char *path )
 	}
 	
 	// Base source 基準局データ取得先
-	for( int i=1; i < BASE_SRC_MAX; i++ ){
+	for( int i=1; i < 10; i++ ){
 		struct stBaseSource *src = &mBaseSrcList[ mNumBaseSrc ];
 		memset( src, 0, sizeof( *src ) );
 		sprintf( section, "source%d", i );
 		src->type = BASE_TYPE_TCP;
 
 		nret = iniFile->readValue( section, "address", buff, 256 );
-		if ( nret < 0 || strlen(buff) > 63) continue;
+		if ( nret < 0 || strlen(buff) == 0 || strlen(buff) > 63) continue;
 		strcpy( src->address, buff );
 
 		nret = iniFile->readValue( section, "protocol", buff, 256 );
@@ -175,7 +191,7 @@ int readIniFile( const char *path )
 		if ( nret > 0 && strlen(buff) < 32) strcpy( src->password, buff );
 
 		mNumBaseSrc++;
-		if ( mNumBaseSrc == BASE_SRC_MAX ) break;
+		if ( mNumBaseSrc == CONFIG_LIST_MAX + 1 ) break;
 	}
 	
 	// rtk2go.com

@@ -5,13 +5,15 @@
 #include <Arduino.h>
 #include <SPI.h>
 #include <SD.h>
+#include <ArduinoJson.h>
 
 #include "app.h"
 
 static const char *mRootDir = "/m5f9p";
 static const char *mGpsLogDir = "/m5f9p/gpslog";
-static const char *mRunInfoPath = "/m5f9p/m5f9p.run";	// 実行パラメータファイル
-const char *mIniPath = "/m5f9p/m5f9p.ini";
+static const char *mRunInfoPath = "/m5f9p/m5f9p.run.json";	// 実行パラメータファイル
+const char *mConfigPath = "/m5f9p/m5f9p.yaml";			// 設定ファイル
+const char *mIniPath = "/m5f9p/m5f9p.ini";				// 旧形式の設定ファイル（YAMLへの移行用）
 const char *mBootLogPath = "/m5f9p/m5f9p.log";			// Boot　ログ
 
 uint64_t mSdTotalBytes;
@@ -116,26 +118,130 @@ int sdRead( const char *fileName, char *buff, int numBytes )
 
 // 実行パラメータを保存する
 //
+// ・JSONで保存する。Wifiは番号ではなくSSIDで覚えるので、設定ファイルの一覧を
+//   並べ替えても変わらない。
+//
+// 戻り値＝ 0:正常終了
+//         -1:エラー
+//
 int saveRunInfo( struct stRunInfo *runInfo )
 {
-	return sdSave( mRunInfoPath, (char*) runInfo, (int)sizeof( *runInfo ), FILE_WRITE );
+	static const char *formatName[] = { "nmea", "raw", "rtcm", "csv" };
+	JsonDocument doc;
+
+	doc["setup"] = ( runInfo->setupRequest != 0 );
+	doc["rotation"] = runInfo->lcdRotation;
+	doc["wifi"] = runInfo->wifiSsid;
+
+	struct stBaseSource *src = &runInfo->baseSrc;
+	JsonObject source = doc["source"].to<JsonObject>();
+	source["type"] = ! src->valid ? "none" : ( src->type == BASE_TYPE_UART ? "uart" : "tcp" );
+	if ( src->valid && src->type == BASE_TYPE_TCP ){
+		source["address"] = src->address;
+		source["port"] = src->port;
+		source["mount"] = src->mountPoint;
+		source["user"] = src->user;
+		source["password"] = src->password;
+		source["gga"] = src->ggaPeriod;
+		source["protocol"] = src->protocol;
+	}
+
+	int format = runInfo->saveFormat;
+	doc["format"] = formatName[ ( format >= 0 && format < 4 ) ? format : 0 ];
+	doc["saveAtBoot"] = ( runInfo->saving != 0 );
+	doc["rate"] = runInfo->solutionRate;
+	doc["tcpClient"] = ( runInfo->agribusConnect != 0 );
+
+	String text;
+	serializeJsonPretty( doc, text );
+	return sdSave( mRunInfoPath, (char*) text.c_str(), text.length(), FILE_WRITE ) == (int) text.length() ? 0 : -1;
+}
+
+// 旧形式（バイナリ）の実行パラメータを読み出し、新しい形式で保存し直す
+//
+// ・Wifiは番号で保存されているので、設定(mWifiList)を読み込んだ後に呼び出す事。
+//
+// 戻り値＝ 0:正常終了
+//         -1:旧形式のファイルが無い、またはサイズが異なる
+//
+static int readLegacyRunInfo( struct stRunInfo *runInfo )
+{
+	struct stLegacyRunInfo {
+		int setupRequest;
+		int lcdRotation;
+		int wifiAp;			// Wifi接続先番号(1から)。0:使わない
+		struct stBaseSource baseSrc;
+		int saveFormat;
+		int saving;
+		int solutionRate;
+		int agribusConnect;
+	} legacy;
+	static char buff[ sizeof( legacy ) + 1 ];	// サイズが違う場合を検出するため、１バイト多く読み出す
+
+	if ( sdRead( "/m5f9p/m5f9p.run", buff, sizeof( buff ) ) != (int) sizeof( legacy ) ) return -1;
+	memcpy( &legacy, buff, sizeof( legacy ) );
+
+	runInfo->setupRequest = legacy.setupRequest;
+	runInfo->lcdRotation = legacy.lcdRotation;
+	if ( legacy.wifiAp > 0 && legacy.wifiAp <= mNumWifi ){
+		strlcpy( runInfo->wifiSsid, mWifiList[ legacy.wifiAp - 1 ].ssid, sizeof( runInfo->wifiSsid ) );
+	}
+	runInfo->baseSrc = legacy.baseSrc;
+	runInfo->saveFormat = legacy.saveFormat;
+	runInfo->saving = legacy.saving;
+	runInfo->solutionRate = legacy.solutionRate;
+	runInfo->agribusConnect = legacy.agribusConnect;
+	saveRunInfo( runInfo );
+	return 0;
 }
 
 // 実行パラメータを読み出す
 //
+// ・設定ファイルを読み込んだ後に呼び出す事（旧形式からの移行でWifiの一覧を使う）。
+//
 // 戻り値＝ 0:正常終了
-//         -1:ファイルが無い、またはサイズが異なる（runInfoは0クリアされる）
+//         -1:ファイルが無い、または内容が正しくない（runInfoは0クリアされる）
 //
 int readRunInfo( struct stRunInfo *runInfo )
 {
-	// サイズが違う場合を検出するため、１バイト多く読み出す
-	char buff[ sizeof( *runInfo ) + 1 ];
-	int nret = sdRead( mRunInfoPath, buff, sizeof( buff ) );
-	if ( nret != sizeof( *runInfo ) ){
-		memset( runInfo, 0, sizeof( *runInfo ) );
-		return -1;
+	static char buff[1024];
+
+	memset( runInfo, 0, sizeof( *runInfo ) );
+	int n = sdRead( mRunInfoPath, buff, sizeof( buff ) - 1 );
+	if ( n <= 0 ) return readLegacyRunInfo( runInfo );
+	buff[n] = '\0';
+
+	JsonDocument doc;
+	if ( deserializeJson( doc, (const char*) buff ) || ! doc.is<JsonObject>() ) return -1;
+
+	runInfo->setupRequest = doc["setup"] | false;
+	runInfo->lcdRotation = doc["rotation"] | 0;
+	strlcpy( runInfo->wifiSsid, doc["wifi"] | "", sizeof( runInfo->wifiSsid ) );
+
+	struct stBaseSource *src = &runInfo->baseSrc;
+	String type = doc["source"]["type"] | "none";
+	if ( type == "uart" ){
+		src->valid = true;
+		src->type = BASE_TYPE_UART;
+		src->protocol = PROTO_NONE;
 	}
-	memcpy( runInfo, buff, sizeof( *runInfo ) );
+	else if ( type == "tcp" ){
+		src->valid = true;
+		src->type = BASE_TYPE_TCP;
+		strlcpy( src->address, doc["source"]["address"] | "", sizeof( src->address ) );
+		src->port = doc["source"]["port"] | 2101;
+		strlcpy( src->mountPoint, doc["source"]["mount"] | "", sizeof( src->mountPoint ) );
+		strlcpy( src->user, doc["source"]["user"] | "", sizeof( src->user ) );
+		strlcpy( src->password, doc["source"]["password"] | "", sizeof( src->password ) );
+		src->ggaPeriod = doc["source"]["gga"] | 0;
+		src->protocol = doc["source"]["protocol"] | PROTO_NTRIP;
+	}
+
+	String format = doc["format"] | "nmea";
+	runInfo->saveFormat = ( format == "raw" ) ? SAVE_RAW : ( format == "rtcm" ) ? SAVE_RTCM : ( format == "csv" ) ? SAVE_CSV : SAVE_NMEA;
+	runInfo->saving = ( doc["saveAtBoot"] | false ) ? 1 : 0;
+	runInfo->solutionRate = doc["rate"] | 1;
+	runInfo->agribusConnect = ( doc["tcpClient"] | false ) ? 1 : 0;
 	return 0;
 }
 

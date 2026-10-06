@@ -13,6 +13,8 @@ uv = "0.12.13"
 # Androidアプリ(android/)用
 java = "temurin-21"
 android-sdk = "19.0"
+# Windowsアプリ(windows/)用
+node = "22"
 
 [tasks.setup]
 description = "ESP32のツールチェーンとライブラリをインストールする(初回のみ)"
@@ -92,24 +94,24 @@ port=$(scripts/find-port.sh)
 uv run --quiet scripts/devcmd.py "$port" "${usage_json?}"
 '''
 
-[tasks.ini-get]
-description = "本体のSDカードからINIファイルを取り出す"
+[tasks.config-get]
+description = "本体のSDカードから設定ファイル(YAML)を取り出す"
 usage = 'arg "[file]" help="保存先。省略時は標準出力"'
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 port=$(scripts/find-port.sh)
-uv run --quiet scripts/devcmd.py "$port" ini-get ${usage_file:+"$usage_file"}
+uv run --quiet scripts/devcmd.py "$port" config-get ${usage_file:+"$usage_file"}
 '''
 
-[tasks.ini-put]
-description = "本体のSDカードにINIファイルを書き込む(反映には再起動が必要)"
-usage = 'arg "<file>" help="書き込むINIファイル"'
+[tasks.config-put]
+description = "本体のSDカードに設定ファイル(YAML)を書き込む(反映には再起動が必要)"
+usage = 'arg "<file>" help="書き込むYAMLファイル"'
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 port=$(scripts/find-port.sh)
-uv run --quiet scripts/devcmd.py "$port" ini-put "${usage_file?}"
+uv run --quiet scripts/devcmd.py "$port" config-put "${usage_file?}"
 '''
 
 # ---------------------------------------------------------------- Androidアプリ (android/)
@@ -185,4 +187,40 @@ timeout "${usage_seconds?}" "$adb" logcat --pid="$pid" -v brief || true
 description = "Android端末の画面を画像ファイルに保存する"
 usage = 'arg "[file]" help="保存先" default="screenshot.png"'
 run = '"$ANDROID_HOME/platform-tools/adb" exec-out screencap -p > "${usage_file?}"'
+
+# ---------------------------------------------------------------- Windowsアプリ (windows/)
+
+[tasks.win-setup]
+description = "Windowsアプリ用のElectron(Windows版)をインストールする(初回のみ)"
+dir = "windows"
+env = { npm_config_platform = "win32", npm_config_arch = "x64" }
+run = "npm install --no-audit --no-fund"
+
+[tasks.win-run]
+description = "WindowsアプリをWSLから開発用に起動する(終了は mise run win-stop)"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+# 画面の確認用の仕掛け(scripts/win-dev.py)を有効にして起動する。
+# WSL上のファイルから起動するとChromiumのサンドボックスが動かないので、開発時は無効にする。
+dev=$(python3 scripts/win-dev.py dir)
+rm -f "$dev"/res-* "$dev"/req*
+cd windows
+M5F9P_DEV_DIR="$dev" WSLENV=M5F9P_DEV_DIR/p nohup ./node_modules/electron/dist/electron.exe --no-sandbox . > "$dev/electron.log" 2>&1 &
+echo "起動しました。ログ: $dev/electron.log"
+'''
+
+[tasks.win-stop]
+description = "開発用に起動したWindowsアプリを終了する"
+run = "python3 scripts/win-dev.py quit"
+
+[tasks.win-shot]
+description = "開発用に起動したWindowsアプリのウィンドウを画像に保存する"
+usage = 'arg "[file]" help="保存先" default="screenshot.png"'
+run = 'python3 scripts/win-dev.py shot "${usage_file?}"'
+
+[tasks.win-eval]
+description = "開発用に起動したWindowsアプリの画面内でJavaScriptを実行する"
+usage = 'arg "<code>" help="実行するJavaScriptの式"'
+run = 'python3 scripts/win-dev.py eval "${usage_code?}"'
 

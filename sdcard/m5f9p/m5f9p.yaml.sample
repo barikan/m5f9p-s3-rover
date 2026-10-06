@@ -1,0 +1,74 @@
+# m5f9p 設定ファイル（M5Stack CoreS3 移動局専用版）
+#
+# このファイルを m5f9p.yaml という名前で、SDカードの /m5f9p/ に置く。
+#
+# ・# から行末まではコメント。
+# ・字下げは半角の空白で揃える（タブは使えない）。
+# ・書かれていない項目は既定値になる。
+# ・数字だけの文字列、先頭が0の文字列、# や : を含む文字列は "..." で囲む。
+#   パスワードは囲んでおくのが安全。
+# ・アプリから設定を保存すると、このファイルは書き直され、コメントは消える。
+
+receiver:
+  name: m5f9p          # 受信機名称。BLEとsoft APの名前になる（15文字以内）
+  usbNmea: false       # true にすると、USBシリアルからNMEAも出力する
+
+# Wifiアクセスポイント。何件でも書ける（32件まで）。
+wifi:
+  - ssid: your-ssid
+    password: "your-password"
+  # - ssid: another-ssid
+  #   password: "another-password"
+  #   ip: 192.168.1.50     # 固定IPにする場合。ゲートウェイは x.x.x.1 になる
+  #   dns: 192.168.1.1
+
+# 補正データ（基準局データ）の取得先。何件でも書ける（32件まで）。
+#   protocol: ntrip（既定値） または none（無手順のTCP）
+#   gga: GGAセンテンスをキャスタに送る間隔（秒）。VRS方式のサービスで必要。0:送らない
+sources:
+  - address: ntrip.example.com
+    port: 2101
+    mount: MOUNTPOINT
+    user: ""
+    password: ""
+    gga: 0
+    protocol: ntrip
+
+# 本体の画面でrtk2go.comのマウントポイントを選択した時に使うユーザ名とパスワード
+rtk2go:
+  user: ""             # 例: your-mail@example.com
+  password: ""         # 例: none
+
+# BLE。スマートフォンやPCから状況の表示と操作を行う。
+ble:
+  enable: true
+  nmea: 1              # NMEA(GPRMC,GPGGA)を送る回数（1秒あたり）。0～5。0:送らない
+
+# soft AP。WifiルーターなしでTCPサーバに接続する時に使う。
+# BLEと同時に使うと、soft APに端末が接続している間は通信が不安定になる事がある。
+softap:
+  enable: false
+  ip: 192.168.4.1      # パスワードは m5f9p123
+
+# Google MapsのAPIキー（Maps JavaScript API）。アプリが地図の表示に使う。
+# アプリの設定画面にキーを入力した場合は、そちらが優先される。
+google:
+  key: ""
+
+# 測位データ(NMEA)を配信するTCPサーバのポート番号
+server:
+  port: 10000
+
+# 測位データ(NMEA)の送信先TCPサーバ（AgriBus-NAVI等）。ipが空の時は送信しない
+client:
+  ip: ""
+  port: 51020
+
+log:
+  csv: false           # true にすると、NMEAの代わりにCSV（日付,時刻,緯度,経度,楕円体高,Fix）で保存する
+  chunkSec: 0          # ファイルを分割して保存する場合の、1ファイルの秒数。0:分割しない
+
+# ３ピンJST-PHコネクタ（UART）
+jstph:
+  baudrate: 115200
+  format: nmea         # 出力フォーマット nmea または csv

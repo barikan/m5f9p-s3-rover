@@ -43,6 +43,9 @@
 // 移動履歴の点を増やす最小の移動距離（m）
 #define TRACK_MIN_DISTANCE 0.05
 
+// 設定ファイルに書けるWifi接続先、補正データ取得先の数の上限
+#define CONFIG_LIST_MAX 32
+
 // BLEでNMEAを送る回数の上限（1秒あたり）。Wifiと無線を共用するので抑える。
 #define BLE_NMEA_RATE_MAX 5
 

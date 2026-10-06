@@ -16,17 +16,21 @@
 //   rate      {"hz":1-20}        1秒あたりの測位回数を変更する
 //   nmea      {"hz":0-5}         BLEでNMEAを送る回数（1秒あたり）を変更する。0:送らない
 //                                再起動するとINIファイルの値に戻る
-//   ini.get   INIファイルの内容を返す
-//   ini.put   {"text":"..."}     INIファイルを書き換える（再起動後に有効）
-//   run.get   起動時の実行パラメータを返す
+//   config.get  設定（設定ファイルの内容）をJSONで返す。パスワードを含む
+//   config.put  {"config":{...}}  設定を書き換える（再起動後に有効）。設定ファイルのコメントは消える
+//   file.get    設定ファイル(YAML)のテキストをそのまま返す
+//   file.put    {"text":"..."}    設定ファイル(YAML)をテキストで書き換える（再起動後に有効）
+//                                 YAMLとして正しくない時は書き込まずにエラーを返す
+//   run.get   起動時の実行パラメータと、選択できるWifi接続先、基準局データ取得先を返す
 //   run.set   実行パラメータを書き換えて再起動する。指定した項目のみ変更する
-//               {"wifi":n}       INIファイルのWifi接続先番号(1から)。0:使わない
-//               {"source":n}     基準局データ取得先。-1:接続しない 0:UART 1以上:INIファイルに書かれた順
+//               {"wifi":"SSID"}  接続するWifi。"":使わない
+//               {"source":"名前"} 基準局データ取得先。"":接続しない "uart":UART
+//                                それ以外は "アドレス/マウントポイント"
 //               {"format":n}     保存形式 0:NMEA 1:RAW 2:RTCM 3:CSV
 //               {"saveAtBoot":b} 起動時から保存する
 //               {"rate":n}       1秒あたりの測位回数
 //               {"rotation":n}   画面の向き 0:回転無 1:180度回転
-//   map.key   INIファイルの[google] keyを返す（地図の表示用）
+//   map.key   設定ファイルの google.key を返す（地図の表示用）
 //   track.get {"since":t}        本体が保持している移動履歴のうち、時刻t（1970-1-1 UTCからの
 //                                秒数）より後の点を古い順に返す。1回に返すのはTRACK_REPLY_MAX点
 //                                までで、続きがある時は "more":true になる
@@ -42,7 +46,7 @@
 #include "app.h"
 
 #define CMD_LINE_MAX 8192
-#define INI_SIZE_MAX 6000
+#define FILE_SIZE_MAX 8192		// 設定ファイルの最大バイト数
 #define TRACK_REPLY_MAX 50		// track.getで1回に返す点数
 
 extern byte mVersionMajor, mVersionMinor, mVersionPatch;
@@ -116,13 +120,34 @@ void cmdRestartIfRequested()
 	ESP.restart();
 }
 
-static void cmdIniGet( JsonDocument &re )
+void configToJson( JsonDocument &doc );
+int configSave( JsonVariantConst config );
+bool configCheckYaml( const char *text, String &error );
+
+static void cmdConfigGet( JsonDocument &re )
 {
-	char *buff = (char*) malloc( INI_SIZE_MAX + 1 );
+	JsonDocument config;
+	configToJson( config );
+	re["config"] = config;
+	re["ok"] = true;
+}
+
+static void cmdConfigPut( JsonDocument &cmd, JsonDocument &re )
+{
+	int nret = configSave( cmd["config"] );
+	if ( nret == -1 ) re["error"] = "no config";
+	else if ( nret == -2 ) re["error"] = "too large";
+	else if ( nret < 0 ) re["error"] = "can't write config file";
+	else re["ok"] = true;
+}
+
+static void cmdFileGet( JsonDocument &re )
+{
+	char *buff = (char*) malloc( FILE_SIZE_MAX + 1 );
 	if ( ! buff ) { re["error"] = "no memory"; return; }
 
-	int n = sdRead( mIniPath, buff, INI_SIZE_MAX );
-	if ( n < 0 ) re["error"] = "can't read INI file";
+	int n = sdRead( mConfigPath, buff, FILE_SIZE_MAX );
+	if ( n < 0 ) re["error"] = "can't read config file";
 	else {
 		buff[n] = '\0';
 		re["text"] = buff;	// 文字列はコピーされる
@@ -131,14 +156,16 @@ static void cmdIniGet( JsonDocument &re )
 	free( buff );
 }
 
-static void cmdIniPut( JsonDocument &cmd, JsonDocument &re )
+static void cmdFilePut( JsonDocument &cmd, JsonDocument &re )
 {
 	const char *text = cmd["text"];
 	if ( ! text ) { re["error"] = "no text"; return; }
 
 	int n = strlen( text );
-	if ( n > INI_SIZE_MAX ) { re["error"] = "too large"; return; }
-	if ( sdSave( mIniPath, (char*) text, n, FILE_WRITE ) != n ) { re["error"] = "can't write INI file"; return; }
+	if ( n > FILE_SIZE_MAX ) { re["error"] = "too large"; return; }
+	String problem;
+	if ( ! configCheckYaml( text, problem ) ) { re["error"] = "YAML error: " + problem; return; }
+	if ( sdSave( mConfigPath, (char*) text, n, FILE_WRITE ) != n ) { re["error"] = "can't write config file"; return; }
 	re["bytes"] = n;
 	re["ok"] = true;
 }
@@ -162,30 +189,13 @@ static void cmdTrackGet( JsonDocument &cmd, JsonDocument &re )
 	re["ok"] = true;
 }
 
-// 実行パラメータの基準局データ取得先が、一覧(mBaseSrcList)の何番目かを返す
-//
-// 戻り値＝ -1:接続しない、または一覧に無い  0:UART  1以上:INIファイルに書かれた順
-//
-static int runSourceIndex()
-{
-	struct stBaseSource *src = &mRunInfo.baseSrc;
-	if ( ! src->valid ) return -1;
-	if ( src->type == BASE_TYPE_UART ) return 0;
-	for( int i=1; i < mNumBaseSrc; i++ ){
-		if ( strcmp( src->address, mBaseSrcList[i].address ) == 0 &&
-			 strcmp( src->mountPoint, mBaseSrcList[i].mountPoint ) == 0 ) return i;
-	}
-	return -1;
-}
-
 static void cmdRunGet( JsonDocument &re )
 {
-	re["wifi"] = mRunInfo.wifiAp;
-	re["source"] = runSourceIndex();
-	re["sourceValid"] = mRunInfo.baseSrc.valid;
-	re["sourceType"] = mRunInfo.baseSrc.type;
-	re["sourceAddress"] = mRunInfo.baseSrc.address;
-	re["sourceMount"] = mRunInfo.baseSrc.mountPoint;
+	char name[100] = "";
+
+	re["wifi"] = mRunInfo.wifiSsid;
+	if ( mRunInfo.baseSrc.valid ) baseSrcName( &mRunInfo.baseSrc, name, sizeof(name) );
+	re["source"] = name;
 	re["format"] = mRunInfo.saveFormat;
 	re["saveAtBoot"] = (bool)mRunInfo.saving;
 	re["rate"] = mRunInfo.solutionRate;
@@ -196,8 +206,8 @@ static void cmdRunGet( JsonDocument &re )
 	for( int i=0; i < mNumWifi; i++ ) wifiList.add( mWifiList[i].ssid );
 	JsonArray sourceList = re["sourceList"].to<JsonArray>();
 	for( int i=0; i < mNumBaseSrc; i++ ){
-		if ( i == 0 ) sourceList.add( "UART" );
-		else sourceList.add( String( mBaseSrcList[i].address ) + "/" + mBaseSrcList[i].mountPoint );
+		baseSrcName( &mBaseSrcList[i], name, sizeof(name) );
+		sourceList.add( name );
 	}
 	re["ok"] = true;
 }
@@ -207,15 +217,15 @@ static void cmdRunSet( JsonDocument &cmd, JsonDocument &re )
 	struct stRunInfo info;
 	memcpy( &info, &mRunInfo, sizeof(info) );
 
-	if ( cmd["wifi"].is<int>() ){
-		int n = cmd["wifi"];
-		if ( n < 0 || n > mNumWifi ) { re["error"] = "bad wifi"; return; }
-		info.wifiAp = n;
+	if ( cmd["wifi"].is<const char*>() ){
+		const char *ssid = cmd["wifi"];
+		if ( strlen( ssid ) && wifiIndexOf( ssid ) < 0 ) { re["error"] = "bad wifi"; return; }
+		strlcpy( info.wifiSsid, ssid, sizeof( info.wifiSsid ) );
 	}
-	if ( cmd["source"].is<int>() ){
-		int n = cmd["source"];
-		if ( n < 0 ) info.baseSrc.valid = false;
-		else if ( baseSrcFromList( n, &info.baseSrc ) < 0 ) { re["error"] = "bad source"; return; }
+	if ( cmd["source"].is<const char*>() ){
+		const char *name = cmd["source"];
+		if ( strlen( name ) == 0 ) info.baseSrc.valid = false;
+		else if ( baseSrcFromList( baseSrcFind( name ), &info.baseSrc ) < 0 ) { re["error"] = "bad source"; return; }
 	}
 	if ( cmd["format"].is<int>() ){
 		int n = cmd["format"];
@@ -230,7 +240,7 @@ static void cmdRunSet( JsonDocument &cmd, JsonDocument &re )
 	}
 	if ( cmd["rotation"].is<int>() ) info.lcdRotation = cmd["rotation"].as<int>() ? 1 : 0;
 
-	if ( saveRunInfo( &info ) != (int)sizeof(info) ) { re["error"] = "can't save"; return; }
+	if ( saveRunInfo( &info ) < 0 ) { re["error"] = "can't save"; return; }
 	mRestartRequest = true;
 	re["ok"] = true;
 }
@@ -278,8 +288,10 @@ void cmdExecute( char *line, String &reply )
 		}
 		re["hz"] = mBleNmeaRate;
 	}
-	else if ( strcmp( name, "ini.get" ) == 0 ) cmdIniGet( re );
-	else if ( strcmp( name, "ini.put" ) == 0 ) cmdIniPut( cmd, re );
+	else if ( strcmp( name, "config.get" ) == 0 ) cmdConfigGet( re );
+	else if ( strcmp( name, "config.put" ) == 0 ) cmdConfigPut( cmd, re );
+	else if ( strcmp( name, "file.get" ) == 0 ) cmdFileGet( re );
+	else if ( strcmp( name, "file.put" ) == 0 ) cmdFilePut( cmd, re );
 	else if ( strcmp( name, "run.get" ) == 0 ) cmdRunGet( re );
 	else if ( strcmp( name, "run.set" ) == 0 ) cmdRunSet( cmd, re );
 	else if ( strcmp( name, "map.key" ) == 0 ){

@@ -5,8 +5,8 @@
 """USBシリアル経由で本体にコマンド(JSON)を送り、応答を表示する。
 
   devcmd.py PORT '{"cmd":"status"}'     コマンドを送る
-  devcmd.py PORT ini-get [FILE]         INIファイルを取り出す（FILE省略時は標準出力）
-  devcmd.py PORT ini-put FILE           INIファイルを書き込む
+  devcmd.py PORT config-get [FILE]      設定ファイル(YAML)を取り出す（FILE省略時は標準出力）
+  devcmd.py PORT config-put FILE        設定ファイル(YAML)を書き込む
 
 コマンドの一覧は src/cmd.cpp の先頭にある。
 """
@@ -45,8 +45,8 @@ def main():
         sys.exit(__doc__)
     port, action = sys.argv[1], sys.argv[2]
 
-    if action == "ini-get":
-        reply = request(port, {"cmd": "ini.get"})
+    if action == "config-get":
+        reply = request(port, {"cmd": "file.get"})
         if not reply.get("ok"):
             sys.exit(f"エラー: {reply.get('error')}")
         if len(sys.argv) > 3:
@@ -54,12 +54,12 @@ def main():
                 f.write(reply["text"])
         else:
             sys.stdout.write(reply["text"])
-    elif action == "ini-put":
+    elif action == "config-put":
         if len(sys.argv) < 4:
             sys.exit("ファイルを指定してください")
         with open(sys.argv[3], encoding="utf-8", newline="") as f:
             text = f.read()
-        reply = request(port, {"cmd": "ini.put", "text": text})
+        reply = request(port, {"cmd": "file.put", "text": text})
         print(json.dumps(reply, ensure_ascii=False))
         if not reply.get("ok"):
             sys.exit(1)

@@ -53,8 +53,7 @@ j1:
 		idx = uiSelectList( ">>> Select Wifi AP", mNumWifi, wifiLabel, "No Wifi" );
 	}
 	else {
-		idx = mRunInfo.wifiAp - 1;
-		if ( idx >= mNumWifi ) idx = -1;
+		idx = wifiIndexOf( mRunInfo.wifiSsid );
 	}
 	if ( idx < 0 ) return 0;
 
@@ -337,7 +336,31 @@ static void baseSrcLabel( int index, char *buff, int buffSize )
 	else snprintf( buff, buffSize, "%d rtk2go.com", index );
 }
 
-// INIファイルの基準局データ取得先(mBaseSrcList)からsrcを作る
+// 基準局データ取得先の名前を作る
+//
+// ・コマンドで取得先を指すのに使う。UARTは "uart"、それ以外は "アドレス/マウントポイント"
+//
+void baseSrcName( const struct stBaseSource *src, char *buff, int buffSize )
+{
+	if ( src->type == BASE_TYPE_UART ) snprintf( buff, buffSize, "uart" );
+	else snprintf( buff, buffSize, "%s/%s", src->address, src->mountPoint );
+}
+
+// 名前から、基準局データ取得先の一覧(mBaseSrcList)の番号を探す
+//
+// 戻り値＝ 0以上:番号  -1:一覧に無い
+//
+int baseSrcFind( const char *name )
+{
+	char buff[100];
+	for( int i=0; i < mNumBaseSrc; i++ ){
+		baseSrcName( &mBaseSrcList[i], buff, sizeof(buff) );
+		if ( strcmp( buff, name ) == 0 ) return i;
+	}
+	return -1;
+}
+
+// 設定ファイルの基準局データ取得先(mBaseSrcList)からsrcを作る
 //
 // index: 0:UART(JST-PHコネクタ)  1以上:INIファイルに書かれた順
 //
