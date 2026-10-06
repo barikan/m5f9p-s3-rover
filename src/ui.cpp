@@ -19,294 +19,360 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 
 #include <M5Unified.h>
+
+#include "app.h"
 #include "ui.h"
+#include "screen.h"
 
-// CoreS3には物理ボタンが無いので、画面の下端に３つのボタンを描き、
-// タッチされた位置でA,B,Cを判定する。
-
-#define BUTTON_HEIGHT 32		// ボタンの表示の高さ（ピクセル）
-#define BUTTON_TOUCH_HEIGHT 48	// ボタンとして反応する高さ。表示より少し広くしている。
-#define BUTTON_TEXT_MAX 12
-
-static int mTextSize = 2;		// 文字のピクセル数は 8 x mTextSize
-static int mLcdRotation = 0;	// 画面の向き 0:回転無 1:180度回転
-static char mButtonText[3][ BUTTON_TEXT_MAX ];
-static bool mButtonDrawn = false;
-
-// ************************************************************
-//                           表示
-// ************************************************************
-
-// 画面を180度回転する
+// 起動時の画面（ウィザード）。setup()の中から、順に呼び出して使う。
 //
-static void lcdRotate180()
+//   uiStatus()      経過を表示する（ボタン無し）
+//   uiAsk()         文章とボタンを表示し、ボタンが押されるまで待つ
+//   uiNotice()      文章と OK ボタンを表示し、押されるまで待つ
+//   uiShow(), uiPoll()  ボタン付きの画面を表示し、待たずに押されたかどうかを調べる
+//   uiSelectList()  一覧を表示し、行をタップして選ぶ
+//
+// 描画は、測位中の画面と同じ土台(screen.cpp)を使う。
+//
+// 待っている間も、USBからの lcd.shot と lcd.tap は受け付ける（画面の確認用）。
+// ほかのコマンドは、測位を始めるまで "not ready" を返す。
+
+#define MARGIN 12
+#define TITLE_HEIGHT 40
+#define BUTTON_HEIGHT 52
+#define LINE_HEIGHT 24
+#define BODY_MAX 400
+#define BUTTON_MAX 3
+
+static int mLcdRotation = 0;	// 画面の向き 0:回転無 1:180度回転
+
+// いま表示している画面の内容（押している間の表示のために、描き直せるように覚えておく）
+static char mTitle[40];
+static char mBody[ BODY_MAX ];
+static const char *mButtons[ BUTTON_MAX ];
+static int mNumButtons;
+static int mPressed = -1;		// 押されているボタンの番号。-1:押されていない
+
+// ************************************************************
+//                           部品
+// ************************************************************
+
+// 待つ。その間、USBからの画面の確認用コマンドを受け付ける
+//
+static void uiIdle( int msec )
 {
-	mLcdRotation = ! mLcdRotation;
-	M5.Display.setRotation( M5.Display.getRotation() ^ 2 );
+	cmdPollUsb();
+	screenShotPoll( Serial );
+	delay( msec );
 }
 
-// 画面の初期化
+static void drawTitle( const char *title )
+{
+	screenText( MARGIN, TITLE_HEIGHT / 2 + 2, title, FONT_TITLE, COLOR_TEXT, lgfx::textdatum_t::middle_left );
+}
+
+static void drawButton( int x, int y, int w, int h, const char *text, bool pressed, bool primary )
+{
+	int bg = primary ? COLOR_ACCENT : pressed ? COLOR_PRESSED : COLOR_SURFACE;
+	if ( primary && pressed ) bg = COLOR_GRAY;
+	screenCanvas().fillSmoothRoundRect( x, y, w, h, 10, (uint16_t) bg );
+	screenText( x + w / 2, y + h / 2, text, FONT_TITLE, primary ? COLOR_ON_ACCENT : COLOR_TEXT, lgfx::textdatum_t::middle_center );
+}
+
+// 文章を描く。'\n' で改行し、幅に収まらない行は単語の切れ目で折り返す
 //
-// setRotation:  0=回転しない  1=180度回転  -1=UIで選択
-// message : 画面に表示するメッセージ
+// 戻り値＝次の行のY座標
+//
+static int drawBody( const char *text, int y )
+{
+	const int maxWidth = SCREEN_WIDTH - MARGIN * 2;
+	char line[ 96 ];
+	int length = 0;
+
+	const char *p = text;
+	while( *p ){
+		// 次の単語を取り出す
+		const char *start = p;
+		while( *p && *p != ' ' && *p != '\n' ) p++;
+		int wordLength = p - start;
+
+		// 行に足して幅を超えるなら、先に行を出す
+		int add = wordLength + ( length ? 1 : 0 );
+		if ( length && length + add < (int) sizeof(line) ){
+			char probe[ 96 ];
+			snprintf( probe, sizeof(probe), "%.*s %.*s", length, line, wordLength, start );
+			if ( screenTextWidth( probe, FONT_TEXT ) > maxWidth ){
+				line[ length ] = '\0';
+				screenText( MARGIN, y, line, FONT_TEXT, COLOR_MUTED );
+				y += LINE_HEIGHT;
+				length = 0;
+			}
+		}
+		if ( length && length + 1 < (int) sizeof(line) ) line[ length++ ] = ' ';
+		if ( length + wordLength >= (int) sizeof(line) ) wordLength = sizeof(line) - 1 - length;
+		memcpy( line + length, start, wordLength );
+		length += wordLength;
+
+		if ( *p == '\n' ){
+			line[ length ] = '\0';
+			screenText( MARGIN, y, line, FONT_TEXT, COLOR_MUTED );
+			y += LINE_HEIGHT;
+			length = 0;
+		}
+		if ( *p ) p++;
+	}
+	if ( length ){
+		line[ length ] = '\0';
+		screenText( MARGIN, y, line, FONT_TEXT, COLOR_MUTED );
+		y += LINE_HEIGHT;
+	}
+	return y;
+}
+
+// ボタンの位置。画面の下端に、等しい幅で並べる
+//
+static void buttonRect( int index, int count, int *x, int *w )
+{
+	*w = ( SCREEN_WIDTH - MARGIN * ( count + 1 ) ) / count;
+	*x = MARGIN + index * ( *w + MARGIN );
+}
+
+// 覚えている内容で画面を描く
+//
+static void redraw()
+{
+	screenClear();
+	drawTitle( mTitle );
+	drawBody( mBody, TITLE_HEIGHT + 8 );
+	for( int i=0; i < mNumButtons; i++ ){
+		int x, w;
+		buttonRect( i, mNumButtons, &x, &w );
+		// 最後のボタンを目立たせる（先に進む操作を右端に置く）
+		drawButton( x, SCREEN_HEIGHT - BUTTON_HEIGHT - MARGIN, w, BUTTON_HEIGHT, mButtons[i],
+					i == mPressed, i == mNumButtons - 1 && mNumButtons > 1 );
+	}
+	screenFlush();
+}
+
+static void setScreen( const char *title, const char *button1, const char *button2, const char *button3 )
+{
+	strlcpy( mTitle, title, sizeof(mTitle) );
+	mNumButtons = 0;
+	if ( button1 ) mButtons[ mNumButtons++ ] = button1;
+	if ( button2 ) mButtons[ mNumButtons++ ] = button2;
+	if ( button3 ) mButtons[ mNumButtons++ ] = button3;
+	mPressed = -1;
+}
+
+// ************************************************************
+//                           表示と入力
+// ************************************************************
+
+// 画面を使えるようにする
+//
+// setRotation:  0=回転しない  1=180度回転  -1=画面で選択
 //
 // 戻り値＝ 0:回転無し 1:180度回転
 //
-int lcdInit( int setRotation, const char *message )
+int uiBegin( int setRotation )
 {
-	M5.Display.setTextSize( mTextSize );
-	M5.Display.setTextWrap( true, false );
-	lcdClear();
-	lcdTextColor( TFT_WHITE );
-	if ( strlen( message ) ) lcdDispText( 2, "%s", message );
-	
-	if ( setRotation < 0 ){
-		while(1){
-			lcdDispButtonText( "Rotate", "Ok", "Rotate" );
-			lcdDispText( 7, ">>> Is display orientation OK ?" );
-			int rotate = waitButton( 1, 1, 1, 1, 0, 1 );
-			if ( ! rotate ) break;
-			lcdClear();
-			lcdRotate180();
-			if ( strlen( message ) ) lcdDispText( 2, "%s", message );
+	if ( screenBegin() < 0 ) dbgPrintf( "!! Screen: not enough memory\r\n" );
+
+	if ( setRotation == 1 ){
+		mLcdRotation = 1;
+		M5.Display.setRotation( M5.Display.getRotation() ^ 2 );
+	}
+	else if ( setRotation < 0 ){
+		// "Rotate" が押される度に180度回す
+		while( uiAsk( "Display", "Rotate", "OK", NULL, "Is the display the right way up?" ) == 0 ){
+			mLcdRotation = ! mLcdRotation;
+			M5.Display.setRotation( M5.Display.getRotation() ^ 2 );
+			screenInvalidate();
 		}
 	}
-	else if ( setRotation == 1 ){
-		lcdRotate180();
-	}
-	lcdClear();
-	
 	return mLcdRotation;
 }
 
-// 文字を画面に表示する
+// 文章とボタンを表示する（待たない）。押されたかどうかは uiPoll() で調べる
 //
-// lineNum : 行番号（0から）　負数の時は現在のカーソル位置に表示
+// button1～3: ボタンの文字列。使わないものは NULL。文字列は、画面を表示している間
+//             残っている事（文字列リテラルを渡す）
 //
-void lcdDispText( int lineNum, const char* format, ... )
+void uiShow( const char *title, const char *button1, const char *button2, const char *button3, const char *format, ... )
 {
-	char buff[256];
-
 	va_list args;
 	va_start( args, format );
-	vsnprintf( buff, sizeof(buff), format, args );
+	vsnprintf( mBody, sizeof(mBody), format, args );
 	va_end( args );
-
-	if ( lineNum >= 0 ) M5.Display.setCursor( 0, lineNum * mTextSize * 8 );
-	M5.Display.print( buff );
+	setScreen( title, button1, button2, button3 );
+	redraw();
 }
 
-// 項目名(greenText)を緑、値を白で表示する
+// 表示しているボタンが押されたかどうか調べる
 //
-void lcdDispText2( int lineNum, const char* greenText, const char* format, ... )
+// ・M5.update() を呼び出す（screenTouch）。
+//
+// 戻り値＝ 0～2:押されたボタンの番号（uiShow に渡した順）
+//         -1:押されていない
+//
+int uiPoll()
 {
-	char buff[256];
+	int x, y;
+	bool released;
+	int hit = -1;
+	if ( screenTouch( &x, &y, &released ) && y >= SCREEN_HEIGHT - BUTTON_HEIGHT - MARGIN * 2 ){
+		for( int i=0; i < mNumButtons; i++ ){
+			int bx, bw;
+			buttonRect( i, mNumButtons, &bx, &bw );
+			if ( x >= bx - MARGIN / 2 && x < bx + bw + MARGIN / 2 ) hit = i;
+		}
+	}
+	else released = false;
 
+	int pressed = released ? -1 : hit;
+	if ( pressed != mPressed ){
+		mPressed = pressed;
+		redraw();
+	}
+	uiIdle( 20 );
+	return released ? hit : -1;
+}
+
+// 文章とボタンを表示し、ボタンが押されるまで待つ
+//
+// 戻り値＝ 0～2:押されたボタンの番号
+//
+int uiAsk( const char *title, const char *button1, const char *button2, const char *button3, const char *format, ... )
+{
 	va_list args;
 	va_start( args, format );
-	vsnprintf( buff, sizeof(buff), format, args );
+	vsnprintf( mBody, sizeof(mBody), format, args );
 	va_end( args );
+	setScreen( title, button1, button2, button3 );
+	redraw();
 
-	if ( lineNum >= 0 ) M5.Display.setCursor( 0, lineNum * mTextSize * 8 );
-	lcdTextColor( TFT_GREEN );
-	M5.Display.print( greenText );
-	lcdTextColor( TFT_WHITE );
-	M5.Display.print( buff );
-}
-
-void lcdClear()
-{
-	M5.Display.fillScreen( TFT_BLACK );
-	M5.Display.setCursor( 0, 0 );
-	mButtonDrawn = false;
-}
-
-// color: 16bit color
-//
-void lcdTextColor( int color )
-{
-	M5.Display.setTextColor( (uint16_t) color, TFT_BLACK );
-}
-
-// 画面の下端にボタンを表示する
-//
-// ・文字列が""のボタンは表示しない
-// ・表示内容が前回と同じ場合は何もしない（lcdClear()の後は必ず描画する）
-//
-void lcdDispButtonText( const char *textA, const char *textB, const char *textC )
-{
-	const char *text[3] = { textA, textB, textC };
-
-	bool changed = ! mButtonDrawn;
-	for( int i=0; i < 3; i++ ){
-		if ( strncmp( mButtonText[i], text[i], BUTTON_TEXT_MAX - 1 ) != 0 ) changed = true;
-	}
-	if ( ! changed ) return;
-
-	int width = M5.Display.width() / 3;
-	int y = M5.Display.height() - BUTTON_HEIGHT;
-	M5.Display.fillRect( 0, y, M5.Display.width(), BUTTON_HEIGHT, TFT_BLACK );
-	M5.Display.setTextDatum( middle_center );
-	M5.Display.setTextColor( TFT_WHITE, TFT_BLACK );
-	for( int i=0; i < 3; i++ ){
-		strncpy( mButtonText[i], text[i], BUTTON_TEXT_MAX - 1 );
-		mButtonText[i][ BUTTON_TEXT_MAX - 1 ] = '\0';
-		if ( strlen( mButtonText[i] ) == 0 ) continue;
-
-		int x = i * width;
-		M5.Display.drawRoundRect( x + 2, y + 1, width - 4, BUTTON_HEIGHT - 2, 6, TFT_WHITE );
-		M5.Display.drawString( mButtonText[i], x + width / 2, y + BUTTON_HEIGHT / 2 );
-	}
-	M5.Display.setTextDatum( top_left );
-	mButtonDrawn = true;
-}
-
-// メッセージを表示し、画面がタッチされるまで待つ
-//
-void lcdDispAndWaitButton( int lineNum, const char* format, ... )
-{
-	char buff[256];
-	lcdClear();
-
-	va_list args;
-	va_start( args, format );
-	vsnprintf( buff, sizeof(buff), format, args );
-	va_end( args );
-
-	lcdTextColor( TFT_WHITE );
-	lcdDispText( lineNum, "%s", buff );
-	lcdDispText( 10, ">>> Touch screen" );
-	waitTouch();
-}
-
-// ************************************************************
-//                           ボタン
-// ************************************************************
-
-// ボタンが押されたかどうか取得する
-//
-// ・M5.update()を呼び出すのはこの関数とwaitTouch()のみ。
-//
-// longPress: 長押しされた時、trueがセットされる。（NULL可）
-//
-// 戻り値＝ 0:押されていない
-//          A_BUTTON,B_BUTTON,C_BUTTON：押されたボタン
-//
-int buttonRead( bool *longPress )
-{
-	if ( longPress ) *longPress = false;
-
-	M5.update();
-	auto det = M5.Touch.getDetail();
-	bool hold = det.wasHold();
-	if ( ! hold && ! det.wasClicked() && ! det.wasFlicked() ) return 0;
-
-	// 押し始めの位置で判定する
-	if ( det.base_y < M5.Display.height() - BUTTON_TOUCH_HEIGHT ) return 0;
-	int num = det.base_x * 3 / M5.Display.width() + 1;
-	if ( num < A_BUTTON ) num = A_BUTTON;
-	if ( num > C_BUTTON ) num = C_BUTTON;
-
-	if ( longPress ) *longPress = hold;
-	return num;
-}
-
-// ボタンが押されるまで待つ
-//
-// useA,useB,useC: ボタンを使用する時1,押されても無視する時0
-// numA,numB,numC: ボタンが押された時に返す値（整数）
-//
-// 戻り値＝押されたボタンに対応する値（numA,numB,numC）
-//
-int waitButton( int useA, int useB, int useC,  int numA, int numB, int numC )
-{
-	while(1){	
-		delay(20);
-		int button = buttonRead();
-		if ( useA && button == A_BUTTON ) return numA;
-		if ( useB && button == B_BUTTON ) return numB;
-		if ( useC && button == C_BUTTON ) return numC;
-	}
-}
-
-// 画面のどこかがタッチされるまで待つ
-//
-void waitTouch()
-{
 	while(1){
-		delay(20);
-		M5.update();
-		auto det = M5.Touch.getDetail();
-		if ( det.wasClicked() || det.wasFlicked() || det.wasHold() ) return;
+		int button = uiPoll();
+		if ( button >= 0 ) return button;
 	}
+}
+
+// 文章と OK ボタンを表示し、押されるまで待つ
+//
+void uiNotice( const char *title, const char *format, ... )
+{
+	va_list args;
+	va_start( args, format );
+	vsnprintf( mBody, sizeof(mBody), format, args );
+	va_end( args );
+	setScreen( title, "OK", NULL, NULL );
+	redraw();
+	while( uiPoll() < 0 );
+}
+
+// 経過を表示する（ボタン無し、待たない）
+//
+void uiStatus( const char *title, const char *format, ... )
+{
+	va_list args;
+	va_start( args, format );
+	vsnprintf( mBody, sizeof(mBody), format, args );
+	va_end( args );
+	setScreen( title, NULL, NULL, NULL );
+	redraw();
+	uiIdle( 0 );
 }
 
 // ************************************************************
 //                           一覧選択
 // ************************************************************
 
-#define LIST_LINE_OFFSET 2
-#define LIST_PAGE_LINES 10
-#define LIST_TEXT_MAX 27		// 1行の文字数 + 1
-
-static void listDispItem( int index, int pageStart, uiLabelFunc getLabel, bool selected )
-{
-	char buff[ LIST_TEXT_MAX ];
-	getLabel( index, buff, sizeof(buff) );
-	lcdTextColor( selected ? TFT_GREEN : TFT_WHITE );
-	lcdDispText( index - pageStart + LIST_LINE_OFFSET, "%s", buff );
-	lcdTextColor( TFT_WHITE );
-}
+#define LIST_ROWS 4				// 1ページの行数
+#define LIST_ROW_HEIGHT 37
+#define LIST_TEXT_MAX 40
 
 // 一覧を表示し、項目を選択する
 //
-// ・Aボタン：次の項目（長押しで次のページ）  Bボタン：決定  Cボタン：取消
+// ・行をタップして選ぶ。入りきらない時は、下の < > でページを送る。
 //
-// title: １行目に表示する文字列
+// title: 題名
 // getLabel: 項目の文字列を返す関数
-// cancelText: Cボタンに表示する文字列
+// cancelText: 選ばずにやめるボタンの文字列
 //
 // 戻り値＝選択された項目の番号（0から）
 //         -1：取消
 //
 int uiSelectList( const char *title, int numItems, uiLabelFunc getLabel, const char *cancelText )
 {
-	int idx = 0;
-	int pageStart = -1;
-	int selected = -1;
+	enum { HIT_PREV = -2, HIT_NEXT = -3, HIT_CANCEL = -4, HIT_NONE = -5 };
+	const int numPages = ( numItems + LIST_ROWS - 1 ) / LIST_ROWS;
+	const int barY = TITLE_HEIGHT + LIST_ROWS * LIST_ROW_HEIGHT + 3;
+	const int barHeight = SCREEN_HEIGHT - barY - 5;
+	const int arrowWidth = 64;
+	int page = 0;
+	int pressed = HIT_NONE;
+	bool dirty = true;
 
 	while(1){
-		// ページが変わった時は全体を描画する
-		int newPageStart = idx - idx % LIST_PAGE_LINES;
-		if ( newPageStart != pageStart ){
-			pageStart = newPageStart;
-			lcdClear();
-			lcdDispButtonText( "Next", "Ok", cancelText );
-			lcdDispText( 0, "%s", title );
-			for( int i = pageStart; i < pageStart + LIST_PAGE_LINES && i < numItems; i++ ){
-				listDispItem( i, pageStart, getLabel, i == idx );
+		if ( dirty ){
+			dirty = false;
+			screenClear();
+			drawTitle( title );
+			if ( numPages > 1 ){
+				char text[16];
+				snprintf( text, sizeof(text), "%d / %d", page + 1, numPages );
+				screenText( SCREEN_WIDTH - MARGIN, TITLE_HEIGHT / 2 + 2, text, FONT_TEXT, COLOR_MUTED, lgfx::textdatum_t::middle_right );
 			}
+			for( int row = 0; row < LIST_ROWS; row++ ){
+				int index = page * LIST_ROWS + row;
+				if ( index >= numItems ) break;
+				char label[ LIST_TEXT_MAX ];
+				getLabel( index, label, sizeof(label) );
+				int y = TITLE_HEIGHT + row * LIST_ROW_HEIGHT;
+				screenCanvas().fillSmoothRoundRect( 6, y + 1, SCREEN_WIDTH - 12, LIST_ROW_HEIGHT - 3, 8,
+													(uint16_t)( pressed == index ? COLOR_PRESSED : COLOR_SURFACE ) );
+				screenText( MARGIN + 4, y + LIST_ROW_HEIGHT / 2, label, FONT_TEXT, COLOR_TEXT, lgfx::textdatum_t::middle_left );
+			}
+			// 下端: ページ送りと取消
+			int x = 6;
+			if ( numPages > 1 ){
+				drawButton( x, barY, arrowWidth, barHeight, "<", pressed == HIT_PREV, false );
+				x += arrowWidth + 6;
+				drawButton( x, barY, arrowWidth, barHeight, ">", pressed == HIT_NEXT, false );
+				x += arrowWidth + 6;
+			}
+			drawButton( x, barY, SCREEN_WIDTH - 6 - x, barHeight, cancelText, pressed == HIT_CANCEL, false );
+			screenFlush();
 		}
 
-		bool longPress;
-		int button = buttonRead( &longPress );
-		if ( button == A_BUTTON ){
-			int next = idx + 1;
-			if ( longPress ) next = pageStart + LIST_PAGE_LINES;
-			if ( next >= numItems ) next = 0;
-			if ( next - next % LIST_PAGE_LINES == pageStart ){
-				listDispItem( idx, pageStart, getLabel, false );
-				listDispItem( next, pageStart, getLabel, true );
+		int tx, ty;
+		bool released;
+		int hit = HIT_NONE;
+		if ( screenTouch( &tx, &ty, &released ) ){
+			if ( ty >= barY ){
+				if ( numPages > 1 && tx < 6 + arrowWidth + 3 ) hit = HIT_PREV;
+				else if ( numPages > 1 && tx < 6 + arrowWidth * 2 + 9 ) hit = HIT_NEXT;
+				else hit = HIT_CANCEL;
 			}
-			idx = next;
+			else if ( ty >= TITLE_HEIGHT ){
+				int index = page * LIST_ROWS + ( ty - TITLE_HEIGHT ) / LIST_ROW_HEIGHT;
+				if ( index < numItems ) hit = index;
+			}
 		}
-		else if ( button == B_BUTTON ){
-			selected = idx;
-			break;
+		else released = false;
+
+		if ( released ){
+			if ( hit >= 0 ) return hit;
+			if ( hit == HIT_CANCEL ) return -1;
+			if ( hit == HIT_PREV ) page = ( page + numPages - 1 ) % numPages;
+			if ( hit == HIT_NEXT ) page = ( page + 1 ) % numPages;
+			pressed = HIT_NONE;
+			dirty = true;
 		}
-		else if ( button == C_BUTTON ) break;
-		delay(20);
+		else if ( hit != pressed ){
+			pressed = hit;
+			dirty = true;
+		}
+		uiIdle( 20 );
 	}
-	lcdClear();
-	return selected;
 }

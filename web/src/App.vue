@@ -3,9 +3,10 @@
 //
 //   状況タブ … 接続先の選択、測位・補正データ・本体の状況、ログ保存と測位レートの操作
 //   地図タブ … 現在地と軌跡
+//   衛星タブ … 衛星の配置と信号強度
 //   設定タブ … Google MapsのAPIキー、起動時の設定、本体の設定の編集
-import { ref } from 'vue';
-import { Activity, Map, Settings } from 'lucide-vue-next';
+import { ref, watch } from 'vue';
+import { Activity, Map, Satellite, Settings } from 'lucide-vue-next';
 import { Button } from '@/components/ui/button';
 import { Toaster } from '@/components/ui/sonner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -13,10 +14,14 @@ import * as rover from './rover';
 import { state } from './store';
 import StatusPage from './components/StatusPage.vue';
 import MapPage from './components/MapPage.vue';
+import SatellitesPage from './components/SatellitesPage.vue';
 import SettingsPage from './components/SettingsPage.vue';
 import DialogHost from './components/DialogHost.vue';
 
 const tab = ref('status');
+
+// 衛星の情報は、衛星タブを開いている間だけ本体に問い合わせる（無線の占有を抑えるため）
+watch(tab, t => rover.watchSatellites(t === 'sats'));
 const page = 'absolute inset-0 overflow-y-auto px-4 pt-1 pb-4 data-[state=inactive]:hidden';
 </script>
 
@@ -32,12 +37,14 @@ const page = 'absolute inset-0 overflow-y-auto px-4 pt-1 pb-4 data-[state=inacti
       <TabsContent value="map" force-mount class="absolute inset-0 overflow-hidden data-[state=inactive]:hidden">
         <MapPage :visible="tab === 'map'" />
       </TabsContent>
+      <TabsContent value="sats" :class="page"><SatellitesPage /></TabsContent>
       <TabsContent value="settings" :class="page"><SettingsPage /></TabsContent>
     </main>
     <nav class="border-t px-4 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
       <TabsList class="h-10 w-full" aria-label="画面の切り替え">
         <TabsTrigger value="status"><Activity />状況</TabsTrigger>
         <TabsTrigger value="map"><Map />地図</TabsTrigger>
+        <TabsTrigger value="sats"><Satellite />衛星</TabsTrigger>
         <TabsTrigger value="settings"><Settings />設定</TabsTrigger>
       </TabsList>
     </nav>

@@ -66,51 +66,33 @@ static unsigned long mD9CLastCountMillis;
 //
 static bool gpsTest( struct stGpsData *gpsData )
 {
+	const char *title = "GNSS receiver";
 	int count = 0;
 	unsigned long msecLastCount = millis();
 
-	lcdClear();
-	lcdDispButtonText( "", "Cancel", "" );
-	lcdDispText( 2, ">>> Testing the ZED-F9P receiver" );
+	uiShow( title, "Cancel", NULL, NULL, "Testing the ZED-F9P receiver.\nWaiting for a position..." );
 	while(1){
-		if ( buttonRead() == B_BUTTON ) return false;
+		if ( uiPoll() == 0 ) return false;
 
-		if ( mRunMode == RUN_UI && millis() - msecLastCount >= 1000 ) {
+		if ( millis() - msecLastCount >= 1000 ) {
 			msecLastCount = millis();
-			lcdDispText( 5, "count = %d", ++count );
+			count++;
 			if ( count > 60 ){
-				lcdTextColor( TFT_RED );
-				lcdDispText( 7, " >>> Check the GNSS antenna." );
-				lcdTextColor( TFT_WHITE );
-				lcdDispButtonText( "Retry", "Exit", "" );
-				bool exit = waitButton( 1, 1, 0, false, true, 0 );
-				if ( exit ) return false;
-				lcdClear();
+				int exit = uiAsk( title, "Exit", "Retry", NULL, "No position yet.\nCheck the GNSS antenna." );
+				if ( exit == 0 ) return false;
 				count = 0;
-				lcdDispButtonText( "", "Cancel", "" );
-				lcdDispText( 2, ">>> Testing the ZED-F9P receiver" );
 			}
+			uiShow( title, "Cancel", NULL, NULL, "Testing the ZED-F9P receiver.\nWaiting for a position...  %d s", count );
 		}
 
 		// ボタンを読み飛ばさないように、短い時間で区切って受信する
 		if ( gpsGetPosition( gpsData, 30 ) < 0 ) continue;
 		if ( gpsData->quality == 0 ) continue;
 
-		lcdClear();
-		lcdTextColor( TFT_GREEN );
-		lcdDispText( 3, "> ZED-F9P test Ok. " );
-		int lineNum = 5;
-		lcdDispText( lineNum++, "%d-%02d-%02d %02d:%02d:%02d\r\n", 
+		uiNotice( title, "ZED-F9P test OK\n%d-%02d-%02d %02d:%02d:%02d UTC\nLat  %.8lf\nLon  %.8lf\nAlt  %.3lf m",
 					gpsData->year, gpsData->month, gpsData->day,
-					gpsData->hour, gpsData->minute, gpsData->second );
-		lcdDispText( lineNum++, "LAT=%.8lf\r\n", gpsData->lat);
-		lcdDispText( lineNum++, "LON=%.8lf\r\n", gpsData->lon);
-		lcdDispText( lineNum++, "ALT=%.3lf\r\n", gpsData->height);
-		lcdTextColor( TFT_WHITE );
-		if ( mRunMode == RUN_UI ) {
-			lcdDispText( 10, ">>> Touch screen" );
-			waitTouch();
-		}
+					gpsData->hour, gpsData->minute, gpsData->second,
+					gpsData->lat, gpsData->lon, gpsData->height );
 		return true;
 	}
 }
@@ -125,7 +107,7 @@ static void setupBaseSource( double lat, double lon )
 
 		if ( mBaseSrc.type == BASE_TYPE_UART ){
 			if ( mRunMode == RUN_UI ) {
-				lcdDispAndWaitButton( 3, "Base station: JST-PH Connector\n  baudrate: %d", mPhUartBaudrate );
+				uiNotice( "Corrections", "Source: JST-PH connector (UART)\nBaud rate: %d", mPhUartBaudrate );
 			}
 			mBaseRecvReady = true;
 			break;
@@ -144,10 +126,10 @@ static void setupBaseSource( double lat, double lon )
 static void setupSaveFormat()
 {
 	if ( mRunMode == RUN_UI ) {
-		lcdClear();
-		lcdDispButtonText( mCsvFormat ? "CSV" : "NMEA", "RAW", "RTCM" );
-		lcdDispText( 3, ">>> Select data format for saving" );
-		mSaveFormat = waitButton( 1, 1, 1, mCsvFormat ? SAVE_CSV : SAVE_NMEA, SAVE_RAW, SAVE_RTCM );
+		static const int formats[3] = { SAVE_RAW, SAVE_RTCM, SAVE_NMEA };
+		int button = uiAsk( "Log format", "RAW", "RTCM", mCsvFormat ? "CSV" : "NMEA", "Select the data format for saving to the SD card." );
+		mSaveFormat = formats[ button ];
+		if ( mSaveFormat == SAVE_NMEA && mCsvFormat ) mSaveFormat = SAVE_CSV;
 	}
 	else {
 		mSaveFormat = mRunInfo.saveFormat;
@@ -158,7 +140,7 @@ static void setupSaveFormat()
 		int nret = gpsRawInit( mSaveFormat );
 		if ( nret < 0 ){
 			dbgPrintf( "gpsRawInit() error nret=%d\r\n", nret );
-			if ( mRunMode == RUN_UI ) lcdDispAndWaitButton( 3, "> RAW data not available nret=%d\r\n", nret );
+			if ( mRunMode == RUN_UI ) uiNotice( "Log format", "RAW data is not available. (%d)", nret );
 		}
 	}
 }
@@ -210,33 +192,31 @@ void setup() {
 	// 画面の初期化
 	if ( mRunMode == RUN_NO_UI ) {
 		dbgPrintf( "Running under the last condition\r\n" );
-		lcdInit( mRunInfo.lcdRotation, "" );
+		uiBegin( mRunInfo.lcdRotation );
 	}
 	else {
-		mRunInfo.lcdRotation = lcdInit( -1, buff );
+		mRunInfo.lcdRotation = uiBegin( -1 );
 	}
-	lcdDispText( 3, "Initializing");
+	uiStatus( "M5F9P Rover", "Version %d.%d.%d\nStarting...", mVersionMajor, mVersionMinor, mVersionPatch );
 
 	// 起動時の選択画面で長時間待つので、コア0のウォッチドッグは止めておく
 	disableCore0WDT();
 
 	// SD
 	if ( mSdTotalBytes == 0 ){
-		lcdClear();
-		lcdDispButtonText( "Yes", "No", "" );
-		lcdDispText( 3, "SD card : 0 MB" );
-		lcdDispText( 5, ">>> Check again ?" );
-		lcdDispText( 7, "Yes > Device will be reset." );
-		int yes = waitButton( 1, 1, 0, YES, NO, 0 );
-		lcdClear();
-		if ( yes ) ESP.restart();
+		// 通常の起動では待たない（SDカードなしでも測位はできる）
+		if ( mRunMode == RUN_UI ){
+			int button = uiAsk( "SD card", "Continue", "Restart", NULL, "No SD card found.\nInsert a card and restart to check again." );
+			if ( button == 1 ) ESP.restart();
+		}
 	}
-	lcdDispText( 5, "SD card: %d MB", (int)(mSdTotalBytes / 1E6) );
 	dbgPrintf("SD card totalBytes=%llu\r\n", mSdTotalBytes);
 
 	// INIファイル
-	if ( configResult == -1 ) lcdDispText( 7, "Config file not found" );
-	else if ( configResult == -2 ) lcdDispText( 7, "Config file error" );
+	if ( mRunMode == RUN_UI ){
+		if ( configResult == -1 ) uiNotice( "Config file", "m5f9p.yaml was not found on the SD card.\nDefault settings are used." );
+		else if ( configResult == -2 ) uiNotice( "Config file", "m5f9p.yaml has a format error.\nDefault settings are used." );
+	}
 	
 	// JST-PHコネクタ
 	Serial2.begin( mPhUartBaudrate, SERIAL_8N1, PIN_PH_RX, PIN_PH_TX );
@@ -247,7 +227,6 @@ void setup() {
 
 	// ネット接続。
 	// GPS受信機の衛星捕捉の時間を取るために先に行う。
-	lcdClear();
 	nret = netStart();
 	if ( mRunMode == RUN_UI ){
 		// UIで選択しない時は書き換えない。設定ファイルが読めずに起動した時に、
@@ -256,22 +235,19 @@ void setup() {
 	}
 
 	// GPS受信機の初期化
-	lcdDispText( 3, "Check ZED-F9P UART");
+	if ( mRunMode == RUN_UI ) uiStatus( "GNSS receiver", "Checking the ZED-F9P..." );
 	nret = gpsInit();	
 	if ( nret < 0 ){
 		dbgPrintf("gpsInit() error nret=%d\r\n", nret);
 		if ( mRunMode == RUN_UI ){
-			lcdDispText( 5,"M5F9P does not respond. (%d)", nret );
-			lcdDispText( 8,">>> Touch screen. ");
-			lcdDispText( 9,"Device will be reset" );
-			waitTouch();
+			uiNotice( "GNSS receiver", "The M5F9P does not respond. (%d)\nThe device will restart.", nret );
 			ESP.restart();
 		}
 	}
 
 	// SDカード保存スレッド（Core 1)
 	if ( sdSaveInit() < 0 && mSdTotalBytes > 0 && mRunMode == RUN_UI ) {
-		lcdDispAndWaitButton( 3, "> Can't use SD card " );
+		uiNotice( "SD card", "Can't use the SD card." );
 	}
 
 	// GPS受信テスト及び日時取得
@@ -333,10 +309,6 @@ void setup() {
 	// 初期化終了
 	dbgPrintf("Heap Size = %d\r\n", esp_get_free_heap_size());
 	dbgPrintf("setup() exit  %lu msec\r\n", millis());
-	lcdClear();
-
-	// ここからは、新しい画面（screen.cpp、pages.cpp）で表示する
-	if ( screenBegin() < 0 ) dbgPrintf( "!! Screen: not enough memory\r\n" );
 	mStartMillis = millis();
 	mSetupDone = true;
 }
@@ -395,6 +367,7 @@ void loop()
 	pagesLoop();
 
 	d9cPoll();
+	satsPoll();
 	cmdPollUsb();
 	screenShotPoll( Serial );
 	blePoll();

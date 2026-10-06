@@ -270,6 +270,7 @@ static void taskRover(void* param)
 						if ( nret < 0 ) dbgPrintf( "ubxDecodeHPPOSLLH error\r\n" );
 						break;
 					}
+					satsDecode( &mUbxStatus );		// 待っている間に届いた衛星のメッセージも捨てない
 					mUbxStatus.statusNum = 0;
 				}
 				vTaskDelay(1);
@@ -284,6 +285,8 @@ static void taskRover(void* param)
 		else if ( msgClass == 0x02 && msgId == 0x32 ){ // RXM-RTCM
 			updateRtcmStatus();
 		}
+		// 衛星の配置と信号強度（NAV-SAT, NAV-SIG）
+		else satsDecode( &mUbxStatus );
 
 		mUbxStatus.statusNum = 0;
 	}

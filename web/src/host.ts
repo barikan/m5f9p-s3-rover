@@ -16,7 +16,10 @@ const NUS_TX = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
 const USB_VENDOR_ESPRESSIF = 0x303a;
 // ほかの端末が接続している間、本体が名前の後ろに付ける印（src/ble.cpp の BLE_BUSY_SUFFIX）
 const BLE_BUSY_SUFFIX = ' (in use)';
-const BLE_SILENT_MS = 6000;       // 接続してから、この時間何も届かなければつなぎ直す
+const BLE_SILENT_MS = 6000;
+
+/** 名前から「接続中」の印を外す。OSが覚えている名前に、印が付いたままの事がある */
+const plainName = (name: string) => (name.endsWith(BLE_BUSY_SUFFIX) ? name.slice(0, -BLE_BUSY_SUFFIX.length) : name);       // 接続してから、この時間何も届かなければつなぎ直す
 
 const android = window.AndroidBridge || null;
 const electron = window.host || null;
@@ -146,7 +149,7 @@ async function connectBle(id: string) {
   bleRequest = null;
   if (!device.gatt) throw new Error('この本体には接続できません');
   const gatt: BluetoothRemoteGATTServer = device.gatt;
-  const conn = makeConnection(device.name || 'Bluetooth');
+  const conn = makeConnection(plainName(device.name || 'Bluetooth'));
   let closed = false;
   let rx: BluetoothRemoteGATTCharacteristic | null = null;
   let queue: Promise<unknown> = Promise.resolve();      // 書き込みは1つずつ順に行う
@@ -244,11 +247,11 @@ window.onNative = message => {
 
 function connectAndroid(address: string | null, name?: string) {
   const bridge = android!;
-  const conn = makeConnection(name || address || 'Bluetooth');
+  const conn = makeConnection(plainName(name || address || 'Bluetooth'));
   nativeHandlers.line = m => conn.onLine(m.text ?? '');
   nativeHandlers.message = m => conn.onMessage(m.text ?? '');
   nativeHandlers.state = m => {
-    if (m.name) conn.name = m.name;
+    if (m.name) conn.name = plainName(m.name);
     if (m.state) conn.onState(m.state);
   };
   conn.send = line => bridge.sendLine(line);
@@ -266,7 +269,7 @@ function connectAndroid(address: string | null, name?: string) {
 export function scan(kind: ConnectionKind, found: (list: FoundDevice[]) => void) {
   // 名前に「接続中」の印が付いている本体は、印を外して busy にする
   const onDevices = (list: FoundDevice[]) => found(list.map(d => (d.name.endsWith(BLE_BUSY_SUFFIX)
-    ? { ...d, name: d.name.slice(0, -BLE_BUSY_SUFFIX.length), busy: true } : d)));
+    ? { ...d, name: plainName(d.name), busy: true } : d)));
   if (android) {
     nativeHandlers.devices = m => onDevices(m.list ?? []);
     android.startScan();

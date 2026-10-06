@@ -214,6 +214,13 @@ int setCsvData( struct stGpsData* pGpsData, char* buff, int buffSize );
 
 void cmdPollUsb();
 // ************************************************************
+//                        sats.cpp
+// ************************************************************
+
+bool satsDecode( struct stUbxStatus *ubx );
+void satsPoll();
+
+// ************************************************************
 //                        secret.cpp
 // ************************************************************
 

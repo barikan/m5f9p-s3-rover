@@ -31,7 +31,7 @@ mise run config-get / config-put  # 本体の SD カードの設定ファイル(
 - `platform = espressif32@6.9.0` に固定している。6.13.0 はこの環境で esptool の導入に失敗する。
 - 開発機は WSL2。USB は抜き差しのたびに `mise run usb-attach` が必要(Windows 側の usbipd を呼ぶ)。書き込みは時々失敗するので、`upload` タスクは再試行する。
 - ログの確認には `mise run log` を使う。`monitor` は対話式なので、エージェントからは使えない。
-- 起動ウィザードは画面タッチで進むので、そこだけはユーザーの操作が要る。メイン画面に入ったあとは、`mise run cmd` で画面に触らずに操作できる。Wi-Fi や補正元の切り替えは `run.set`(設定を書き換えて再起動)、設定ファイルの編集は `config-get` / `config-put` を使う。ウィザードの途中ではコマンドに応答しない。
+- 起動ウィザードは画面タッチで進むので、そこだけはユーザーの操作が要る。メイン画面に入ったあとは、`mise run cmd` で画面に触らずに操作できる。Wi-Fi や補正元の切り替えは `run.set`(設定を書き換えて再起動)、設定ファイルの編集は `config-get` / `config-put` を使う。ウィザードの途中では、画面の確認用(`lcd.shot`、`lcd.tap`)以外のコマンドに応答しない。
 - メイン画面に入ると 10 秒ごとに `STAT ...` 行がシリアルに出る(`main.cpp` の `dbgStatus()`)。補正データの受信量、RTCM のエラー率、Wi-Fi、BLE、内蔵 RAM の空きが分かる。
 - PC(WSL)には Bluetooth がない。BLE の接続確認はユーザーのスマートフォン(nRF Connect)に頼る。
 - 取り出した設定ファイルのパスワードは暗号化されているが、平文で書き戻すための控えを作ったときは、リポジトリに置かず、作業後は必ず消す(スクラッチ用のフォルダも含む)。
@@ -64,6 +64,7 @@ mise run android-screenshot          # 端末の画面を screenshot.png に保�
 - `web/src/host.ts`: 動作環境の違い(接続、ファイル)を吸収する。Windows は Web Serial と Web Bluetooth を画面側で扱い、Android は `window.AndroidBridge` と `window.onNative` で Kotlin の `BleClient` とやり取りする。
 - 画面は両方とも `https://m5f9p.azukimap.jp/` から読み込んだ扱いにしている(Electron は `protocol.handle`、Android は `WebViewAssetLoader`)。地図の API キーの制限を同じ URL で登録できるようにするためで、変えるときは両方を揃える。
 - 本体との通信仕様は `src/cmd.cpp` と `src/ble.cpp` の先頭にある。状況やコマンドの項目を増減したら `web/src/rover.ts` と画面を合わせる。
+- 衛星の配置と信号強度(`src/sats.cpp`、`web/src/satellites.ts`、`SatellitesPage.vue`)は、アプリが問い合わせている間だけ F9P に出力させる。常に出力させる作りにしない(F9P の UART と BLE の負荷が増え、RAW 形式のログにも入る)。
 - 状況は BLE では本体が1秒ごとに送り、USB では送らない。`rover.ts` は届いていないときだけ `status` を問い合わせる。
 - Google Maps の API キーは、利用者がアプリの設定タブか本体の設定ファイル(`google.key`)に置く。リポジトリやビルド設定に入れない。地図は Maps JavaScript API で、Maps SDK for Android には戻さない(キーを実行時に渡せないため)。
 
@@ -119,7 +120,7 @@ mise run android-screenshot          # 端末の画面を screenshot.png に保�
 
 ### 守るべき排他ルール
 
-- **I2C と `M5.update()` は loopTask からだけ呼ぶ。** `M5.update()` を呼ぶのは、`screenTouch()`(screen.cpp)と `buttonRead()` / `waitTouch()`(ui.cpp)だけ。D9C の読み出し(`d9cPoll()`、gps.cpp の I2C 関数)を他のタスクへ移さない。
+- **I2C と `M5.update()` は loopTask からだけ呼ぶ。** `M5.update()` を呼ぶのは `screenTouch()`(screen.cpp)だけ。D9C の読み出し(`d9cPoll()`、gps.cpp の I2C 関数)を他のタスクへ移さない。
 - **SD アクセスと液晶への描画は `spiLock()` / `spiUnlock()` で囲む**(storage.cpp、再帰ミューテックス)。測位中の画面は、液晶に送る `screenFlush()` の中だけでロックする(描画領域に描く間はロックしない)。
 - **UBX コマンドの Ack 待ち中は `mGpsCommandBusy` が立ち、`taskRover` はバッファを読まない。** コマンド送信は `ubxSendCommand()` を通す。
 - `taskUartRead` は `mGpsUartReady` が立つまで `Serial1` を読まない。`Serial1.begin()` は `gpsSyncBaudrate()`(gps.cpp)が1回だけ行い、以後のボーレート変更は `updateBaudRate()` で行う。
@@ -155,12 +156,12 @@ mise run android-screenshot          # 端末の画面を screenshot.png に保�
 
 ### UI
 
-画面は2系統ある。
+画面はすべて `screen.cpp` の土台で描く。画面全体を描画領域(M5Canvas、PSRAM)に描き、変わった帯だけ液晶に送る。フォント(Noto Sans、アンチエイリアス)とアイコン(Lucide)は `lcd_assets.h` に埋め込んだ生成物で、手で直さない(`mise run lcd-assets`)。表示は英語(日本語フォントは入れていない)。
 
-- **測位中の画面**(`screen.cpp`、`pages.cpp`): 画面全体を描画領域(M5Canvas、PSRAM)に描き、変わった帯だけ液晶に送る。フォント(Noto Sans、アンチエイリアス)とアイコン(Lucide)は `lcd_assets.h` に埋め込んだ生成物で、手で直さない(`mise run lcd-assets`)。表示は英語(日本語フォントは入れていない)。ページは毎回全部描き直し、ボタンは描くときに `hitAdd()` で登録する。
-- **ウィザード**(`ui.cpp`): 以前のまま。液晶に直接描き、画面下端の3つのボタンをタッチ開始位置で A/B/C と判定する。一覧は `uiSelectList()`。文字はサイズ2(1行16px、26桁)で、本文に使えるのは 0〜12 行目。
+- **測位中の画面**(`pages.cpp`): `loop()` から呼ばれ、ページを毎回全部描き直す。ボタンは描くときに `hitAdd()` で登録する。
+- **ウィザード**(`ui.cpp`): `setup()` の中から順に呼ぶ。待つ関数(`uiAsk`、`uiNotice`、`uiSelectList`)と、待たない関数(`uiStatus`、`uiShow` / `uiPoll`)がある。**通常の起動(`RUN_NO_UI`)の経路では、待つ関数を呼ばない。**
 
-`M5.update()` を呼ぶのは、`screen.cpp` の `screenTouch()`(測位中)と、`ui.cpp` の `buttonRead()` / `waitTouch()`(ウィザード)だけ。
+`M5.update()` を呼ぶのは `screen.cpp` の `screenTouch()` だけ。
 
 **画面を変えたら、`mise run lcd-shot` で画像を取って確かめる**(Read で見られる)。`mise run lcd-tap <x> <y>` でタップもできる。取り出せるのは描画領域の内容で、実物の液晶の見え方とタッチの反応はユーザーに確かめてもらう。
 

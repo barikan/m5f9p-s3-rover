@@ -90,6 +90,23 @@ export interface DeviceConfig {
   [group: string]: Record<string, ConfigValue> | WifiEntry[] | SourceEntry[] | undefined;
 }
 
+/** 衛星の信号1本（衛星×周波数） */
+export interface SatSignal {
+  sigId: number;            // 信号の種類。意味は衛星系ごとに違う（satellites.ts）
+  cno: number;              // 強度 C/N0（dBHz）
+  used: boolean;            // 測位に使っている
+}
+
+/** 衛星1機（sats.get の応答。本体側は src/sats.cpp） */
+export interface Satellite {
+  gnss: number;             // 0:GPS 1:SBAS 2:Galileo 3:BeiDou 5:QZSS 6:GLONASS
+  sv: number;               // 衛星の番号
+  elev: number;             // 仰角（度）
+  azim: number;             // 方位角（度。北が0、東が90）
+  used: boolean;            // 測位に使っている
+  signals: SatSignal[];
+}
+
 /** 軌跡の1点 */
 export interface TrackPoint {
   t: number;                // 時刻 ms
@@ -99,7 +116,7 @@ export interface TrackPoint {
 }
 
 /** rover.ts の state のうち、変わったものの名前 */
-export type Change = 'conn' | 'status' | 'runConfig' | 'config' | 'mapsKey' | 'track' | 'message';
+export type Change = 'conn' | 'status' | 'runConfig' | 'config' | 'mapsKey' | 'track' | 'sats' | 'message';
 
 /**
  * BLEのペアリングで、利用者に求める事（Windows）

@@ -50,7 +50,7 @@ static int wifiConnect()
 	
 j1:
 	if ( mRunMode == RUN_UI ) {
-		idx = uiSelectList( ">>> Select Wifi AP", mNumWifi, wifiLabel, "No Wifi" );
+		idx = uiSelectList( "Wi-Fi", mNumWifi, wifiLabel, "No Wi-Fi" );
 	}
 	else {
 		idx = wifiIndexOf( mRunInfo.wifiSsid );
@@ -73,33 +73,28 @@ j1:
 	mPassword = password;
 	if ( mRunMode != RUN_UI ) return idx + 1;
 
-	lcdClear();
-	lcdDispText( 3, "Connecting to %s", ssid );
+	uiStatus( "Wi-Fi", "Connecting to %s...", ssid );
 	unsigned long msecStart = millis();
 	unsigned long msecLastTime = millis();
 	int count = 0;
 	while ( WiFi.status() != WL_CONNECTED ) {
 		if ( millis() - msecLastTime > 1000 ){
 			msecLastTime = millis();
-			lcdDispText( 5, "count=%d", ++count);
+			uiStatus( "Wi-Fi", "Connecting to %s...  %d s", ssid, ++count );
 		}
 		delay(100);
 		if ( millis() - msecStart > 20000 ) {
-			lcdClear();
-			lcdDispText( 3, "Continue connecting ?" );
-			lcdDispButtonText( "Yes", "No", "" );
-			int continu = waitButton( 1, 1, 0, YES, NO, 0 );
-			if ( ! continu  ) {
+			int button = uiAsk( "Wi-Fi", "Back", "Keep trying", NULL, "Can't connect to %s yet.", ssid );
+			if ( button == 0 ) {
 				WiFi.disconnect();
 				mSsid = NULL;
 				goto j1;
 			}
-			lcdClear();
 			msecStart = millis();
-			lcdDispText( 3, "Connecting to %s", ssid );
+			count = 0;
+			uiStatus( "Wi-Fi", "Connecting to %s...", ssid );
 		}
 	}
-	lcdClear();
 	
 	return idx + 1;
 }
@@ -120,7 +115,6 @@ int netStart()
 		WiFi.mode( WIFI_AP_STA );
 		if ( ! WiFi.softAP( mSoftApSsid, mSoftApPassword ) ){
 			dbgPrintf("softAP() failed\r\n");
-			lcdDispText( 1, "Can't use soft AP." );
 		}
 
 		// softAPConfig()はWiFi.softAP()の後で実行しないと有効にならない
@@ -135,20 +129,16 @@ int netStart()
 	if ( mRunMode != RUN_UI ) return wifiApNum;
 
 	if ( mNumWifi == 0 ) {
-		lcdDispText( 3, "No wifi AP data in SDcard." );
-		lcdDispText( 4, "Can't use wifi." );
+		uiNotice( "Wi-Fi", "No Wi-Fi access point is registered in the config file.\nWi-Fi is not used." );
 	}
 	else if ( wifiApNum ) {
-		lcdDispText( 5, "> Wifi connected" );
 		dbgPrintf( "WiFi connected  IP=%s\r\n", WiFi.localIP().toString().c_str() );
+		uiNotice( "Wi-Fi", "Connected to %s\nIP  %s", mSsid, WiFi.localIP().toString().c_str() );
 	}
 	else {
-		lcdDispText( 5, "> Wifi not connected" );
 		dbgPrintf("WiFi not connected !!!\r\n");
+		uiNotice( "Wi-Fi", "Wi-Fi is not used." );
 	}
-	lcdDispText( 10, ">>> Touch screen" );
-	waitTouch();
-	lcdClear();
 	return wifiApNum;
 }
 
@@ -274,8 +264,7 @@ static int ntripReadSourceTable( const char* server, int port, double lat, doubl
 //
 static int ntripSelect_caster( const char* server, int port, double lat, double lon )
 {
-	lcdClear();
-	lcdDispText( 3, "Connecting to %s", server );
+	uiStatus( "Mount point", "Getting the list from %s...", server );
 
 	mMountPoints = (struct stMountPoint*) malloc( sizeof(struct stMountPoint) * MAX_MOUNT_POINTS );
 	if ( ! mMountPoints ) return -1;
@@ -283,26 +272,20 @@ static int ntripSelect_caster( const char* server, int port, double lat, double 
 	int retCode = -4;
 	int nret = ntripReadSourceTable( server, port, lat, lon );
 	if ( nret <= 0 ){
-		lcdDispAndWaitButton( 3, "> Can't get mount points from %s (%d)", server, nret );
+		uiNotice( "Mount point", "Can't get the list from %s. (%d)", server, nret );
 		retCode = -2;
 	}
 	while( nret > 0 ){
-		int idx = uiSelectList( ">>> Select mount point", mNumMountPoints, mountPointLabel, "Cancel" );
+		int idx = uiSelectList( "Mount point", mNumMountPoints, mountPointLabel, "Cancel" );
 		if ( idx < 0 ) break;
 
 		stMountPoint *mp = & mMountPoints[ idx ];
-		int lineNum = 4;
-		lcdDispText( 1, ">>> Do you select this mount point ?" );
-		lcdDispText( lineNum++, "Mountpoint: %s", mp->mountpoint );
-		lcdDispText( lineNum++, "City: %s", mp->city );
-		lcdDispText( lineNum++, "Format: %s", mp->format );
-		lcdDispText( lineNum++, "Gnss: %s", mp->nav );
-		lcdDispText( lineNum++, "Lat: %.2f", mp->lat );
-		lcdDispText( lineNum++, "Lon: %.2f", mp->lon );
-		if ( mp->distance > 0 ) lcdDispText( lineNum++, "Distance: %dkm", (int)mp->distance );
-		lcdDispButtonText( "Ok", "Back", "Cancel" );
-
-		int command = waitButton( 1, 1, 1, 1, 2, 3 );
+		char distance[24] = "";
+		if ( mp->distance > 0 ) snprintf( distance, sizeof(distance), "   %d km", (int)mp->distance );
+		// 0:Cancel 1:Back 2:Use  →  3:cancel 2:back 1:ok
+		int command = 3 - uiAsk( "Mount point", "Cancel", "Back", "Use",
+								"%s\n%s\n%s  %s\n%.2f, %.2f%s",
+								mp->mountpoint, mp->city, mp->format, mp->nav, mp->lat, mp->lon, distance );
 		if ( command == 1 ){	// ok
 			memset( &mBaseSrc, 0, sizeof(mBaseSrc) );
 			strncpy( mBaseSrc.address, server, 63 );
@@ -320,7 +303,6 @@ static int ntripSelect_caster( const char* server, int port, double lat, double 
 	}
 	free( mMountPoints );
 	mMountPoints = NULL;
-	lcdClear();
 	return retCode;
 }
 
@@ -404,7 +386,7 @@ int baseSrcSelect( double lat, double lon )
 	mBaseSrc.valid = false;
 	int numItems = mNumBaseSrc;
 	if ( WiFi.status() == WL_CONNECTED ) numItems++;	// rtk2go.comのマウントポイントを選択する項目
-	int idx = uiSelectList( ">>> Select base station", numItems, baseSrcLabel, "None" );
+	int idx = uiSelectList( "Corrections", numItems, baseSrcLabel, "None" );
 	if ( idx < 0 ) return 0;
 
 	if ( idx >= mNumBaseSrc ){
@@ -456,19 +438,14 @@ int connectBaseSource()
 	}
 
 	while(1){		
-		lcdClear();
-		lcdDispText( 3, "Connecting to base station %s %s", mBaseSrc.address, mBaseSrc.mountPoint );
+		uiStatus( "Corrections", "Connecting to %s %s...", mBaseSrc.address, mBaseSrc.mountPoint );
 
 		int nret = baseSrcConnect();
 		dbgPrintf("connectBaseSource: nret=%d  src=%s\r\n",nret, mBaseSrc.address );
-		lcdClear();
 		if ( nret == 0 ) return 0;
 
-		lcdDispText( 3, "> Can't connect to %s (%d)", mBaseSrc.address, nret );
-		lcdDispText( 8, ">>> Do you retry ?" );
-		lcdDispButtonText( "Retry", "Cancel", "" );
-		int retry = waitButton( 1, 1, 0, YES, NO, 0 );
-		if ( ! retry ) return -2;
+		int button = uiAsk( "Corrections", "Cancel", "Retry", NULL, "Can't connect to %s. (%d)", mBaseSrc.address, nret );
+		if ( button == 0 ) return -2;
 	}
 }
 
@@ -481,13 +458,7 @@ int connectTcpServer()
 
 	int yes = mRunInfo.agribusConnect;
 	if ( mRunMode == RUN_UI ){
-		lcdClear();
-		lcdDispText( 3, ">>> Do you connect to TCP server ?" );
-		lcdDispText( 6, " IP= %s", mAgribusIp );
-		lcdDispText( 7, " PORT=%d", mAgribusPort );
-		lcdDispButtonText( "Yes", "No", "" );
-		yes = waitButton( 1, 1, 0, YES, NO, 0 );
-		lcdClear();
+		yes = uiAsk( "TCP server", "No", "Yes", NULL, "Send positions to this TCP server?\n%s  port %d", mAgribusIp, mAgribusPort );
 		mRunInfo.agribusConnect = yes;
 	}
 	if ( ! yes ) return 0;
@@ -499,19 +470,12 @@ int connectTcpServer()
 		return 0;
 	}
 	while(1){
-		lcdDispText( 3, "Connecting to TCP server (%s).",mAgribusIp );
+		uiStatus( "TCP server", "Connecting to %s...", mAgribusIp );
 		if ( mAgribusClient->connect( mAgribusIp, mAgribusPort ) ){
 			mAgribusReady = true;
 			break;
 		}
-		lcdClear();
-		lcdDispText( 3, "> Can't connect to TCP Server." );
-		lcdDispText( 8, ">>> Do you retry ?" );
-		lcdDispButtonText( "Retry", "Cancel", "" );
-		int retry = waitButton( 1, 1, 0, YES, NO, 0 );
-		lcdClear();
-		if ( ! retry ) break;
+		if ( uiAsk( "TCP server", "Cancel", "Retry", NULL, "Can't connect to %s.", mAgribusIp ) == 0 ) break;
 	}
-	lcdClear();
 	return 0;
 }

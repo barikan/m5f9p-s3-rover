@@ -4,7 +4,7 @@
 // 画面へは store.ts が橋渡しする（ここの state を写し、変化の通知(subscribe)を受けて描き直す）。
 
 import * as host from './host';
-import type { Change, Connection, DeviceConfig, RunConfig, RunValues, Status, TrackPoint, ConnState } from './types';
+import type { Change, Connection, DeviceConfig, RunConfig, RunValues, Satellite, Status, TrackPoint, ConnState } from './types';
 
 export const QUALITY: Record<number, { label: string; color: string }> = {
   0: { label: '測位不能', color: '#C62828' },
@@ -19,6 +19,7 @@ export const qualityOf = (q: number) => QUALITY[q] || QUALITY[0];
 const TRACK_MIN_DISTANCE = 0.05;    // m。これ以上動いた時に軌跡の点を増やす
 const SYNC_TIMEOUT_MS = 5000;
 const STATUS_POLL_MS = 1000;
+const SATS_POLL_MS = 2000;         // 衛星の配置と信号強度を問い合わせる間隔
 
 export interface RoverState {
   conn: ConnState;
@@ -32,6 +33,8 @@ export interface RoverState {
   trackDay: string;                 // 地図に表示している日（YYYY-MM-DD）
   track: TrackPoint[];              // その日の軌跡
   syncing: boolean;                 // 本体が保持している軌跡を取得している間 true
+  sats: Satellite[] | null;         // 衛星の配置と信号強度。null:まだ受け取っていない
+  satsAge: number;                  // 本体がF9Pから受け取ってからの秒数。-1:まだ受け取っていない
   message: string;                  // 利用者に見せる文言
 }
 
@@ -47,6 +50,8 @@ export const state: RoverState = {
   trackDay: today(),
   track: [],
   syncing: false,
+  sats: null,
+  satsAge: -1,
   message: '',
 };
 
@@ -61,6 +66,9 @@ interface Message {
   config?: DeviceConfig;
   key?: string;
   pts?: [number, number, number, number][];     // [時刻(秒), 緯度, 経度, quality]
+  age?: number;
+  // [gnssId, svId, 仰角, 方位角, 使用, [[sigId, 強度, 使用], ...]]
+  sats?: [number, number, number, number, number, [number, number, number][]][];
   more?: boolean;
 }
 
@@ -107,6 +115,7 @@ export function attach(conn: Connection) {
     if (s === 'connected') onConnected();
     else {
       state.status = null;
+      state.sats = null;
       endSync();
       if (s === 'disconnected') connection = null;
     }
@@ -182,6 +191,7 @@ function onLine(line: string) {
     case 'config.put': say('設定を保存しました。本体を再起動します'); restart(); break;
     case 'map.key': state.deviceMapsKey = m.key || ''; notify('mapsKey'); break;
     case 'track.get': onTrackReply(m); break;
+    case 'sats.get': onSatsReply(m); break;
   }
 }
 
@@ -297,6 +307,38 @@ function endSync() {
   if (!state.syncing) return;
   state.syncing = false;
   notify('track');
+}
+
+// ---------------------------------------------------------------- 衛星
+//
+// 衛星の配置と信号強度は量が多いので、本体は普段はF9Pに出力させていない。
+// 問い合わせている間だけ出力し、問い合わせが10秒無いと止める。
+// 画面は、「衛星」タブを開いている間だけ watchSatellites(true) にする。
+
+let satsTimer: ReturnType<typeof setInterval> | undefined;
+
+/** 衛星の配置と信号強度を、定期的に本体に問い合わせる（on=false でやめる） */
+export function watchSatellites(on: boolean) {
+  clearInterval(satsTimer);
+  satsTimer = undefined;
+  if (!on) return;
+  const ask = () => {
+    if (state.conn === 'connected') send({ cmd: 'sats.get' });
+  };
+  ask();
+  satsTimer = setInterval(ask, SATS_POLL_MS);
+}
+
+function onSatsReply(m: Message) {
+  state.satsAge = m.age ?? -1;
+  // 本体がまだF9Pから受け取っていない間（age が負）は、前の内容を残す
+  if (state.satsAge >= 0 || !state.sats) {
+    state.sats = (m.sats ?? []).map(s => ({
+      gnss: s[0], sv: s[1], elev: s[2], azim: s[3], used: !!s[4],
+      signals: s[5].map(g => ({ sigId: g[0], cno: g[1], used: !!g[2] })),
+    }));
+  }
+  notify('sats');
 }
 
 // 状況は、BLEでは本体が1秒毎に送ってくる。USBでは送ってこないので、届いていない時は

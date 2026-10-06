@@ -45,6 +45,9 @@
 //               {"rate":n}       1秒あたりの測位回数
 //               {"rotation":n}   画面の向き 0:回転無 1:180度回転
 //   map.key   設定ファイルの google.key を返す（地図の表示用）
+//   sats.get  衛星の配置と信号強度を返す（詳しくは sats.cpp）。問い合わせている間だけ、
+//             F9Pに衛星のメッセージを出力させる
+//               "sats":[[gnssId,svId,仰角,方位角,使用,[[sigId,強度,使用],...]],...]
 //   track.get {"since":t}        本体が保持している移動履歴のうち、時刻t（1970-1-1 UTCからの
 //                                秒数）より後の点を古い順に返す。1回に返すのはTRACK_REPLY_MAX点
 //                                までで、続きがある時は "more":true になる
@@ -142,6 +145,8 @@ void cmdRestartIfRequested()
 void configToJson( JsonDocument &doc, bool secrets );
 int configRestoreSecrets( JsonDocument &config );
 int configSave( JsonVariantConst config );
+
+void satsToJson( JsonDocument &re );
 
 static bool mConfigWritten = false;	// 設定ファイルを書き換えた（再起動するまで、本体の設定と合わない）
 bool configCheckYaml( const char *text, String &error );
@@ -299,6 +304,23 @@ void cmdExecute( char *line, String &reply, int channel )
 	re["ok"] = false;
 
 	if ( error ) re["error"] = error.c_str();
+	// 画面の確認用のコマンドは、起動中（ウィザードの途中）でも受け付ける
+	else if ( strcmp( name, "lcd.shot" ) == 0 ){
+		if ( channel != CMD_USB ) re["error"] = "usb only";
+		else {
+			screenShotRequest();	// 応答を返した後に、loop()が送る
+			re["ok"] = true;
+		}
+	}
+	else if ( strcmp( name, "lcd.tap" ) == 0 ){
+		if ( channel != CMD_USB ) re["error"] = "usb only";
+		else {
+			// {"pairing":番号} の時は、ペアリング中の画面を数秒間表示する（見た目の確認用）
+			if ( cmd["pairing"].is<int>() ) pagesPreviewPairing( cmd["pairing"] );
+			else screenInjectTap( cmd["x"] | 0, cmd["y"] | 0 );
+			re["ok"] = true;
+		}
+	}
 	else if ( ! mSetupDone ) re["error"] = "not ready";
 	else if ( strcmp( name, "status" ) == 0 ){
 		cmdStatus( re );
@@ -331,22 +353,6 @@ void cmdExecute( char *line, String &reply, int channel )
 	else if ( strcmp( name, "config.put" ) == 0 ) cmdConfigPut( cmd, re );
 	else if ( strcmp( name, "file.get" ) == 0 ) cmdFileGet( re, channel );
 	else if ( strcmp( name, "file.put" ) == 0 ) cmdFilePut( cmd, re );
-	else if ( strcmp( name, "lcd.shot" ) == 0 ){
-		if ( channel != CMD_USB ) re["error"] = "usb only";
-		else {
-			screenShotRequest();	// 応答を返した後に、loop()が送る
-			re["ok"] = true;
-		}
-	}
-	else if ( strcmp( name, "lcd.tap" ) == 0 ){
-		if ( channel != CMD_USB ) re["error"] = "usb only";
-		else {
-			// {"pairing":番号} の時は、ペアリング中の画面を数秒間表示する（見た目の確認用）
-			if ( cmd["pairing"].is<int>() ) pagesPreviewPairing( cmd["pairing"] );
-			else screenInjectTap( cmd["x"] | 0, cmd["y"] | 0 );
-			re["ok"] = true;
-		}
-	}
 	else if ( strcmp( name, "ble.unpair" ) == 0 ){
 		if ( channel != CMD_USB ) re["error"] = "usb only";
 		else if ( ! mBleEnable ) re["error"] = "BLE disabled";
@@ -368,6 +374,10 @@ void cmdExecute( char *line, String &reply, int channel )
 	else if ( strcmp( name, "run.set" ) == 0 ) cmdRunSet( cmd, re );
 	else if ( strcmp( name, "map.key" ) == 0 ){
 		re["key"] = mGoogleKey;
+		re["ok"] = true;
+	}
+	else if ( strcmp( name, "sats.get" ) == 0 ){
+		satsToJson( re );
 		re["ok"] = true;
 	}
 	else if ( strcmp( name, "track.get" ) == 0 ) cmdTrackGet( cmd, re );
