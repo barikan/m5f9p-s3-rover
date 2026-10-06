@@ -46,6 +46,9 @@ unsigned long mSaveEndSec = 0;		// ファイル保存最大秒数 0:制限無し
 int mPhUartBaudrate = 115200;
 int mPhUartFormat = PH_UART_NMEA;	// 移動局データ送信フォーマット
 
+// Google MapsのAPIキー。スマートフォンのアプリが地図の表示に使う。
+char mGoogleKey[64];
+
 // rtk2go.comのマウントポイントを画面で選択した時に使うユーザ名とパスワード
 char mRtk2goUser[32];
 char mRtk2goPassword[32];
@@ -180,6 +183,10 @@ int readIniFile( const char *path )
 	if ( nret > 0 && strlen(buff) < 32) strcpy( mRtk2goUser, buff );
 	nret = iniFile->readValue( "rtk2go", "password", buff, 256 );
 	if ( nret > 0 && strlen(buff) < 32) strcpy( mRtk2goPassword, buff );
+
+	// Google Maps
+	nret = iniFile->readValue( "google", "key", buff, 256 );
+	if ( nret > 0 && strlen(buff) < sizeof(mGoogleKey) ) strcpy( mGoogleKey, buff );
 
 	// TCP client
 	nret = iniFile->readValue( "client", "ip", buff, 256 );

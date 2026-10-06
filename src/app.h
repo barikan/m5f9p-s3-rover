@@ -93,6 +93,7 @@ extern int mPhUartFormat;
 extern int mSoftApEnable;
 extern int mBleEnable;
 extern int mBleNmeaRate;
+extern char mGoogleKey[64];
 extern char mRtk2goUser[32];
 extern char mRtk2goPassword[32];
 
@@ -144,6 +145,17 @@ extern int mRtcmCrcErrorPercent;
 extern unsigned long mRtcmLastMillis;
 
 extern char mGgaBuff[ 100 ];
+
+// 移動履歴の1点
+struct stTrackPoint {
+	uint32_t time;		// 測位時刻。1970-1-1 0:0:0 UTCからの秒数
+	double lat;
+	double lon;
+	uint8_t quality;
+};
+
+int trackGet( uint32_t since, struct stTrackPoint *points, int maxPoints, bool *more );
+int trackCount();
 
 int roverStartUartTask();
 int roverStartTasks();

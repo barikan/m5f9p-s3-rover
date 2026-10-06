@@ -36,6 +36,13 @@
 #define SD_BUFF_MAX 2048
 #define BASE_RECV_BUFF_MAX 256
 
+// 本体で保持する移動履歴の点数。PSRAMに確保する（1点24バイト）。
+// 止まっている間は増えないので、1秒に1点動き続けて約5.5時間分。
+#define TRACK_MAX 20000
+
+// 移動履歴の点を増やす最小の移動距離（m）
+#define TRACK_MIN_DISTANCE 0.05
+
 // BLEでNMEAを送る回数の上限（1秒あたり）。Wifiと無線を共用するので抑える。
 #define BLE_NMEA_RATE_MAX 5
 

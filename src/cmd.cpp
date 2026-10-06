@@ -26,6 +26,11 @@
 //               {"saveAtBoot":b} 起動時から保存する
 //               {"rate":n}       1秒あたりの測位回数
 //               {"rotation":n}   画面の向き 0:回転無 1:180度回転
+//   map.key   INIファイルの[google] keyを返す（地図の表示用）
+//   track.get {"since":t}        本体が保持している移動履歴のうち、時刻t（1970-1-1 UTCからの
+//                                秒数）より後の点を古い順に返す。1回に返すのはTRACK_REPLY_MAX点
+//                                までで、続きがある時は "more":true になる
+//                                  "pts":[[時刻,緯度,経度,quality],...]
 //   setup     再起動して、実行パラメータを本体の画面で選択し直す
 //   restart   再起動する
 
@@ -38,6 +43,7 @@
 
 #define CMD_LINE_MAX 8192
 #define INI_SIZE_MAX 6000
+#define TRACK_REPLY_MAX 50		// track.getで1回に返す点数
 
 extern byte mVersionMajor, mVersionMinor, mVersionPatch;
 
@@ -87,6 +93,7 @@ static void cmdStatus( JsonDocument &re )
 	re["sdMB"] = (int)( mSdTotalBytes / 1000000 );
 	re["heap"] = heap_caps_get_free_size( MALLOC_CAP_INTERNAL );
 	re["bleNmea"] = mBleNmeaRate;
+	re["track"] = trackCount();
 }
 
 // 定期的に送る状況（{"ev":"status", ...}）を作る
@@ -136,9 +143,45 @@ static void cmdIniPut( JsonDocument &cmd, JsonDocument &re )
 	re["ok"] = true;
 }
 
+static void cmdTrackGet( JsonDocument &cmd, JsonDocument &re )
+{
+	static struct stTrackPoint points[ TRACK_REPLY_MAX ];
+	bool more;
+	uint32_t since = cmd["since"] | 0u;
+
+	int n = trackGet( since, points, TRACK_REPLY_MAX, &more );
+	JsonArray pts = re["pts"].to<JsonArray>();
+	for( int i=0; i < n; i++ ){
+		JsonArray pt = pts.add<JsonArray>();
+		pt.add( points[i].time );
+		pt.add( serialized( String( points[i].lat, 9 ) ) );
+		pt.add( serialized( String( points[i].lon, 9 ) ) );
+		pt.add( points[i].quality );
+	}
+	re["more"] = more;
+	re["ok"] = true;
+}
+
+// 実行パラメータの基準局データ取得先が、一覧(mBaseSrcList)の何番目かを返す
+//
+// 戻り値＝ -1:接続しない、または一覧に無い  0:UART  1以上:INIファイルに書かれた順
+//
+static int runSourceIndex()
+{
+	struct stBaseSource *src = &mRunInfo.baseSrc;
+	if ( ! src->valid ) return -1;
+	if ( src->type == BASE_TYPE_UART ) return 0;
+	for( int i=1; i < mNumBaseSrc; i++ ){
+		if ( strcmp( src->address, mBaseSrcList[i].address ) == 0 &&
+			 strcmp( src->mountPoint, mBaseSrcList[i].mountPoint ) == 0 ) return i;
+	}
+	return -1;
+}
+
 static void cmdRunGet( JsonDocument &re )
 {
 	re["wifi"] = mRunInfo.wifiAp;
+	re["source"] = runSourceIndex();
 	re["sourceValid"] = mRunInfo.baseSrc.valid;
 	re["sourceType"] = mRunInfo.baseSrc.type;
 	re["sourceAddress"] = mRunInfo.baseSrc.address;
@@ -239,6 +282,11 @@ void cmdExecute( char *line, String &reply )
 	else if ( strcmp( name, "ini.put" ) == 0 ) cmdIniPut( cmd, re );
 	else if ( strcmp( name, "run.get" ) == 0 ) cmdRunGet( re );
 	else if ( strcmp( name, "run.set" ) == 0 ) cmdRunSet( cmd, re );
+	else if ( strcmp( name, "map.key" ) == 0 ){
+		re["key"] = mGoogleKey;
+		re["ok"] = true;
+	}
+	else if ( strcmp( name, "track.get" ) == 0 ) cmdTrackGet( cmd, re );
 	else if ( strcmp( name, "setup" ) == 0 ){
 		mRunInfo.setupRequest = 1;
 		saveRunInfo( &mRunInfo );

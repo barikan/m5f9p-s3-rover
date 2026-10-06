@@ -30,7 +30,7 @@
 #define NUS_RX_UUID      "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
 #define NUS_TX_UUID      "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
 
-#define BLE_LINE_MAX 1024		// 受信するコマンド1行の最大バイト数
+#define BLE_LINE_MAX 8192		// 受信するコマンド1行の最大バイト数。INIファイルの書き込みが入る大きさ
 #define BLE_MTU 247
 #define BLE_MTU_SMALL 100		// 相手のMTUがこれ未満の時は送る量を減らす
 #define BLE_STATUS_PERIOD 1000	// 状況を送る間隔（ミリ秒）
@@ -71,10 +71,11 @@ class ServerCallbacks : public BLEServerCallbacks {
 };
 
 class RxCallbacks : public BLECharacteristicCallbacks {
-	char mLine[ BLE_LINE_MAX ];
+	char *mLine = (char*) malloc( BLE_LINE_MAX );
 	int mLength = 0;
 
 	void onWrite( BLECharacteristic *characteristic ) {
+		if ( ! mLine ) return;
 		uint8_t *data = characteristic->getData();
 		int n = characteristic->getLength();
 		for( int i=0; i < n; i++ ){

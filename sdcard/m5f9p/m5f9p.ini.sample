@@ -45,6 +45,11 @@ password=
 ;user=your-mail@example.com
 ;password=none
 
+; Google MapsのAPIキー。スマートフォンのアプリが地図の表示に使う。
+; アプリの設定画面にキーを入力した場合は、そちらが優先される。
+;[google]
+;key=
+
 ; 測位データ(NMEA)の送信先TCPサーバ（AgriBus-NAVI等）
 ;[client]
 ;ip=192.168.4.2

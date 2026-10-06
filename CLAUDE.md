@@ -53,8 +53,10 @@ mise run android-screenshot  # 端末の画面を screenshot.png に保存する
 - 本体は同時に1台としか BLE 接続できない。nRF Connect などがつながったままだと、アプリのスキャンに出てこない。
 - 本体との通信仕様は `src/cmd.cpp` と `src/ble.cpp` の先頭にある。状況の項目を増減したら、`RoverStatus.kt` も合わせる。
 - `BluetoothGatt` の操作は同時に1つしか行えない。`BleClient.kt` はすべてメインスレッドで順に行い、書き込みはキューで直列化している。
-- Google Maps の API キーは `android/local.properties` の `MAPS_API_KEY`(Git の管理外)。リポジトリに入れない。無いと地図が空白になるだけで、ビルドと起動はできる。
-- ライブラリのバージョンは、maps-compose 6.2.1 / AGP 8.7.3 / Kotlin 2.0.21 / Gradle 8.10.2 / compileSdk 35 の組み合わせでビルドを確認している。
+- 地図は WebView + Maps JavaScript API(`assets/map.html`)。API キーをアプリに埋め込まず実行時に渡すためで、Maps SDK for Android には戻さない。キーは利用者がアプリの設定タブか本体の INI(`[google] key`)に置く。リポジトリやビルド設定に入れない。
+- アプリの状態は `Rover`(object)に集約している。Activity が閉じても接続と記録を続けるためで、接続中は `RoverService` がプロセスを維持する。画面側は `Rover` の StateFlow を読むだけにする。
+- ユーザーが端末を操作している最中に `adb shell input tap` で画面を動かさない。確認のために操作するときは、先に端末を置いてもらう。`adb shell getevent` で実際のタッチが分かる。
+- ライブラリのバージョンは、AGP 8.7.3 / Kotlin 2.0.21 / Gradle 8.10.2 / compileSdk 35 の組み合わせでビルドを確認している。
 
 ## ハードウェア上の制約
 

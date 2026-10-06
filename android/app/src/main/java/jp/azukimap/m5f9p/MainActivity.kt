@@ -2,13 +2,13 @@ package jp.azukimap.m5f9p
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.activity.viewModels
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -61,9 +61,12 @@ private val BLE_PERMISSIONS = arrayOf(
     Manifest.permission.BLUETOOTH_CONNECT,
 )
 
-class MainActivity : ComponentActivity() {
+// 通知は、接続中である事を示す常駐の通知に使う。拒否されても動作する
+private val REQUEST_PERMISSIONS =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) BLE_PERMISSIONS + Manifest.permission.POST_NOTIFICATIONS
+    else BLE_PERMISSIONS
 
-    private val viewModel: MainViewModel by viewModels()
+class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -71,7 +74,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             // 端末のダークテーマの設定に合わせる（ステータスバーの文字色もこれに従う）
             MaterialTheme(colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()) {
-                App(viewModel, hasPermissions = ::hasPermissions)
+                App(hasPermissions = ::hasPermissions)
             }
         }
     }
@@ -83,25 +86,25 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun App(viewModel: MainViewModel, hasPermissions: () -> Boolean) {
+private fun App(hasPermissions: () -> Boolean) {
     var granted by remember { mutableStateOf(hasPermissions()) }
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { result -> granted = result.values.all { it } }
+    ) { granted = hasPermissions() }      // 通知の権限は必須にしない
 
-    val state by viewModel.ble.state.collectAsStateWithLifecycle()
-    val deviceName by viewModel.ble.deviceName.collectAsStateWithLifecycle()
-    val message by viewModel.message.collectAsStateWithLifecycle()
+    val state by Rover.ble.state.collectAsStateWithLifecycle()
+    val deviceName by Rover.ble.deviceName.collectAsStateWithLifecycle()
+    val message by Rover.message.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
-    var tab by rememberSaveable { mutableStateOf(0) }     // 0:状況 1:地図
+    var tab by rememberSaveable { mutableStateOf(0) }     // 0:状況 1:地図 2:設定
 
     LaunchedEffect(granted) {
-        if (granted) viewModel.connectLast() else launcher.launch(BLE_PERMISSIONS)
+        if (granted) Rover.connectLast() else launcher.launch(REQUEST_PERMISSIONS)
     }
     LaunchedEffect(message) {
         message?.let {
             snackbar.showSnackbar(it)
-            viewModel.message.value = null
+            Rover.message.value = null
         }
     }
 
@@ -111,7 +114,7 @@ private fun App(viewModel: MainViewModel, hasPermissions: () -> Boolean) {
                 title = { Text(if (state == ConnState.DISCONNECTED) "M5F9P Rover" else deviceName) },
                 actions = {
                     if (state != ConnState.DISCONNECTED) {
-                        TextButton(onClick = viewModel::disconnect) { Text("切断") }
+                        TextButton(onClick = Rover::disconnect) { Text("切断") }
                     }
                 },
             )
@@ -128,6 +131,10 @@ private fun App(viewModel: MainViewModel, hasPermissions: () -> Boolean) {
                         selected = tab == 1, onClick = { tab = 1 },
                         icon = {}, label = { Text("地図", style = MaterialTheme.typography.titleSmall) },
                     )
+                    NavigationBarItem(
+                        selected = tab == 2, onClick = { tab = 2 },
+                        icon = {}, label = { Text("設定", style = MaterialTheme.typography.titleSmall) },
+                    )
                 }
             }
         },
@@ -138,10 +145,11 @@ private fun App(viewModel: MainViewModel, hasPermissions: () -> Boolean) {
                 .fillMaxSize()
         ) {
             when {
-                !granted -> PermissionScreen { launcher.launch(BLE_PERMISSIONS) }
-                tab == 1 -> MapScreen(viewModel)
-                state == ConnState.DISCONNECTED -> ScanScreen(viewModel)
-                else -> StatusScreen(viewModel, connecting = state == ConnState.CONNECTING)
+                !granted -> PermissionScreen { launcher.launch(REQUEST_PERMISSIONS) }
+                tab == 1 -> MapScreen()
+                tab == 2 -> SettingsScreen(connected = state == ConnState.CONNECTED)
+                state == ConnState.DISCONNECTED -> ScanScreen()
+                else -> StatusScreen(connecting = state == ConnState.CONNECTING)
             }
         }
     }
@@ -160,19 +168,19 @@ private fun PermissionScreen(onRequest: () -> Unit) {
 }
 
 @Composable
-private fun ScanScreen(viewModel: MainViewModel) {
-    val scanning by viewModel.ble.scanning.collectAsStateWithLifecycle()
-    val devices by viewModel.ble.devices.collectAsStateWithLifecycle()
+private fun ScanScreen() {
+    val scanning by Rover.ble.scanning.collectAsStateWithLifecycle()
+    val devices by Rover.ble.devices.collectAsStateWithLifecycle()
 
-    LaunchedEffect(Unit) { viewModel.ble.startScan() }
+    LaunchedEffect(Unit) { Rover.ble.startScan() }
 
     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("接続する本体を選んでください", Modifier.weight(1f))
             if (scanning) CircularProgressIndicator(Modifier.width(24.dp), strokeWidth = 3.dp)
-            else OutlinedButton(onClick = viewModel.ble::startScan) { Text("再スキャン") }
+            else OutlinedButton(onClick = Rover.ble::startScan) { Text("再スキャン") }
         }
-        if (!viewModel.ble.isBluetoothEnabled) {
+        if (!Rover.ble.isBluetoothEnabled) {
             Text("Bluetoothがオフになっています。", color = MaterialTheme.colorScheme.error)
         }
         if (devices.isEmpty() && !scanning) {
@@ -182,7 +190,7 @@ private fun ScanScreen(viewModel: MainViewModel) {
             Card(
                 Modifier
                     .fillMaxWidth()
-                    .clickable { viewModel.connect(device.address) }
+                    .clickable { Rover.connect(device.address) }
             ) {
                 Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
@@ -197,9 +205,9 @@ private fun ScanScreen(viewModel: MainViewModel) {
 }
 
 @Composable
-private fun StatusScreen(viewModel: MainViewModel, connecting: Boolean) {
-    val status by viewModel.status.collectAsStateWithLifecycle()
-    val throughput by viewModel.throughput.collectAsStateWithLifecycle()
+private fun StatusScreen(connecting: Boolean) {
+    val status by Rover.status.collectAsStateWithLifecycle()
+    val throughput by Rover.throughput.collectAsStateWithLifecycle()
     val s = status
 
     if (s == null) {
@@ -222,7 +230,7 @@ private fun StatusScreen(viewModel: MainViewModel, connecting: Boolean) {
     ) {
         PositionCard(s)
         CorrectionCard(s, throughput)
-        ControlCard(s, onSave = viewModel::setSaving, onRate = viewModel::setRate)
+        ControlCard(s, onSave = Rover::setSaving, onRate = Rover::setRate)
         DeviceCard(s)
     }
 }

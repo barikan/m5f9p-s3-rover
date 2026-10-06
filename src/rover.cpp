@@ -44,6 +44,100 @@ int mRtcmCrcErrorPercent;			// CRCエラー率（％）
 unsigned long mRtcmLastMillis;		// 最後に受信した時間
 
 
+// ************************************************************
+//                         移動履歴
+// ************************************************************
+//
+// スマートフォンのアプリが接続していない間の軌跡を、接続時に渡せるように
+// 本体で保持する。電源を切ると消える。
+// 追加はtaskRover()、読み出しはloopTask(コマンド)から行う。
+
+static struct stTrackPoint *mTrack;		// リングバッファ
+static int mTrackNext;					// 次に書き込む位置
+static int mTrackCount;					// 保持している点数
+static portMUX_TYPE mTrackMux = portMUX_INITIALIZER_UNLOCKED;
+
+// 測位時刻(UTC)を1970-1-1からの秒数に変換する
+//
+static uint32_t gpsUnixTime( struct stGpsData *p )
+{
+	struct tm t;
+	memset( &t, 0, sizeof(t) );
+	t.tm_year = p->year - 1900;
+	t.tm_mon = p->month - 1;
+	t.tm_mday = p->day;
+	t.tm_hour = p->hour;
+	t.tm_min = p->minute;
+	t.tm_sec = p->second;
+	return (uint32_t) mktime( &t );		// タイムゾーンは設定していないのでUTC
+}
+
+// 測位データを移動履歴に加える
+//
+// ・1秒に1点まで。止まっている間（TRACK_MIN_DISTANCE未満の移動で、測位の状態も
+//   同じ）は増やさない。
+//
+static void trackAdd( struct stGpsData *p )
+{
+	static struct stTrackPoint last;
+
+	if ( p->quality == 0 || p->year < 2020 ) return;
+	if ( ! mTrack ){
+		mTrack = (struct stTrackPoint*) ps_malloc( sizeof(struct stTrackPoint) * TRACK_MAX );
+		if ( ! mTrack ) return;
+	}
+
+	uint32_t time = gpsUnixTime( p );
+	if ( time <= last.time ) return;
+	if ( last.time && last.quality == p->quality ){
+		double north = ( p->lat - last.lat ) * 111320.0;
+		double east = ( p->lon - last.lon ) * 111320.0 * cos( p->lat * DEG2RAD );
+		if ( north * north + east * east < TRACK_MIN_DISTANCE * TRACK_MIN_DISTANCE ) return;
+	}
+	last.time = time;
+	last.lat = p->lat;
+	last.lon = p->lon;
+	last.quality = p->quality;
+
+	portENTER_CRITICAL( &mTrackMux );
+	mTrack[ mTrackNext ] = last;
+	mTrackNext = ( mTrackNext + 1 ) % TRACK_MAX;
+	if ( mTrackCount < TRACK_MAX ) mTrackCount++;
+	portEXIT_CRITICAL( &mTrackMux );
+}
+
+int trackCount()
+{
+	return mTrackCount;
+}
+
+// sinceより後の移動履歴を、古い順に取り出す
+//
+// more: まだ続きがある時 trueがセットされる
+//
+// 戻り値＝取り出した点数
+//
+int trackGet( uint32_t since, struct stTrackPoint *points, int maxPoints, bool *more )
+{
+	int n = 0;
+	*more = false;
+
+	portENTER_CRITICAL( &mTrackMux );
+	int index = ( mTrackNext - mTrackCount + TRACK_MAX ) % TRACK_MAX;	// 最も古い点
+	for( int i=0; i < mTrackCount; i++ ){
+		struct stTrackPoint *p = &mTrack[ index ];
+		index = ( index + 1 ) % TRACK_MAX;
+		if ( p->time <= since ) continue;
+		if ( n == maxPoints ){
+			*more = true;
+			break;
+		}
+		points[ n++ ] = *p;
+	}
+	portEXIT_CRITICAL( &mTrackMux );
+	return n;
+}
+
 static void ringBuffCopy( byte* source, int numBytes, byte* dest, int *destIndex, int destMaxBytes )
 {
 	int residue = numBytes;
@@ -100,6 +194,9 @@ static void distributeGpsData()
 	
 	// BLEでの配信
 	bleQueueNmea( mSaveBuff );
+
+	// 移動履歴
+	trackAdd( &mGpsData );
 
 	// TCP Clientとしての配信
 	if ( mAgribusReady ){
