@@ -1,0 +1,80 @@
+# 開発環境とよく使う処理。
+#
+#   mise install        ツール(PlatformIO, uv)を入れる
+#   mise run setup      ESP32のツールチェーンとライブラリを入れる
+#   mise tasks          タスクの一覧
+#
+# シリアルポートは自動で探す。指定する時は環境変数 PORT を使う。
+#   PORT=/dev/ttyACM1 mise run upload
+
+[tools]
+"pipx:platformio" = "6.1.19"
+uv = "0.12.13"
+
+[tasks.setup]
+description = "ESP32のツールチェーンとライブラリをインストールする(初回のみ)"
+run = "pio pkg install"
+
+[tasks.build]
+description = "ビルドする"
+run = "pio run"
+
+[tasks.check]
+description = "追加の警告を有効にしてビルドする"
+env = { PLATFORMIO_BUILD_FLAGS = "-Wall -Wextra -Wno-unused-parameter" }
+run = "pio run"
+
+[tasks.clean]
+description = "ビルド結果を消す"
+run = "pio run -t clean"
+
+[tasks.port]
+description = "ESP32-S3のシリアルポートを表示する"
+run = "scripts/find-port.sh"
+
+[tasks.usb-attach]
+description = "WSL2用: USBデバイスをWSLに接続する(抜き差しのたびに実行)"
+run = "scripts/usb-attach.sh"
+
+[tasks.upload]
+description = "ビルドして実機に書き込む(失敗時は3回まで再試行)"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+port=$(scripts/find-port.sh)
+for i in 1 2 3; do
+	if pio run -t upload --upload-port "$port"; then
+		exit 0
+	fi
+	echo "書き込みに失敗しました ($i/3)" >&2
+	# usbipd経由(WSL2)だと書き込みが失敗し、そのまま再試行しても失敗し続ける事がある。
+	# スタブを使わずに接続してリセットすると復旧する。
+	pio pkg exec -p tool-esptoolpy -- esptool.py --chip esp32s3 --port "$port" --no-stub chip_id >/dev/null 2>&1 || true
+	sleep 2
+done
+exit 1
+'''
+
+[tasks.monitor]
+description = "シリアルモニタを開く(対話式。Ctrl+Cで終了)"
+raw = true
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+pio device monitor --port "$(scripts/find-port.sh)"
+'''
+
+[tasks.log]
+description = "シリアルログを指定秒数だけ読み出す"
+usage = '''
+arg "[seconds]" help="読み出す秒数" default="30"
+flag "-r --reset" help="読み出しの前にチップをリセットする"
+'''
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+port=$(scripts/find-port.sh)
+opts=()
+if [ "${usage_reset:-false}" = "true" ]; then opts+=(--reset); fi
+uv run --quiet scripts/serial_log.py "$port" "${usage_seconds?}" "${opts[@]}"
+'''
