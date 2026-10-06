@@ -125,8 +125,29 @@ yes | sdkmanager --licenses >/dev/null || true
 sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "build-tools;34.0.0"
 '''
 
+[tasks.web-setup]
+description = "共通の画面(web/)のビルドに使うパッケージをインストールする(初回のみ)"
+dir = "web"
+run = "npm install --no-audit --no-fund"
+
+[tasks.web-check]
+description = "共通の画面(web/)の型を検査する"
+dir = "web"
+run = "npm run check --silent"
+
+[tasks.web-build]
+description = "共通の画面(web/)の型を検査してビルドする(出力は web/dist)"
+dir = "web"
+run = "npm run build --silent"
+
+[tasks.web-dev]
+description = "共通の画面をブラウザで確認する(本体には接続できない。見た目の確認用)"
+dir = "web"
+run = "npm run dev"
+
 [tasks.android-build]
 description = "Androidアプリをビルドする(デバッグ用APK)"
+depends = ["web-build"]
 dir = "android"
 run = "./gradlew --no-daemon -q assembleDebug"
 
@@ -198,6 +219,7 @@ run = "npm install --no-audit --no-fund"
 
 [tasks.win-run]
 description = "WindowsアプリをWSLから開発用に起動する(終了は mise run win-stop)"
+depends = ["web-build"]
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail

@@ -37,6 +37,10 @@
 #define BLE_STATUS_PERIOD_SMALL_MTU 3000
 
 volatile bool mBleConnected;
+
+// いまBLEでNMEAを送っている回数（1秒あたり）。設定の値(mBleNmeaRate)から始まり、
+// 接続した相手がnmeaコマンドで変えられる。切断すると設定の値に戻る。
+int mBleNmeaRateNow;
 int mBleNotifyCount;			// 送信したnotifyの数
 
 static BLEServer *mServer;
@@ -63,6 +67,7 @@ class ServerCallbacks : public BLEServerCallbacks {
 	}
 	void onDisconnect( BLEServer* server ) {
 		mBleConnected = false;
+		mBleNmeaRateNow = mBleNmeaRate;
 		mRestartAdvertising = true;
 	}
 	void onMtuChanged( BLEServer* server, esp_ble_gatts_cb_param_t* param ) {
@@ -102,6 +107,7 @@ int bleStart()
 	mQueueNmea = xQueueCreate( 1, SAVE_BUFF_MAX );
 	if ( ! mQueueRxLine || ! mQueueNmea ) return -1;
 
+	mBleNmeaRateNow = mBleNmeaRate;
 	BLEDevice::init( mReceiverName );
 	BLEDevice::setMTU( BLE_MTU );
 
@@ -130,7 +136,7 @@ int bleStart()
 // 測位データ(NMEA)をBLEで送るために渡す
 //
 // ・taskRover()から呼び出される。ここでは渡すだけで、送信はblePoll()が行う。
-// ・1秒あたりmBleNmeaRate回に間引く。送信が追いつかない時は最新のものだけ送る。
+// ・1秒あたりmBleNmeaRateNow回に間引く。送信が追いつかない時は最新のものだけ送る。
 //
 // nmea: 改行で終わる文字列（複数行可）。SAVE_BUFF_MAXバイト未満
 //
@@ -139,8 +145,9 @@ void bleQueueNmea( const char *nmea )
 	static unsigned long msecLast = 0;
 	static char item[ SAVE_BUFF_MAX ];
 
-	if ( ! mBleConnected || mBleNmeaRate <= 0 || mPeerMtu < BLE_MTU_SMALL ) return;
-	if ( millis() - msecLast < (unsigned long)( 1000 / mBleNmeaRate ) - 20 ) return;
+	int rate = mBleNmeaRateNow;
+	if ( ! mBleConnected || rate <= 0 || mPeerMtu < BLE_MTU_SMALL ) return;
+	if ( millis() - msecLast < (unsigned long)( 1000 / rate ) - 20 ) return;
 	msecLast = millis();
 
 	strlcpy( item, nmea, sizeof(item) );

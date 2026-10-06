@@ -1,5 +1,5 @@
 // 画面（web/）に、Electron側の機能を window.host として渡す。
-// 画面側の受け口は web/host.js。
+// 画面側の受け口は web/src/host.ts。
 
 const { contextBridge, ipcRenderer } = require('electron');
 

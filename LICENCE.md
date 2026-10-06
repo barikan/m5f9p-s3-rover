@@ -1,6 +1,6 @@
 # ライセンス
 
-このリポジトリのファームウェアと Android アプリは、MIT License で公開します。
+このリポジトリのファームウェアとアプリ(Windows、Android)は、MIT License で公開します。
 
 ファームウェアは、ジオセンス社の「m5f9p」v1.0.48 を元に書き直したものです。元のプログラムは MIT License で公開されており、その著作権表示を下に残しています。
 
@@ -20,7 +20,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 | 場所 | 著作権者 | 備考 |
 |---|---|---|
 | `src/` | Geosense Inc.、Toshihiro Hiraoka | 元のプログラムを書き直したもの。元のコードを引き継いだファイルには、先頭に元のライセンス表示を残している |
-| `android/`、`scripts/`、ドキュメント、設定ファイル | Toshihiro Hiraoka | このリポジトリで新しく書いたもの |
+| `web/`、`windows/`、`android/`、`scripts/`、ドキュメント、設定ファイル | Toshihiro Hiraoka | このリポジトリで新しく書いたもの |
 
 ## 別のライセンスのもの
 
@@ -34,6 +34,10 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 - `m5f9p.ino` の Web サーバ部分は、Hristo Gochkov 氏の SDWebServer(Copyright (c) 2015 Hristo Gochkov、GNU Lesser General Public License v2.1 以降)を改変したものです。この部分は `src/` には引き継いでいません。
 - `MPU6886g.cpp` / `MPU6886g.h` は IMU のドライバで、ファイルにライセンスの表示がありません。M5Stack のライブラリにあるドライバを元にしたものと思われますが、出所は確認できていません。`src/` には引き継いでいません。
 
+### Origin UI の部品(`web/src/components/ui/`、`web/src/lib/utils.ts`、`web/src/tailwind.css` のテーマ)
+
+[Origin UI の Vue 版](https://github.com/misbahansori/originui-vue)から写したもので、MIT License(Copyright (c) 2025 Origin UI)です。全文は `web/src/components/ui/LICENCE.md` にあります。
+
 ### Gradle ラッパー(`android/gradlew`、`android/gradlew.bat`、`android/gradle/wrapper/`)
 
 Gradle が生成したファイルで、Apache License 2.0 です。
@@ -46,10 +50,20 @@ Gradle が生成したファイルで、Apache License 2.0 です。
 |---|---|---|
 | Arduino core for ESP32 | ファームウェアの基盤 | LGPL v2.1 |
 | M5Unified、M5GFX | CoreS3 の画面、タッチ、電源 | MIT |
-| ArduinoJson | コマンドの JSON | MIT |
-| AndroidX、Jetpack Compose | Android アプリの画面 | Apache License 2.0 |
-| Kotlin 標準ライブラリ、kotlinx.coroutines | Android アプリ | Apache License 2.0 |
+| ArduinoJson | コマンドと設定の JSON | MIT |
+| YAMLDuino(libyaml を含む) | 設定ファイル(YAML)の読み込み | MIT |
+| AndroidX(Activity、Core、WebKit) | Android アプリ | Apache License 2.0 |
+| Kotlin 標準ライブラリ | Android アプリ | Apache License 2.0 |
+| Vue、Reka UI、VueUse、vue-sonner、class-variance-authority、tailwind-merge | アプリの画面(ビルドした画面に含まれる) | MIT |
+| clsx | 同上 | MIT |
+| Lucide(lucide-vue-next) | 画面のアイコン | ISC |
+| Tailwind CSS、tw-animate-css、Vite | 画面のビルド | MIT |
+| Electron | Windows アプリの実行環境 | MIT |
+
+### Electron(Windows アプリ)
+
+Windows アプリは Electron の上で動きます。Electron 本体は MIT License ですが、Chromium、Node.js など多数のソフトウェアを含み、それぞれのライセンスに従います。Windows アプリを配布するときは、Electron に同梱されている `LICENSE` と `LICENSES.chromium.html` を一緒に配布してください。
 
 ### Google Maps
 
-Android アプリの地図は、Google の Maps JavaScript API を利用者自身の API キーで呼び出して表示します。利用には Google Maps Platform の利用規約が適用されます。
+アプリの地図は、Google の Maps JavaScript API を利用者自身の API キーで呼び出して表示します。利用には Google Maps Platform の利用規約が適用されます。

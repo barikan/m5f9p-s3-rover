@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 概要
 
-u-blox ZED-F9P を載せた M5F9P モジュールを M5Stack CoreS3 に重ねて使う、RTK 移動局(Rover)専用のファームウェア。PlatformIO + Arduino フレームワーク + M5Unified で書かれている。
+u-blox ZED-F9P を載せた M5F9P モジュールを M5Stack CoreS3 に重ねて使う、RTK 移動局(Rover)専用のファームウェア(PlatformIO + Arduino フレームワーク + M5Unified)と、その操作用のアプリ(Windows は Electron、Android は Kotlin。画面は `web/` を共用)。
 
 `m5f9p_src_v1_0_48/` は移植元(M5Stack Basic/Gray 用、Arduino IDE 向け)で、参照用に置いてあるだけ。ビルド対象ではないので編集しない。挙動の由来を調べるときはここを読む。
 
@@ -23,7 +23,7 @@ mise run log 30 --reset # リセットして30秒間のシリアルログを読�
 mise run monitor        # 対話式のシリアルモニタ
 mise run usb-attach     # WSL2: USB を WSL に接続する
 mise run cmd '{"cmd":"status"}'   # 本体にコマンドを送る(一覧は src/cmd.cpp の先頭)
-mise run ini-get / ini-put        # 本体の SD カードの INI を読み書きする
+mise run config-get / config-put  # 本体の SD カードの設定ファイル(YAML)を読み書きする
 ```
 
 - テストとリンタはない。確認手段はビルドと実機。
@@ -31,32 +31,65 @@ mise run ini-get / ini-put        # 本体の SD カードの INI を読み書�
 - `platform = espressif32@6.9.0` に固定している。6.13.0 はこの環境で esptool の導入に失敗する。
 - 開発機は WSL2。USB は抜き差しのたびに `mise run usb-attach` が必要(Windows 側の usbipd を呼ぶ)。書き込みは時々失敗するので、`upload` タスクは再試行する。
 - ログの確認には `mise run log` を使う。`monitor` は対話式なので、エージェントからは使えない。
-- 起動ウィザードは画面タッチで進むので、そこだけはユーザーの操作が要る。メイン画面に入ったあとは、`mise run cmd` で画面に触らずに操作できる。Wi-Fi や補正元の切り替えは `run.set`(設定を書き換えて再起動)、INI の編集は `ini-get` / `ini-put` を使う。ウィザードの途中ではコマンドに応答しない。
+- 起動ウィザードは画面タッチで進むので、そこだけはユーザーの操作が要る。メイン画面に入ったあとは、`mise run cmd` で画面に触らずに操作できる。Wi-Fi や補正元の切り替えは `run.set`(設定を書き換えて再起動)、設定ファイルの編集は `config-get` / `config-put` を使う。ウィザードの途中ではコマンドに応答しない。
 - メイン画面に入ると 10 秒ごとに `STAT ...` 行がシリアルに出る(`main.cpp` の `dbgStatus()`)。補正データの受信量、RTCM のエラー率、Wi-Fi、BLE、内蔵 RAM の空きが分かる。
 - PC(WSL)には Bluetooth がない。BLE の接続確認はユーザーのスマートフォン(nRF Connect)に頼る。
-- 取り出した INI には Wi-Fi のパスワードが入っている。リポジトリに置かず、作業後は消す。
+- 取り出した設定ファイルには Wi-Fi のパスワードが入っている。リポジトリに置かず、作業後は消す。
 
-## Android アプリ
+## クライアントアプリ
 
-`android/` は BLE で本体に接続する Android アプリ(Kotlin、Jetpack Compose、対象は Android 12 以降)。ファームウェアとは別のビルドで、Gradle ラッパーを使う。
+画面は `web/`(Vue 3 + TypeScript + Origin UI の Vue 版 + Tailwind CSS。Vite でビルドして `web/dist/` に出力)にあり、Windows アプリ(`windows/`、Electron)と Android アプリ(`android/`、WebView)の両方が表示する。**画面や本体とのやり取りを変えるときは `web/` を直す。** アプリごとに同じ処理を書かない。
 
 ```bash
-mise run android-build       # デバッグ用 APK をビルド
-mise run android-attach      # WSL2: 端末を WSL に接続する
-mise run android-install     # ビルドして端末に入れ、起動する
-mise run android-log 10      # アプリのログを読む
-mise run android-screenshot  # 端末の画面を screenshot.png に保存する(Read で見られる)
+mise run web-setup                   # 画面のビルドに使うパッケージを入れる(初回のみ)
+mise run web-check                   # 画面の型を検査する(vue-tsc。テンプレートも対象)
+mise run web-build                   # 型を検査してビルドする(win-run と android-build は自動で実行する)
+mise run win-run / win-stop          # Windows アプリを開発用に起動 / 終了
+mise run win-shot [ファイル]          # ウィンドウを画像に保存する(Read で見られる)
+mise run win-eval '<JavaScript の式>' # 画面内で実行して結果を得る(ボタンを押す、表示を読む)
+
+mise run android-build               # デバッグ用 APK をビルド(web/dist を取り込む)
+mise run android-connect <IP:ポート>  # 端末に Wi-Fi 経由(ワイヤレス デバッグ)でつなぐ
+mise run android-install             # ビルドして端末に入れ、起動する
+mise run android-screenshot          # 端末の画面を screenshot.png に保存する
 ```
 
-- WSL2 では USB 経由の adb が不安定(APK の転送中に切れる)。`mise run android-connect <IP:ポート>` で Wi-Fi 経由(ワイヤレス デバッグ)につなぐ。アドレスはユーザーに端末の画面で確認してもらう。
-- 端末の画面が消灯しているとスクリーンショットは真っ黒になる。画面の点灯とロック解除はユーザーに頼む。画面が点いていれば、`adb shell input tap` で自分のアプリを操作して確認できる。
-- 本体は同時に1台としか BLE 接続できない。nRF Connect などがつながったままだと、アプリのスキャンに出てこない。
-- 本体との通信仕様は `src/cmd.cpp` と `src/ble.cpp` の先頭にある。状況の項目を増減したら、`RoverStatus.kt` も合わせる。
+### 構成の決まり
+
+- `web/src/rover.ts`: 本体とのやり取り(状況の解釈、コマンド、軌跡)。ここが唯一の実装。Kotlin や Electron 側に同じ処理を置かない。Vue に依存させない(画面へは `store.ts` が写す)。
+- 画面の部品は Origin UI の Vue 版(`web/src/components/ui/`。Reka UI + Tailwind CSS の部品を写したもの)を使う。素の `<button>`、`<input>`、`<select>`、`<dialog>` を新しく書かない。見た目は Tailwind CSS のクラスで付け、独自の CSS を増やさない。
+- `components/ui/` の中は、写した元のままにしておく(直すと、元の更新を取り込めなくなる)。足りない部品は https://github.com/misbahansori/originui-vue の `app/registry/default/ui/` から写し、`@/registry/default/ui/` を `@/components/ui/` に置き換える。Context7 に Origin UI の Vue 版はない。動作の仕様は Reka UI(`/unovue/reka-ui`)を引く。
+- 画面は TypeScript で書く(`.vue` は `<script setup lang="ts">`)。本体とやり取りするデータの形は `web/src/types.ts`、アプリが渡す窓口の形は `web/src/env.d.ts` にあり、`src/cmd.cpp`、Kotlin の `Bridge`、`windows/preload.js` を変えたら合わせる。`windows/` は JavaScript のまま。
+- Windows では画面上部の見出しを出さない(`App.vue`)。接続先の名前と「切断」は状況タブにある。
+- `typescript` は 5.x のままにする。7.x にすると、Vue のコンパイラが部品の型を読めずビルドに失敗する。
+- `web/src/host.ts`: 動作環境の違い(接続、ファイル)を吸収する。Windows は Web Serial と Web Bluetooth を画面側で扱い、Android は `window.AndroidBridge` と `window.onNative` で Kotlin の `BleClient` とやり取りする。
+- 画面は両方とも `https://m5f9p.azukimap.jp/` から読み込んだ扱いにしている(Electron は `protocol.handle`、Android は `WebViewAssetLoader`)。地図の API キーの制限を同じ URL で登録できるようにするためで、変えるときは両方を揃える。
+- 本体との通信仕様は `src/cmd.cpp` と `src/ble.cpp` の先頭にある。状況やコマンドの項目を増減したら `web/src/rover.ts` と画面を合わせる。
+- 状況は BLE では本体が1秒ごとに送り、USB では送らない。`rover.ts` は届いていないときだけ `status` を問い合わせる。
+- Google Maps の API キーは、利用者がアプリの設定タブか本体の設定ファイル(`google.key`)に置く。リポジトリやビルド設定に入れない。地図は Maps JavaScript API で、Maps SDK for Android には戻さない(キーを実行時に渡せないため)。
+
+### Windows アプリで気をつけること
+
+- **終了は `mise run win-stop`。** WSL 側のプロセスを止めても、Windows 側の `electron.exe` は残る。`pkill` で止めたつもりになって起動を繰り返すと、ユーザーのデスクトップにウィンドウが溜まる。
+- `pkill -f` を使うときは、同じコマンド行に同じ文字列を書かない(自分のシェルを止めてしまう)。
+- USB で接続するには、本体を WSL から切り離す(`usbipd.exe detach --busid <BUSID>`)。その間、`mise run cmd` や書き込みは使えない。戻すのは `mise run usb-attach`。
+- USB のポートを開いたら、制御線を RTS、DTR の順に下ろす(`web/src/host.ts`)。順番を変えたり、まとめて下ろしたりすると、接続や切断のたびに本体が再起動する。
+- 画面を直したら `mise run web-build` のあと `mise run win-eval 'location.reload()'` で読み込み直す。`win-eval` からは `window.rover`(`rover.ts`)で状態を読める。Reka UI の部品は `click()` だけでは反応しないものがある(Select、Tabs、Switch は pointerdown などを座標つきで送る)。
+- 画面を読み込み直した直後は、WSL 上のファイルの読み込みに数秒かかる。`win-eval` は少し待ってから使う。
+- 確認用の受け渡しフォルダは Windows 側の一時フォルダ。WSL 上のフォルダを Electron から読み書きすると、削除や上書きが正しく反映されない。
+
+### Android アプリで気をつけること
+
+- WSL2 では USB 経由の adb が不安定(APK の転送中に切れる)。Wi-Fi 経由でつなぐ。アドレスはユーザーに端末の画面で確認してもらう。
+- 端末の画面が消灯しているとスクリーンショットは真っ黒になる。画面の点灯とロック解除はユーザーに頼む。
 - `BluetoothGatt` の操作は同時に1つしか行えない。`BleClient.kt` はすべてメインスレッドで順に行い、書き込みはキューで直列化している。
-- 地図は WebView + Maps JavaScript API(`assets/map.html`)。API キーをアプリに埋め込まず実行時に渡すためで、Maps SDK for Android には戻さない。キーは利用者がアプリの設定タブか本体の INI(`[google] key`)に置く。リポジトリやビルド設定に入れない。
-- アプリの状態は `Rover`(object)に集約している。Activity が閉じても接続と記録を続けるためで、接続中は `RoverService` がプロセスを維持する。画面側は `Rover` の StateFlow を読むだけにする。
-- ユーザーが端末を操作している最中に `adb shell input tap` で画面を動かさない。確認のために操作するときは、先に端末を置いてもらう。`adb shell getevent` で実際のタッチが分かる。
 - ライブラリのバージョンは、AGP 8.7.3 / Kotlin 2.0.21 / Gradle 8.10.2 / compileSdk 35 の組み合わせでビルドを確認している。
+
+### 共通で気をつけること
+
+- **ユーザーが端末や PC を操作している最中に、`adb shell input tap` や `win-eval` で画面を動かさない。** 確認のために操作するときは、先に手を止めてもらう。Android は `adb shell getevent` で実際のタッチが分かる。
+- 本体は同時に1台としか BLE 接続できない。Windows アプリ、Android アプリ、nRF Connect のどれかがつながっていると、ほかからは見つからない。
+- PC(WSL)には Bluetooth がない。BLE の確認は Windows アプリか Android アプリで行う。
 
 ## ハードウェア上の制約
 
@@ -125,7 +158,14 @@ CoreS3 には物理ボタンがないので、画面下端に3つのボタンを
 
 ### 設定ファイル
 
-SD カードの `/m5f9p/m5f9p.ini`。読み込みは settings.cpp、書式の見本は `sdcard/m5f9p/m5f9p.ini.sample`。キーを増やしたら見本も更新する。`;` 以降はコメントになるので、値に `;` は使えない。
+SD カードの `/m5f9p/m5f9p.yaml`。読み書きは `config.cpp`、書式の見本は `sdcard/m5f9p/m5f9p.yaml.sample`。項目を増やしたら、`configToJson` / `configFromJson`、見本、画面の `web/src/components/ConfigEditor.vue` を揃える。
+
+- 読み込みは YAMLDuino で `JsonDocument` に変換して行う。**変換の前に `configCheckYaml()`(libyaml)で書式を検査する。** 誤った YAML をそのまま渡すと YAMLDuino が異常終了し、本体が起動を繰り返す。
+- **書き出しは自前(`yamlEmit`)で行い、文字列は必ず引用符で囲む。** YAMLDuino の `serializeYml` は囲まないので、先頭が 0 の数字や `#`、`:` を含むパスワードが壊れる。
+- 起動時の設定(`stRunInfo`)は別のファイル `/m5f9p/m5f9p.run.json`。本体が測位レートの変更などで随時書き直すので、設定ファイルと分けてある(分けないと、そのたびに手書きのコメントが消える)。Wi-Fi は番号ではなく SSID で覚える。
+- 設定は起動時に1回だけ読む。`config.put` / `file.put` はファイルを書くだけで、動作中の変数は変えない(一覧を使っているタスクがあるため)。反映は再起動で行う。
+- `config.get` はパスワードを含む。BLE のペアリングは未実装なので、近くにいれば誰でも読める。
+- 旧形式の INI は、YAML がないときだけ読んで変換する(`settings.cpp` の `readIniFile()`)。
 
 ## コードの書き方
 

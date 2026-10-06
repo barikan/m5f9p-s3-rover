@@ -4,28 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>M5F9P Rover</title>
-<link rel="stylesheet" href="style.css">
 </head>
 <body>
-<header>
-  <h1 id="title">M5F9P Rover</h1>
-  <button id="disconnect" class="text" hidden>切断</button>
-</header>
-<main>
-  <section id="page-status"></section>
-  <section id="page-map" hidden>
-    <div id="map"></div>
-    <div id="map-info" class="panel"></div>
-    <div id="map-buttons"></div>
-  </section>
-  <section id="page-settings" hidden></section>
-</main>
-<nav>
-  <button data-tab="status" class="active">状況</button>
-  <button data-tab="map">地図</button>
-  <button data-tab="settings">設定</button>
-</nav>
-<div id="toast" hidden></div>
-<script type="module" src="app.js"></script>
+<div id="app"></div>
+<script type="module" src="/src/main.ts"></script>
 </body>
 </html>

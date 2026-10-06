@@ -15,7 +15,7 @@
 //   save      {"on":true/false}  ファイルへの保存を開始、停止する
 //   rate      {"hz":1-20}        1秒あたりの測位回数を変更する
 //   nmea      {"hz":0-5}         BLEでNMEAを送る回数（1秒あたり）を変更する。0:送らない
-//                                再起動するとINIファイルの値に戻る
+//                                設定ファイルの値は変えない。BLEを切断すると設定の値に戻る
 //   config.get  設定（設定ファイルの内容）をJSONで返す。パスワードを含む
 //   config.put  {"config":{...}}  設定を書き換える（再起動後に有効）。設定ファイルのコメントは消える
 //   file.get    設定ファイル(YAML)のテキストをそのまま返す
@@ -96,7 +96,7 @@ static void cmdStatus( JsonDocument &re )
 
 	re["sdMB"] = (int)( mSdTotalBytes / 1000000 );
 	re["heap"] = heap_caps_get_free_size( MALLOC_CAP_INTERNAL );
-	re["bleNmea"] = mBleNmeaRate;
+	re["bleNmea"] = mBleNmeaRateNow;
 	re["track"] = trackCount();
 }
 
@@ -283,10 +283,10 @@ void cmdExecute( char *line, String &reply )
 		int hz = cmd["hz"] | -1;
 		if ( hz < 0 || hz > BLE_NMEA_RATE_MAX ) re["error"] = "bad hz";
 		else {
-			mBleNmeaRate = hz;
+			mBleNmeaRateNow = hz;
 			re["ok"] = true;
 		}
-		re["hz"] = mBleNmeaRate;
+		re["hz"] = mBleNmeaRateNow;
 	}
 	else if ( strcmp( name, "config.get" ) == 0 ) cmdConfigGet( re );
 	else if ( strcmp( name, "config.put" ) == 0 ) cmdConfigPut( cmd, re );

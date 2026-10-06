@@ -32,7 +32,7 @@ class RoverService : Service() {
         val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_menu_mylocation)
             .setContentTitle("M5F9P Rover")
-            .setContentText("本体に接続して軌跡を記録しています")
+            .setContentText("本体に接続しています")
             .setContentIntent(open)
             .setOngoing(true)
             .build()

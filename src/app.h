@@ -216,6 +216,7 @@ void cmdRestartIfRequested();
 
 extern volatile bool mBleConnected;
 extern int mBleNotifyCount;
+extern int mBleNmeaRateNow;
 
 int bleStart();
 void blePoll();

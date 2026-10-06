@@ -18,12 +18,8 @@ import android.os.Handler
 import android.os.Looper
 import android.os.ParcelUuid
 import android.util.Log
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.MutableStateFlow
 import java.io.ByteArrayOutputStream
 import java.util.UUID
-
-enum class ConnState { DISCONNECTED, CONNECTING, CONNECTED }
 
 data class FoundDevice(val address: String, val name: String, val rssi: Int)
 
@@ -34,19 +30,27 @@ data class FoundDevice(val address: String, val name: String, val rssi: Int)
  *   TX(notify): 状況 {"ev":"status",...}、測位データ(NMEA)、コマンドの応答
  *   RX(write) : コマンド(JSON)
  *
+ * 受信した行の解釈は画面(web/src/rover.ts)が行う。ここは通信だけを受け持つ。
  * BluetoothGattの操作は同時に1つしか行えないので、すべてメインスレッドで順に行う。
+ * 通知(Listener)もメインスレッドで呼ぶ。
  * 権限(BLUETOOTH_SCAN, BLUETOOTH_CONNECT)は呼び出し側で取得しておく。
  */
 @SuppressLint("MissingPermission")
 class BleClient(private val context: Context) {
 
-    val state = MutableStateFlow(ConnState.DISCONNECTED)
-    val scanning = MutableStateFlow(false)
-    val devices = MutableStateFlow<List<FoundDevice>>(emptyList())
-    val deviceName = MutableStateFlow("")
+    interface Listener {
+        /** state: "disconnected" | "connecting" | "connected" */
+        fun onState(state: String, name: String)
+        fun onDevices(devices: List<FoundDevice>)
+        fun onLine(line: String)
+    }
 
-    /** 本体から受信した行 */
-    val lines = MutableSharedFlow<String>(extraBufferCapacity = 256)
+    var listener: Listener? = null
+
+    var state = STATE_DISCONNECTED
+        private set
+    var deviceName = ""
+        private set
 
     private val handler = Handler(Looper.getMainLooper())
     private val adapter =
@@ -61,7 +65,13 @@ class BleClient(private val context: Context) {
     private val writeQueue = ArrayDeque<ByteArray>()
     private var writing = false
 
-    val isBluetoothEnabled: Boolean get() = adapter?.isEnabled == true
+    private var scanning = false
+    private val devices = mutableListOf<FoundDevice>()
+
+    private fun setState(newState: String) {
+        state = newState
+        listener?.onState(state, deviceName)
+    }
 
     // ---------------------------------------------------------------- スキャン
 
@@ -73,30 +83,33 @@ class BleClient(private val context: Context) {
             if (ParcelUuid(NUS_SERVICE) !in uuids) return
             val name = result.scanRecord?.deviceName ?: result.device.name ?: "(名称なし)"
             val found = FoundDevice(result.device.address, name, result.rssi)
-            devices.value = (devices.value.filter { it.address != found.address } + found)
-                .sortedByDescending { it.rssi }
+            devices.removeAll { it.address == found.address }
+            devices.add(found)
+            devices.sortByDescending { it.rssi }
+            listener?.onDevices(devices.toList())
         }
 
         override fun onScanFailed(errorCode: Int) {
             Log.w(TAG, "scan failed: $errorCode")
-            scanning.value = false
+            scanning = false
         }
     }
 
     fun startScan() {
         val scanner = adapter?.bluetoothLeScanner ?: return
-        if (scanning.value) return
-        devices.value = emptyList()
+        if (scanning) stopScan()
+        devices.clear()
         val settings = ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build()
         scanner.startScan(null, settings, scanCallback)
-        scanning.value = true
-        handler.postDelayed(::stopScan, SCAN_TIMEOUT_MS)
+        scanning = true
+        handler.postDelayed(::stopScan, SCAN_TOKEN, SCAN_TIMEOUT_MS)
     }
 
     fun stopScan() {
-        if (!scanning.value) return
+        handler.removeCallbacksAndMessages(SCAN_TOKEN)
+        if (!scanning) return
         adapter?.bluetoothLeScanner?.stopScan(scanCallback)
-        scanning.value = false
+        scanning = false
     }
 
     // ---------------------------------------------------------------- 接続
@@ -104,6 +117,7 @@ class BleClient(private val context: Context) {
     fun connect(address: String) {
         stopScan()
         wantAddress = address
+        deviceName = devices.find { it.address == address }?.name ?: deviceName
         openGatt(address, autoConnect = false)
     }
 
@@ -111,7 +125,7 @@ class BleClient(private val context: Context) {
         wantAddress = null
         handler.removeCallbacksAndMessages(RECONNECT_TOKEN)
         closeGatt()
-        state.value = ConnState.DISCONNECTED
+        setState(STATE_DISCONNECTED)
     }
 
     private fun openGatt(address: String, autoConnect: Boolean) {
@@ -121,7 +135,7 @@ class BleClient(private val context: Context) {
         } catch (e: IllegalArgumentException) {
             null
         } ?: return
-        state.value = ConnState.CONNECTING
+        setState(STATE_CONNECTING)
         gatt = device.connectGatt(context, autoConnect, gattCallback, BluetoothDevice.TRANSPORT_LE)
     }
 
@@ -140,7 +154,9 @@ class BleClient(private val context: Context) {
             handler.post {
                 if (g != gatt) return@post
                 if (newState == BluetoothProfile.STATE_CONNECTED) {
-                    deviceName.value = g.device.name ?: g.device.address
+                    // アドレスだけで接続した時は名前が取れない事がある。その時は前の名前のままにする
+                    // (空の時は、画面側が前回の接続で覚えた名前を表示する)
+                    g.device.name?.let { deviceName = it }
                     // 既定のMTU(23)では1回に20バイトしか送れないので、最初に大きくする
                     if (!g.requestMtu(MTU_REQUEST)) g.discoverServices()
                 } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
@@ -148,10 +164,10 @@ class BleClient(private val context: Context) {
                     closeGatt()
                     val address = wantAddress
                     if (address == null) {
-                        state.value = ConnState.DISCONNECTED
+                        setState(STATE_DISCONNECTED)
                     } else {
                         // 本体の再起動などで切れた時は、見つかり次第つなぎ直す
-                        state.value = ConnState.CONNECTING
+                        setState(STATE_CONNECTING)
                         handler.postDelayed({ openGatt(address, autoConnect = true) }, RECONNECT_TOKEN, 1000)
                     }
                 }
@@ -195,7 +211,7 @@ class BleClient(private val context: Context) {
         override fun onDescriptorWrite(g: BluetoothGatt, descriptor: BluetoothGattDescriptor, status: Int) {
             handler.post {
                 if (g != gatt) return@post
-                state.value = ConnState.CONNECTED
+                setState(STATE_CONNECTED)
             }
         }
 
@@ -228,13 +244,13 @@ class BleClient(private val context: Context) {
 
     // ---------------------------------------------------------------- 受信
 
-    /** 受信したバイト列を改行で区切り、1行ずつ流す */
+    /** 受信したバイト列を改行で区切り、1行ずつ渡す */
     private fun onReceive(value: ByteArray) {
         for (b in value) {
             if (b == '\n'.code.toByte()) {
                 val line = received.toString(Charsets.UTF_8.name()).trimEnd('\r')
                 received.reset()
-                if (line.isNotEmpty()) lines.tryEmit(line)
+                if (line.isNotEmpty()) listener?.onLine(line)
             } else if (received.size() < LINE_MAX) {
                 received.write(b.toInt())
             }
@@ -246,7 +262,7 @@ class BleClient(private val context: Context) {
     /** 1行を送る。MTUに合わせて分割し、順に書き込む */
     fun sendLine(line: String) {
         handler.post {
-            if (state.value != ConnState.CONNECTED) return@post
+            if (state != STATE_CONNECTED) return@post
             val bytes = (line + "\n").toByteArray(Charsets.UTF_8)
             val chunk = (mtu - 3).coerceAtLeast(20)
             var pos = 0
@@ -282,11 +298,16 @@ class BleClient(private val context: Context) {
     }
 
     companion object {
+        const val STATE_DISCONNECTED = "disconnected"
+        const val STATE_CONNECTING = "connecting"
+        const val STATE_CONNECTED = "connected"
+
         private const val TAG = "BleClient"
         private const val MTU_REQUEST = 247
-        private const val SCAN_TIMEOUT_MS = 15_000L
-        private const val LINE_MAX = 8192
+        private const val SCAN_TIMEOUT_MS = 30_000L
+        private const val LINE_MAX = 16384
         private val RECONNECT_TOKEN = Any()
+        private val SCAN_TOKEN = Any()
 
         val NUS_SERVICE: UUID = UUID.fromString("6E400001-B5A3-F393-E0A9-E50E24DCCA9E")
         val NUS_RX: UUID = UUID.fromString("6E400002-B5A3-F393-E0A9-E50E24DCCA9E")

@@ -1,6 +1,6 @@
 // M5F9P Rover の Windows クライアント（Electron のメインプロセス）
 //
-// 画面は ../web/ にあり、Android アプリと共用している。このファイルは、
+// 画面は ../web/ にあり(ビルドしたものは ../web/dist/)、Android アプリと共用している。このファイルは、
 // ウィンドウを作り、画面からは扱えない事（接続先の選択、ファイルの読み書き）を受け持つ。
 
 const { app, BrowserWindow, protocol, net, ipcMain } = require('electron');
@@ -15,7 +15,7 @@ const APP_URL = `https://${APP_HOST}/`;
 
 const WEB_DIR = app.isPackaged
   ? path.join(process.resourcesPath, 'web')
-  : path.join(__dirname, '..', 'web');
+  : path.join(__dirname, '..', 'web', 'dist');     // mise run web-build の出力
 
 const USB_VENDOR_ESPRESSIF = 0x303a;
 

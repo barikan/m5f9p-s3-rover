@@ -1,338 +1,175 @@
 package jp.azukimap.m5f9p
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.webkit.JavascriptInterface
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import java.util.Locale
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.updatePadding
+import androidx.webkit.WebViewAssetLoader
+import org.json.JSONArray
+import org.json.JSONObject
 
-private val BLE_PERMISSIONS = arrayOf(
-    Manifest.permission.BLUETOOTH_SCAN,
-    Manifest.permission.BLUETOOTH_CONNECT,
-)
+/**
+ * 画面。Windowsアプリと共用の web/ を、全画面のWebViewに表示する。
+ *
+ * web/ はアセットに取り込んであり、https://m5f9p.azukimap.jp/ から読み込んだ扱いにする
+ * （実在のサイトではない）。Google MapsのAPIキーに「ウェブサイトの制限」をかける時に、
+ * Windowsアプリと同じURLを登録できるようにするため。
+ *
+ * 画面とのやり取り
+ *   画面 → アプリ: window.AndroidBridge（下の Bridge）
+ *   アプリ → 画面: window.onNative({type:'devices'|'state'|'line', ...})
+ * 画面側の受け口は web/src/host.ts。
+ */
+class MainActivity : ComponentActivity(), BleClient.Listener {
 
-// 通知は、接続中である事を示す常駐の通知に使う。拒否されても動作する
-private val REQUEST_PERMISSIONS =
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) BLE_PERMISSIONS + Manifest.permission.POST_NOTIFICATIONS
-    else BLE_PERMISSIONS
+    private lateinit var webView: WebView
+    private var started = false     // 画面が前面にある間 true。それ以外では画面に通知しない
 
-class MainActivity : ComponentActivity() {
+    private val permissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {}
 
+    @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
-        setContent {
-            // 端末のダークテーマの設定に合わせる（ステータスバーの文字色もこれに従う）
-            MaterialTheme(colorScheme = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()) {
-                App(hasPermissions = ::hasPermissions)
+
+        val assetLoader = WebViewAssetLoader.Builder()
+            .setDomain(APP_HOST)
+            .addPathHandler("/", WebViewAssetLoader.AssetsPathHandler(this))
+            .build()
+
+        webView = WebView(this).apply {
+            settings.javaScriptEnabled = true
+            settings.domStorageEnabled = true       // 画面がlocalStorageを使う（APIキー、前回の接続先）
+            webViewClient = object : WebViewClient() {
+                override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
+                    if (request.url.host == APP_HOST) assetLoader.shouldInterceptRequest(request.url) else null
+
+                // 画面の外へのリンクは開かない
+                override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
+                    request.url.host != APP_HOST
             }
+            addJavascriptInterface(Bridge(), "AndroidBridge")
         }
+        setContentView(webView)
+
+        // ステータスバー、ナビゲーションバー、キーボードに重ならないようにする
+        ViewCompat.setOnApplyWindowInsetsListener(webView) { view, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.ime())
+            view.updatePadding(left = bars.left, top = bars.top, right = bars.right, bottom = bars.bottom)
+            WindowInsetsCompat.CONSUMED
+        }
+
+        if (!hasBlePermissions()) permissionLauncher.launch(REQUEST_PERMISSIONS)
+        webView.loadUrl(Uri.Builder().scheme("https").authority(APP_HOST).path("/index.html").build().toString())
     }
 
-    private fun hasPermissions() = BLE_PERMISSIONS.all {
+    override fun onStart() {
+        super.onStart()
+        started = true
+        Rover.ble.listener = this
+        webView.onResume()
+    }
+
+    override fun onStop() {
+        started = false
+        webView.onPause()
+        super.onStop()
+    }
+
+    override fun onDestroy() {
+        if (Rover.ble.listener === this) Rover.ble.listener = null
+        webView.destroy()
+        super.onDestroy()
+    }
+
+    private fun hasBlePermissions() = BLE_PERMISSIONS.all {
         ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED
     }
-}
 
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun App(hasPermissions: () -> Boolean) {
-    var granted by remember { mutableStateOf(hasPermissions()) }
-    val launcher = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestMultiplePermissions()
-    ) { granted = hasPermissions() }      // 通知の権限は必須にしない
+    // ---------------------------------------------------------------- アプリ → 画面
 
-    val state by Rover.ble.state.collectAsStateWithLifecycle()
-    val deviceName by Rover.ble.deviceName.collectAsStateWithLifecycle()
-    val message by Rover.message.collectAsStateWithLifecycle()
-    val snackbar = remember { SnackbarHostState() }
-    var tab by rememberSaveable { mutableStateOf(0) }     // 0:状況 1:地図 2:設定
-
-    LaunchedEffect(granted) {
-        if (granted) Rover.connectLast() else launcher.launch(REQUEST_PERMISSIONS)
+    private fun notifyPage(message: JSONObject) {
+        if (started) webView.evaluateJavascript("window.onNative && window.onNative($message)", null)
     }
-    LaunchedEffect(message) {
-        message?.let {
-            snackbar.showSnackbar(it)
-            Rover.message.value = null
+
+    override fun onState(state: String, name: String) =
+        notifyPage(JSONObject().put("type", "state").put("state", state).put("name", name))
+
+    override fun onDevices(devices: List<FoundDevice>) {
+        val list = JSONArray()
+        for (d in devices) {
+            list.put(JSONObject().put("id", d.address).put("name", d.name).put("detail", "${d.rssi} dBm"))
         }
+        notifyPage(JSONObject().put("type", "devices").put("list", list))
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(if (state == ConnState.DISCONNECTED) "M5F9P Rover" else deviceName) },
-                actions = {
-                    if (state != ConnState.DISCONNECTED) {
-                        TextButton(onClick = Rover::disconnect) { Text("切断") }
-                    }
-                },
-            )
-        },
-        snackbarHost = { SnackbarHost(snackbar) },
-        bottomBar = {
-            if (granted) {
-                NavigationBar {
-                    NavigationBarItem(
-                        selected = tab == 0, onClick = { tab = 0 },
-                        icon = {}, label = { Text("状況", style = MaterialTheme.typography.titleSmall) },
-                    )
-                    NavigationBarItem(
-                        selected = tab == 1, onClick = { tab = 1 },
-                        icon = {}, label = { Text("地図", style = MaterialTheme.typography.titleSmall) },
-                    )
-                    NavigationBarItem(
-                        selected = tab == 2, onClick = { tab = 2 },
-                        icon = {}, label = { Text("設定", style = MaterialTheme.typography.titleSmall) },
-                    )
-                }
-            }
-        },
-    ) { padding ->
-        Column(
-            Modifier
-                .padding(padding)
-                .fillMaxSize()
-        ) {
-            when {
-                !granted -> PermissionScreen { launcher.launch(REQUEST_PERMISSIONS) }
-                tab == 1 -> MapScreen()
-                tab == 2 -> SettingsScreen(connected = state == ConnState.CONNECTED)
-                state == ConnState.DISCONNECTED -> ScanScreen()
-                else -> StatusScreen(connecting = state == ConnState.CONNECTING)
-            }
+    override fun onLine(line: String) = notifyPage(JSONObject().put("type", "line").put("text", line))
+
+    // ---------------------------------------------------------------- 画面 → アプリ
+    //
+    // WebViewのスレッドから呼ばれる。BLEの操作はメインスレッドで行う。
+
+    private inner class Bridge {
+        @JavascriptInterface
+        fun startScan() = runOnUiThread {
+            if (hasBlePermissions()) Rover.ble.startScan() else permissionLauncher.launch(REQUEST_PERMISSIONS)
         }
-    }
-}
 
-@Composable
-private fun PermissionScreen(onRequest: () -> Unit) {
-    Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text("本体と通信するために、「付近のデバイス」の権限が必要です。")
-        Button(onClick = onRequest) { Text("権限を許可する") }
-        Text(
-            "許可のダイアログが出ない場合は、Androidの設定からこのアプリの権限を変更してください。",
-            style = MaterialTheme.typography.bodySmall,
+        @JavascriptInterface
+        fun stopScan() = runOnUiThread { Rover.ble.stopScan() }
+
+        @JavascriptInterface
+        fun connect(address: String) = runOnUiThread { if (hasBlePermissions()) Rover.connect(address) }
+
+        @JavascriptInterface
+        fun disconnect() = runOnUiThread { Rover.disconnect() }
+
+        @JavascriptInterface
+        fun sendLine(line: String) = Rover.ble.sendLine(line)
+
+        /** いまの接続の状態。アプリを開き直した時に、画面が接続を引き継ぐのに使う */
+        @JavascriptInterface
+        fun getState(): String =
+            JSONObject().put("state", Rover.ble.state).put("name", Rover.ble.deviceName).toString()
+
+        @JavascriptInterface
+        fun storageRead(name: String): String? = Rover.storageRead(name)
+
+        @JavascriptInterface
+        fun storageAppend(name: String, text: String) = Rover.storageAppend(name, text)
+
+        @JavascriptInterface
+        fun storageList(): String = JSONArray(Rover.storageList()).toString()
+
+        @JavascriptInterface
+        fun storageRemove(name: String) = Rover.storageRemove(name)
+    }
+
+    companion object {
+        /** 画面を読み込んだ事にするホスト名。Windowsアプリ(windows/main.js)と同じにしている */
+        private const val APP_HOST = "m5f9p.azukimap.jp"
+
+        private val BLE_PERMISSIONS = arrayOf(
+            Manifest.permission.BLUETOOTH_SCAN,
+            Manifest.permission.BLUETOOTH_CONNECT,
         )
-    }
-}
 
-@Composable
-private fun ScanScreen() {
-    val scanning by Rover.ble.scanning.collectAsStateWithLifecycle()
-    val devices by Rover.ble.devices.collectAsStateWithLifecycle()
-
-    LaunchedEffect(Unit) { Rover.ble.startScan() }
-
-    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("接続する本体を選んでください", Modifier.weight(1f))
-            if (scanning) CircularProgressIndicator(Modifier.width(24.dp), strokeWidth = 3.dp)
-            else OutlinedButton(onClick = Rover.ble::startScan) { Text("再スキャン") }
-        }
-        if (!Rover.ble.isBluetoothEnabled) {
-            Text("Bluetoothがオフになっています。", color = MaterialTheme.colorScheme.error)
-        }
-        if (devices.isEmpty() && !scanning) {
-            Text("本体が見つかりません。電源が入っているか確認してください。")
-        }
-        for (device in devices) {
-            Card(
-                Modifier
-                    .fillMaxWidth()
-                    .clickable { Rover.connect(device.address) }
-            ) {
-                Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(device.name, style = MaterialTheme.typography.titleMedium)
-                        Text(device.address, style = MaterialTheme.typography.bodySmall)
-                    }
-                    Text("${device.rssi} dBm", style = MaterialTheme.typography.bodySmall)
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun StatusScreen(connecting: Boolean) {
-    val status by Rover.status.collectAsStateWithLifecycle()
-    val throughput by Rover.throughput.collectAsStateWithLifecycle()
-    val s = status
-
-    if (s == null) {
-        Row(
-            Modifier.padding(24.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            CircularProgressIndicator(Modifier.width(24.dp), strokeWidth = 3.dp)
-            Text(if (connecting) "接続しています…" else "本体からの状況を待っています…")
-        }
-        return
-    }
-
-    Column(
-        Modifier
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        PositionCard(s)
-        CorrectionCard(s, throughput)
-        ControlCard(s, onSave = Rover::setSaving, onRate = Rover::setRate)
-        DeviceCard(s)
-    }
-}
-
-@Composable
-private fun Section(title: String, content: @Composable () -> Unit) {
-    Card(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text(title, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-            content()
-        }
-    }
-}
-
-@Composable
-private fun Item(label: String, value: String, mono: Boolean = false) {
-    Row {
-        Text(label, Modifier.width(112.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, fontFamily = if (mono) FontFamily.Monospace else null)
-    }
-}
-
-@Composable
-private fun PositionCard(s: RoverStatus) {
-    Section("測位") {
-        Card(colors = CardDefaults.cardColors(containerColor = fixColor(s.quality))) {
-            Text(
-                s.quality.label,
-                Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                color = Color.White,
-                fontWeight = FontWeight.Bold,
-            )
-        }
-        if (s.posValid) {
-            Item("緯度", String.format(Locale.US, "%.9f°", s.lat), mono = true)
-            Item("経度", String.format(Locale.US, "%.9f°", s.lon), mono = true)
-            Item("楕円体高", String.format(Locale.US, "%.3f m", s.height), mono = true)
-        } else {
-            Text("測位データがありません")
-        }
-        Item("衛星数", "${s.sats}")
-        Item("測位レート", "${s.rateHz} Hz")
-    }
-}
-
-@Composable
-private fun CorrectionCard(s: RoverStatus, throughput: Throughput) {
-    Section("補正データ") {
-        when {
-            !s.baseValid -> Item("取得先", "なし")
-            s.baseIsUart -> Item("取得先", "UART（PHコネクタ）")
-            else -> Item("取得先", "${s.baseAddress} / ${s.baseMount}")
-        }
-        if (s.baseValid) {
-            Item("状態", if (s.baseReady) "受信中" else "接続待ち")
-            Item("受信量", "${throughput.baseBytesPerSec} バイト/秒")
-            Item("エラー率", "${s.rtcmErrPercent} %")
-            Item("遅れ", String.format(Locale.US, "%.1f 秒", s.rtcmAgeMs / 1000.0))
-            Item("再接続", "${s.baseReconnects} 回")
-        }
-        if (s.clasBytes >= 0) Item("CLAS", "${throughput.clasBytesPerSec} バイト/秒")
-    }
-}
-
-@Composable
-private fun ControlCard(s: RoverStatus, onSave: (Boolean) -> Unit, onRate: (Int) -> Unit) {
-    Section("操作") {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(if (s.saving) "ログを保存中（${s.saveFormatName}）" else "ログ保存は停止中")
-                Text(
-                    if (s.saveReady) "書き込み ${s.saveCount} 回" else "SDカードが使えません",
-                    style = MaterialTheme.typography.bodySmall,
-                )
-            }
-            if (s.saving) OutlinedButton(onClick = { onSave(false) }) { Text("停止") }
-            else Button(onClick = { onSave(true) }, enabled = s.saveReady) { Text("保存開始") }
-        }
-        Spacer(Modifier.padding(top = 4.dp))
-        Text("測位レート")
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            for (hz in listOf(1, 2, 5, 10)) {
-                if (hz == s.rateHz) Button(onClick = {}) { Text("$hz Hz") }
-                else FilledTonalButton(onClick = { onRate(hz) }) { Text("$hz Hz") }
-            }
-        }
-    }
-}
-
-@Composable
-private fun DeviceCard(s: RoverStatus) {
-    Section("本体") {
-        if (s.wifiSsid.isEmpty()) {
-            Item("Wi-Fi", "使用しない")
-        } else if (s.wifiConnected) {
-            Item("Wi-Fi", "${s.wifiSsid}（${s.wifiRssi} dBm）")
-            Item("IPアドレス", s.wifiIp)
-        } else {
-            Item("Wi-Fi", "${s.wifiSsid}（接続中）")
-        }
-        Item("SDカード", "${s.sdMB} MB")
-        Item("バージョン", s.version)
-        Item("稼働時間", "${s.uptimeSec / 60} 分 ${s.uptimeSec % 60} 秒")
+        // 通知は、接続中である事を示す常駐の通知に使う。拒否されても動作する
+        private val REQUEST_PERMISSIONS =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) BLE_PERMISSIONS + Manifest.permission.POST_NOTIFICATIONS
+            else BLE_PERMISSIONS
     }
 }
