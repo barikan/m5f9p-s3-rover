@@ -198,6 +198,13 @@ void setup() {
 	cfg.internal_imu = false;
 	M5.begin( cfg );
 
+	// 内部I2C(G12/G11)が使えないとCoreS3として認識されず、画面も表示されない。
+	// M-BUSに重ねたモジュールがI2Cの信号線をLowに引いている場合に起きる。
+	auto board = M5.getBoard();
+	if ( board != m5::board_t::board_M5StackCoreS3 && board != m5::board_t::board_M5StackCoreS3SE ){
+		dbgPrintf( "!! CoreS3 not detected (board=%d). Check internal I2C (G12/G11).\r\n", (int)board );
+	}
+
 	// gps enable
 	pinMode( PIN_GPS_RESET, OUTPUT);
 	digitalWrite( PIN_GPS_RESET, HIGH);
