@@ -521,6 +521,8 @@ int ubxDecodeNavPvt( struct stUbxStatus *ubxStatus, struct stGpsData *gpsData)
 		gpsData->height = height * 1E-3;	// m
 		gpsData->highPrecisionDone = false;
 		gpsData->geoidSep = ( height - hMSL ) * 1E-3; // geoid separation m
+		gpsData->hAcc = hAcc * 1E-3;	// m
+		gpsData->vAcc = vAcc * 1E-3;	// m
 		gpsData->velocity = gSpeed * 3600.0 * 1E-6;	// km/h
 		gpsData->direction = headMot * 1E-5;	// degree
 
@@ -575,6 +577,8 @@ int ubxDecodeHPPOSLLH( struct stUbxStatus *ubxStatus, struct stGpsData *gpsData)
 			gpsData->lon = (double)lon * 1E-7 + (double)lonHp * 1E-9;	// degree
 			gpsData->height = (double)height * 1E-3 + (double)heightHp * 1E-4;	// m
 			gpsData->highPrecisionDone = true;
+			gpsData->hAcc = hAcc * 1E-4;	// m
+			gpsData->vAcc = vAcc * 1E-4;	// m
 		}
 	}
 	else return -1;

@@ -84,6 +84,33 @@ if [ "${usage_reset:-false}" = "true" ]; then opts+=(--reset); fi
 uv run --quiet scripts/serial_log.py "$port" "${usage_seconds?}" "${opts[@]}"
 '''
 
+[tasks.lcd-shot]
+description = "本体の画面の内容をPNGに保存する(確認用)"
+usage = 'arg "[file]" default="lcd.png" help="保存先"'
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+port=$(scripts/find-port.sh)
+uv run --quiet scripts/lcd_shot.py "$port" "${usage_file?}"
+'''
+
+[tasks.lcd-tap]
+description = "本体の画面をタップした事にする(確認用)。例: mise run lcd-tap 160 120"
+usage = '''
+arg "<x>" help="0-319"
+arg "<y>" help="0-239"
+'''
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+port=$(scripts/find-port.sh)
+uv run --quiet scripts/devcmd.py "$port" "{\"cmd\":\"lcd.tap\",\"x\":${usage_x?},\"y\":${usage_y?}}" > /dev/null
+'''
+
+[tasks.lcd-assets]
+description = "本体の画面のフォントとアイコン(src/lcd_assets.h)を作り直す"
+run = "uv run --quiet --with resvg-py --with pillow python3 scripts/make_lcd_assets.py"
+
 [tasks.cmd]
 description = "本体にコマンド(JSON)を送る。例: mise run cmd '{\"cmd\":\"status\"}'"
 usage = 'arg "<json>" help="コマンド。一覧は src/cmd.cpp の先頭にある"'

@@ -38,6 +38,8 @@ struct stGpsData
 						// 5= RTK float, 6 = Estimated/Dead reckoning fix:
 	int numSatelites;
 	double dop;
+	double hAcc;		// 水平方向の推定精度 m
+	double vAcc;		// 垂直方向の推定精度 m
 };
 
 #define UBX_BUFF_MAX 3000

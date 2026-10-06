@@ -119,8 +119,8 @@ mise run android-screenshot          # 端末の画面を screenshot.png に保�
 
 ### 守るべき排他ルール
 
-- **I2C と `M5.update()` は loopTask からだけ呼ぶ。** `buttonRead()` / `waitTouch()`(ui.cpp)が `M5.update()` を呼ぶ唯一の場所。D9C の読み出し(`d9cPoll()`、gps.cpp の I2C 関数)を他のタスクへ移さない。
-- **SD アクセスと画面描画は `spiLock()` / `spiUnlock()` で囲む**(storage.cpp、再帰ミューテックス)。`loop()` は描画部分だけをロックし、ボタン処理はロックの外で行う。
+- **I2C と `M5.update()` は loopTask からだけ呼ぶ。** `M5.update()` を呼ぶのは、`screenTouch()`(screen.cpp)と `buttonRead()` / `waitTouch()`(ui.cpp)だけ。D9C の読み出し(`d9cPoll()`、gps.cpp の I2C 関数)を他のタスクへ移さない。
+- **SD アクセスと液晶への描画は `spiLock()` / `spiUnlock()` で囲む**(storage.cpp、再帰ミューテックス)。測位中の画面は、液晶に送る `screenFlush()` の中だけでロックする(描画領域に描く間はロックしない)。
 - **UBX コマンドの Ack 待ち中は `mGpsCommandBusy` が立ち、`taskRover` はバッファを読まない。** コマンド送信は `ubxSendCommand()` を通す。
 - `taskUartRead` は `mGpsUartReady` が立つまで `Serial1` を読まない。`Serial1.begin()` は `gpsSyncBaudrate()`(gps.cpp)が1回だけ行い、以後のボーレート変更は `updateBaudRate()` で行う。
 
@@ -155,9 +155,14 @@ mise run android-screenshot          # 端末の画面を screenshot.png に保�
 
 ### UI
 
-CoreS3 には物理ボタンがないので、画面下端に3つのボタンを描き、タッチ開始位置で A/B/C を判定する(ui.cpp)。M5Unified のボタンエミュレーションは使っていない。一覧から選ぶ画面は `uiSelectList()` に共通化してある。
+画面は2系統ある。
 
-テキストはサイズ2(1行16px、26桁)。ボタンが下端32pxを使うので、本文に使えるのは 0〜12 行目。
+- **測位中の画面**(`screen.cpp`、`pages.cpp`): 画面全体を描画領域(M5Canvas、PSRAM)に描き、変わった帯だけ液晶に送る。フォント(Noto Sans、アンチエイリアス)とアイコン(Lucide)は `lcd_assets.h` に埋め込んだ生成物で、手で直さない(`mise run lcd-assets`)。表示は英語(日本語フォントは入れていない)。ページは毎回全部描き直し、ボタンは描くときに `hitAdd()` で登録する。
+- **ウィザード**(`ui.cpp`): 以前のまま。液晶に直接描き、画面下端の3つのボタンをタッチ開始位置で A/B/C と判定する。一覧は `uiSelectList()`。文字はサイズ2(1行16px、26桁)で、本文に使えるのは 0〜12 行目。
+
+`M5.update()` を呼ぶのは、`screen.cpp` の `screenTouch()`(測位中)と、`ui.cpp` の `buttonRead()` / `waitTouch()`(ウィザード)だけ。
+
+**画面を変えたら、`mise run lcd-shot` で画像を取って確かめる**(Read で見られる)。`mise run lcd-tap <x> <y>` でタップもできる。取り出せるのは描画領域の内容で、実物の液晶の見え方とタッチの反応はユーザーに確かめてもらう。
 
 ### 設定ファイル
 

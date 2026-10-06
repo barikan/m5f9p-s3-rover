@@ -38,6 +38,11 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 [Origin UI の Vue 版](https://github.com/misbahansori/originui-vue)から写したもので、MIT License(Copyright (c) 2025 Origin UI)です。全文は `web/src/components/ui/LICENCE.md` にあります。
 
+### 本体の画面のフォントとアイコン(`src/lcd_assets.h`、`scripts/lcd-icons/`)
+
+- フォントは [Noto Sans](https://fonts.google.com/noto/specimen/Noto+Sans)(SIL Open Font License 1.1)の一部の文字を、画像に変換して埋め込んだものです。
+- アイコンは [Lucide](https://lucide.dev/)(ISC License)の SVG と、それを画像に変換したものです。ライセンスの全文は `scripts/lcd-icons/LICENSE` にあります。
+
 ### Gradle ラッパー(`android/gradlew`、`android/gradlew.bat`、`android/gradle/wrapper/`)
 
 Gradle が生成したファイルで、Apache License 2.0 です。

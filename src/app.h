@@ -53,6 +53,9 @@ struct stRunInfo {
 //                        main.cpp
 // ************************************************************
 
+extern byte mVersionMajor;
+extern byte mVersionMinor;
+extern byte mVersionPatch;
 extern int mRunMode;
 extern struct stRunInfo mRunInfo;
 extern bool mSetupDone;
@@ -60,6 +63,8 @@ extern unsigned long mStartMillis;
 
 void dbgPrintf( const char* format, ... );
 void appSetSaving( bool on );
+void pagesLoop();		// pages.cpp
+void pagesPreviewPairing( int passkey );
 int appSetSolutionRate( int rate );
 
 // ************************************************************

@@ -29,6 +29,9 @@
 //   （本体が持っている一覧と id がずれるため）
 //   file.put    {"text":"..."}    設定ファイル(YAML)をテキストで書き換える（再起動後に有効）
 //                                 YAMLとして正しくない時は書き込まずにエラーを返す
+//   lcd.shot    本体の画面の内容を返す（確認用）。USBのみ。応答の後に、画像が
+//               "LCD:" で始まる行で続く（screen.cpp の「画像の取り出し」を参照）
+//   lcd.tap     {"x":0-319,"y":0-239}  本体の画面をタップした事にする（確認用）。USBのみ
 //   ble.unpair  BLEのペアリングの記憶を全て消す。USBのみ
 //   ini.remove  旧形式の設定ファイル(m5f9p.ini)をSDカードから削除する。USBのみ
 //               （パスワードが平文で書かれているため。YAMLへの移行が済んでいる事）
@@ -55,6 +58,7 @@
 #include <ArduinoJson.h>
 
 #include "app.h"
+#include "screen.h"
 
 #define CMD_LINE_MAX 8192
 #define FILE_SIZE_MAX 8192		// 設定ファイルの最大バイト数
@@ -76,6 +80,8 @@ static void cmdStatus( JsonDocument &re )
 	pos["lon"] = serialized( String( mGpsData.lon, 9 ) );
 	pos["height"] = serialized( String( mGpsData.height, 3 ) );
 	pos["sats"] = mGpsData.numSatelites;
+	pos["hAcc"] = serialized( String( mGpsData.hAcc, 3 ) );	// 推定精度 m
+	pos["vAcc"] = serialized( String( mGpsData.vAcc, 3 ) );
 	re["rate"] = mSolutionRate;
 
 	JsonObject base = re["base"].to<JsonObject>();
@@ -325,6 +331,22 @@ void cmdExecute( char *line, String &reply, int channel )
 	else if ( strcmp( name, "config.put" ) == 0 ) cmdConfigPut( cmd, re );
 	else if ( strcmp( name, "file.get" ) == 0 ) cmdFileGet( re, channel );
 	else if ( strcmp( name, "file.put" ) == 0 ) cmdFilePut( cmd, re );
+	else if ( strcmp( name, "lcd.shot" ) == 0 ){
+		if ( channel != CMD_USB ) re["error"] = "usb only";
+		else {
+			screenShotRequest();	// 応答を返した後に、loop()が送る
+			re["ok"] = true;
+		}
+	}
+	else if ( strcmp( name, "lcd.tap" ) == 0 ){
+		if ( channel != CMD_USB ) re["error"] = "usb only";
+		else {
+			// {"pairing":番号} の時は、ペアリング中の画面を数秒間表示する（見た目の確認用）
+			if ( cmd["pairing"].is<int>() ) pagesPreviewPairing( cmd["pairing"] );
+			else screenInjectTap( cmd["x"] | 0, cmd["y"] | 0 );
+			re["ok"] = true;
+		}
+	}
 	else if ( strcmp( name, "ble.unpair" ) == 0 ){
 		if ( channel != CMD_USB ) re["error"] = "usb only";
 		else if ( ! mBleEnable ) re["error"] = "BLE disabled";

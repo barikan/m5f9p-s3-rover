@@ -28,6 +28,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 #include "app.h"
 #include "ui.h"
+#include "screen.h"
 
 // ************************************************************
 //                        モジュール変数
@@ -48,16 +49,9 @@ struct stRunInfo mRunInfo;	// 実行パラメータ
 
 unsigned long mStartMillis;	//測位開始時刻
 
-#define PAGE_MAIN 0
-#define PAGE_INFO 1
-#define PAGE_BOOTINFO 2
-#define PAGE_MAX 3
 
-static int mLcdPage;		// 画面に表示するページ番号
 
 // 受信バイト数表示用
-static int mBaseRecvLastCount;
-static unsigned long mBaseRecvLastCountMillis;
 static int mD9CLastCount;
 static unsigned long mD9CLastCountMillis;
 
@@ -340,8 +334,10 @@ void setup() {
 	dbgPrintf("Heap Size = %d\r\n", esp_get_free_heap_size());
 	dbgPrintf("setup() exit  %lu msec\r\n", millis());
 	lcdClear();
+
+	// ここからは、新しい画面（screen.cpp、pages.cpp）で表示する
+	if ( screenBegin() < 0 ) dbgPrintf( "!! Screen: not enough memory\r\n" );
 	mStartMillis = millis();
-	mBaseRecvLastCountMillis = millis();
 	mSetupDone = true;
 }
 
@@ -350,14 +346,6 @@ void setup() {
 //                   Arduino ループ（コア1で実行）
 // ************************************************************
 //
-
-static void nextPage()
-{
-	mLcdPage++;
-	if ( mLcdPage == PAGE_MAX ) mLcdPage = 0;
-	lcdClear();
-	
-}
 
 // ファイルへの保存を開始、停止する
 //
@@ -385,147 +373,6 @@ int appSetSolutionRate( int rate )
 	return 0;
 }
 
-// メインページでボタンが押された時の処理
-//
-static void buttonMainPage( int button, bool longPress )
-{
-	if ( button == A_BUTTON ){
-		if ( ! mSdSaveReady ){
-			lcdDispAndWaitButton( 3, "> Can't save to SD card." );
-			lcdClear();
-			return;
-		}
-		appSetSaving( ! mFileSaving );
-	}
-	else if ( button == B_BUTTON ){
-		int pitch = longPress ? 5 : 1;
-		int rate = mSolutionRate + pitch;
-		if ( mSolutionRate == 1 && pitch == 5 ) rate = pitch;
-		else if ( rate > 20 ) rate = 1;
-		appSetSolutionRate( rate );
-	}
-}
-
-// ブート情報ページでボタンが押された時の処理
-//
-static void buttonBootInfo( int button )
-{
-	if ( button == A_BUTTON ){
-		// 再起動して、実行パラメータをUIで選択し直す
-		mRunInfo.setupRequest = 1;
-		saveRunInfo( &mRunInfo );
-		ESP.restart();
-	}
-	else if ( button == B_BUTTON ){
-		mRunInfo.saving = ! mRunInfo.saving;
-		saveRunInfo( &mRunInfo );
-	}
-}
-
-static void dispMainPage() 
-{
-	lcdDispButtonText( "Save", "Rate", "NextPage" );
-
-	int lineNum = 0;
-	if ( mGpsData.ubxDone ){
-		int fix = 0;
-		if (mGpsData.quality == 4 ) fix = 2;
-		else if (mGpsData.quality == 5 ) fix = 1;
-		lcdDispText( lineNum++, "LAT=%.8lf  ", mGpsData.lat);
-		lcdDispText( lineNum++, "LON=%.8lf  ", mGpsData.lon);
-		lcdDispText( lineNum++, "ALT=%.3lf   ", mGpsData.height);
-		lcdDispText( lineNum++, "FIX=%d  SPS=%d  ", fix, mSolutionRate);
-	}
-	lineNum = 5;
-	lcdTextColor( TFT_YELLOW );
-	lcdDispText( lineNum++, "File save:%d  Saved=%d   ", (int)mFileSaving, mFileSaved);
-	lcdTextColor( TFT_WHITE );
-
-	// 基準局データの１秒あたりの受信バイト数
-	if ( mBaseSrc.valid ){
-		unsigned long now = millis();
-		if ( now - mBaseRecvLastCountMillis > 900 ){
-			int count = mBaseRecvCount;
-			const char *name = ( mBaseSrc.type == BASE_TYPE_UART ) ? "UART" : "NTRIP";
-			lcdDispText( lineNum, "%s=%d bytes    ", name, count - mBaseRecvLastCount );
-			mBaseRecvLastCountMillis = now;
-			mBaseRecvLastCount = count;
-		}
-		lineNum++;
-	}
-
-	if ( mD9CAddress >= 0 ){
-		unsigned long now = millis();
-		if ( now - mD9CLastCountMillis > 950 ){
-			lcdDispText( lineNum, "CLAS=%d bytes    ", mD9CRecvCount - mD9CLastCount );
-			mD9CLastCountMillis = now;
-			mD9CLastCount = mD9CRecvCount;
-		}
-	}
-}
-
-// 情報表示
-//
-static void dispInfo()
-{
-	lcdDispButtonText( "", "", "NextPage" );
-	int lineNum = 0;
-	lcdDispText( lineNum++, "****** Info *******" );
-	lcdDispText( lineNum++, "Version: %d.%d.%d", mVersionMajor, mVersionMinor, mVersionPatch );
-
-	byte mac[6];
-	esp_read_mac( mac, ESP_MAC_WIFI_STA);
-	lcdDispText( lineNum++, "MAC:%02X:%02X:%02X:%02X:%02X:%02X", 
-							mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-	if ( strlen( mRunInfo.wifiSsid ) ){
-		if ( WiFi.status() == WL_CONNECTED ) lcdDispText( lineNum++, "IP addr:%s      ", WiFi.localIP().toString().c_str() );
-		else lcdDispText( lineNum++, "IP addr:(connecting)   " );
-	}
-	
-	lcdDispText( lineNum++, "Server port:%d", mServerPort );
-	if ( mSoftApEnable ){
-		lcdDispText( lineNum++, "AP IP:%s", mSoftApIp.toString().c_str() );
-		lcdDispText( lineNum++, "AP ssid:%s", mSoftApSsid );
-		lcdDispText( lineNum++, "AP passwd:%s", mSoftApPassword );
-	}
-	if ( mBleEnable ) lcdDispText( lineNum++, "BLE:%s paired=%d ", mBleConnected ? "connected" : "waiting", bleBondCount() );
-	lcdDispText( lineNum++, "Heap: %d KB  ", esp_get_free_heap_size() / 1000 );
-	lcdDispText( lineNum++, "SD card: %d MB", (int)(mSdTotalBytes / 1E6) );
-	if ( millis() - mRtcmLastMillis > 10 * 1000 ) 
-		lcdDispText( lineNum++, "RTCM : no data (10 sec)" );
-	else
-		lcdDispText( lineNum++, "RTCM error: %d percent   ", mRtcmCrcErrorPercent );
-}
-
-static void dispBootInfo() 
-{
-	const char* saveStr[4] = { "NMEA", "RAW", "RTCM", "CSV" };
-
-	lcdDispButtonText( "Setup", "Save", "NextPage" );
-	int lineNum = 0;
-	lcdDispText( lineNum++, " *** Boot info ***" );
-	lcdDispText2( lineNum++, "Lcd rotation = ", "%d deg", mRunInfo.lcdRotation ? 180 : 0 );
-	
-	lcdDispText2( lineNum++, "Ssid = ", "%s", strlen( mRunInfo.wifiSsid ) ? mRunInfo.wifiSsid : "(none)" );
-	
-	struct stBaseSource *src = &mRunInfo.baseSrc;
-	lcdDispText2( lineNum++, "Base source = ", "" );
-	if ( ! src->valid ) lcdDispText( lineNum++, " (none)" );
-	else if ( src->type == BASE_TYPE_UART ) lcdDispText( lineNum++, " Uart" );
-	else lcdDispText( lineNum++, " %.12s/%.12s", src->address, src->mountPoint );
-	
-	int i = mRunInfo.saveFormat;
-	if ( i >= 0 && i < 4 ) lcdDispText2( lineNum++, "Save format = ", "%s", saveStr[i] );
-	lcdDispText2( lineNum++, "Solution rate = ", "%dHz ", mRunInfo.solutionRate );
-	lineNum++;
-
-	lcdDispText2( lineNum++, "Save at boot = ", "%s", mRunInfo.saving ? "On " : "Off" );
-
-	// SDカードのパスワードについての警告
-	if ( mSecretError ) lcdDispText( lineNum++, "!! Password unreadable" );
-	if ( mIniRemains ) lcdDispText( lineNum++, "!! Old .ini file remains" );
-}
-
 // 動作状況を10秒毎にデバグ出力する（USBからNMEAを出力している時は出さない）
 //
 static void dbgStatus()
@@ -544,46 +391,12 @@ static void dbgStatus()
 
 void loop() 
 {
-	bool longPress;
-	int button = buttonRead( &longPress );
-	if ( button == C_BUTTON ) nextPage();
-	else if ( button ){
-		if ( mLcdPage == PAGE_MAIN ) buttonMainPage( button, longPress );
-		else if ( mLcdPage == PAGE_BOOTINFO ) buttonBootInfo( button );
-	}
-
-	// 画面表示。SDカードとSPIバスを共用しているので排他制御する。
-	// BLEのペアリング中は、相手に入力してもらう番号を表示する。
-	static bool pairingShown = false;
-	int passkey = mBleEnable ? blePasskey() : -1;
-	spiLock();
-	if ( passkey >= 0 ){
-		if ( ! pairingShown ) lcdClear();
-		pairingShown = true;
-		lcdDispText( 1, " *** BLE pairing ***" );
-		lcdDispText( 3, " Enter this code on" );
-		lcdDispText( 4, " your phone or PC." );
-		lcdDispText2( 7, "       ", "%03d %03d", passkey / 1000, passkey % 1000 );
-	}
-	else if ( pairingShown ){
-		pairingShown = false;
-		lcdClear();
-	}
-	else switch( mLcdPage ){
-		case PAGE_MAIN: 
-			dispMainPage();
-			break;
-		case PAGE_INFO:
-			dispInfo();
-			break;
-		case PAGE_BOOTINFO:
-			dispBootInfo();
-			break;
-	}
-	spiUnlock();
+	// 画面（タップの読み取りと描画）
+	pagesLoop();
 
 	d9cPoll();
 	cmdPollUsb();
+	screenShotPoll( Serial );
 	blePoll();
 	dbgStatus();
 	delay(20);
