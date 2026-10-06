@@ -190,12 +190,13 @@ void setup() {
 	char buff[256];
 	struct stGpsData gpsData;
 	
+	Serial.begin( 115200 );		// USB CDC。デバグ出力とNMEA出力に使う
+
 	auto cfg = M5.config();
 	cfg.internal_spk = false;	// G13(I2S_DOUT)をZED-F9Pのイネーブルに使うため
 	cfg.internal_mic = false;
 	cfg.internal_imu = false;
 	M5.begin( cfg );
-	Serial.setTxTimeoutMs( 0 );	// USBが接続されていない時にデバグ出力で待たされないようにする
 
 	// gps enable
 	pinMode( PIN_GPS_RESET, OUTPUT);
