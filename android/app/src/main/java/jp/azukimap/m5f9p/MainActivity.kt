@@ -28,6 +28,8 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -42,6 +44,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -90,6 +93,7 @@ private fun App(viewModel: MainViewModel, hasPermissions: () -> Boolean) {
     val deviceName by viewModel.ble.deviceName.collectAsStateWithLifecycle()
     val message by viewModel.message.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
+    var tab by rememberSaveable { mutableStateOf(0) }     // 0:状況 1:地図
 
     LaunchedEffect(granted) {
         if (granted) viewModel.connectLast() else launcher.launch(BLE_PERMISSIONS)
@@ -113,6 +117,20 @@ private fun App(viewModel: MainViewModel, hasPermissions: () -> Boolean) {
             )
         },
         snackbarHost = { SnackbarHost(snackbar) },
+        bottomBar = {
+            if (granted) {
+                NavigationBar {
+                    NavigationBarItem(
+                        selected = tab == 0, onClick = { tab = 0 },
+                        icon = {}, label = { Text("状況", style = MaterialTheme.typography.titleSmall) },
+                    )
+                    NavigationBarItem(
+                        selected = tab == 1, onClick = { tab = 1 },
+                        icon = {}, label = { Text("地図", style = MaterialTheme.typography.titleSmall) },
+                    )
+                }
+            }
+        },
     ) { padding ->
         Column(
             Modifier
@@ -121,6 +139,7 @@ private fun App(viewModel: MainViewModel, hasPermissions: () -> Boolean) {
         ) {
             when {
                 !granted -> PermissionScreen { launcher.launch(BLE_PERMISSIONS) }
+                tab == 1 -> MapScreen(viewModel)
                 state == ConnState.DISCONNECTED -> ScanScreen(viewModel)
                 else -> StatusScreen(viewModel, connecting = state == ConnState.CONNECTING)
             }
@@ -224,13 +243,6 @@ private fun Item(label: String, value: String, mono: Boolean = false) {
         Text(label, Modifier.width(112.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(value, fontFamily = if (mono) FontFamily.Monospace else null)
     }
-}
-
-private fun fixColor(quality: FixQuality) = when (quality) {
-    FixQuality.FIX -> Color(0xFF2E7D32)
-    FixQuality.FLOAT -> Color(0xFFEF6C00)
-    FixQuality.NONE -> Color(0xFFC62828)
-    else -> Color(0xFF546E7A)
 }
 
 @Composable

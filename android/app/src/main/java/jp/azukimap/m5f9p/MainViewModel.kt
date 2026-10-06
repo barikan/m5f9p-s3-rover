@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import org.json.JSONException
 import org.json.JSONObject
+import java.time.LocalDate
 
 /** 1秒あたりの受信バイト数（状況の差分から求める） */
 data class Throughput(val baseBytesPerSec: Int = 0, val clasBytesPerSec: Int = 0)
@@ -19,12 +20,25 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val throughput = MutableStateFlow(Throughput())
     val message = MutableStateFlow<String?>(null)   // コマンドのエラー等、利用者に見せる文言
 
+    /** 地図に表示している日と、その日の軌跡 */
+    val trackDay = MutableStateFlow(LocalDate.now())
+    val track = MutableStateFlow<List<TrackPoint>>(emptyList())
+
     private val prefs = app.getSharedPreferences("m5f9p", Context.MODE_PRIVATE)
+    private val trackStore = TrackStore(app)
+    private var lastPoint: TrackPoint? = null       // 最後に記録した点
 
     init {
+        track.value = trackStore.load(trackDay.value)
+        lastPoint = track.value.lastOrNull()
+
         viewModelScope.launch { ble.lines.collect(::onLine) }
         viewModelScope.launch {
-            ble.state.collect { if (it != ConnState.CONNECTED) status.value = null }
+            ble.state.collect {
+                if (it != ConnState.CONNECTED) status.value = null
+                // 位置は状況(1秒毎)から取るので、NMEAは止めて無線の占有を減らす
+                else send(JSONObject().put("cmd", "nmea").put("hz", 0))
+            }
         }
     }
 
@@ -50,6 +64,34 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun send(command: JSONObject) = ble.sendLine(command.toString())
 
+    // ---------------------------------------------------------------- 軌跡
+
+    fun trackDays(): List<LocalDate> = trackStore.days()
+
+    fun selectTrackDay(day: LocalDate) {
+        trackDay.value = day
+        track.value = trackStore.load(day)
+    }
+
+    fun deleteTrackDay(day: LocalDate) {
+        trackStore.delete(day)
+        if (day == LocalDate.now()) lastPoint = null
+        if (day == trackDay.value) track.value = emptyList()
+    }
+
+    /** 測位結果を今日の軌跡に加える。止まっている間は増やさない */
+    private fun record(s: RoverStatus) {
+        if (!s.posValid || s.quality == FixQuality.NONE) return
+        val point = TrackPoint(System.currentTimeMillis(), s.lat, s.lon, s.quality)
+        val last = lastPoint
+        if (last != null && last.quality == point.quality && last.distanceTo(point) < TRACK_MIN_DISTANCE) return
+
+        val today = LocalDate.now()
+        lastPoint = point
+        trackStore.append(today, point)
+        if (trackDay.value == today) track.value = track.value + point
+    }
+
     private fun onLine(line: String) {
         if (!line.startsWith("{")) return      // NMEAは今は使わない
         val json = try {
@@ -61,6 +103,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val new = RoverStatus.parse(json)
             status.value?.let { old -> throughput.value = throughputOf(old, new) }
             status.value = new
+            record(new)
         } else if (json.has("re") && !json.optBoolean("ok")) {
             message.value = "${json.optString("re")}: ${json.optString("error", "失敗しました")}"
         }
@@ -79,5 +122,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     companion object {
         private const val KEY_LAST_ADDRESS = "lastAddress"
+        private const val TRACK_MIN_DISTANCE = 0.05     // m。これ以上動いた時に軌跡の点を増やす
     }
 }

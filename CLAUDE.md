@@ -53,7 +53,8 @@ mise run android-screenshot  # 端末の画面を screenshot.png に保存する
 - 本体は同時に1台としか BLE 接続できない。nRF Connect などがつながったままだと、アプリのスキャンに出てこない。
 - 本体との通信仕様は `src/cmd.cpp` と `src/ble.cpp` の先頭にある。状況の項目を増減したら、`RoverStatus.kt` も合わせる。
 - `BluetoothGatt` の操作は同時に1つしか行えない。`BleClient.kt` はすべてメインスレッドで順に行い、書き込みはキューで直列化している。
-- ライブラリのバージョンは、AGP 8.7.3 / Kotlin 2.0.21 / Gradle 8.10.2 / compileSdk 35 の組み合わせでビルドを確認している。
+- Google Maps の API キーは `android/local.properties` の `MAPS_API_KEY`(Git の管理外)。リポジトリに入れない。無いと地図が空白になるだけで、ビルドと起動はできる。
+- ライブラリのバージョンは、maps-compose 6.2.1 / AGP 8.7.3 / Kotlin 2.0.21 / Gradle 8.10.2 / compileSdk 35 の組み合わせでビルドを確認している。
 
 ## ハードウェア上の制約
 
