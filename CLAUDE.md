@@ -36,6 +36,25 @@ mise run ini-get / ini-put        # 本体の SD カードの INI を読み書�
 - PC(WSL)には Bluetooth がない。BLE の接続確認はユーザーのスマートフォン(nRF Connect)に頼る。
 - 取り出した INI には Wi-Fi のパスワードが入っている。リポジトリに置かず、作業後は消す。
 
+## Android アプリ
+
+`android/` は BLE で本体に接続する Android アプリ(Kotlin、Jetpack Compose、対象は Android 12 以降)。ファームウェアとは別のビルドで、Gradle ラッパーを使う。
+
+```bash
+mise run android-build       # デバッグ用 APK をビルド
+mise run android-attach      # WSL2: 端末を WSL に接続する
+mise run android-install     # ビルドして端末に入れ、起動する
+mise run android-log 10      # アプリのログを読む
+mise run android-screenshot  # 端末の画面を screenshot.png に保存する(Read で見られる)
+```
+
+- WSL2 では USB 経由の adb が不安定(APK の転送中に切れる)。`mise run android-connect <IP:ポート>` で Wi-Fi 経由(ワイヤレス デバッグ)につなぐ。アドレスはユーザーに端末の画面で確認してもらう。
+- 端末の画面が消灯しているとスクリーンショットは真っ黒になる。画面の点灯とロック解除はユーザーに頼む。画面が点いていれば、`adb shell input tap` で自分のアプリを操作して確認できる。
+- 本体は同時に1台としか BLE 接続できない。nRF Connect などがつながったままだと、アプリのスキャンに出てこない。
+- 本体との通信仕様は `src/cmd.cpp` と `src/ble.cpp` の先頭にある。状況の項目を増減したら、`RoverStatus.kt` も合わせる。
+- `BluetoothGatt` の操作は同時に1つしか行えない。`BleClient.kt` はすべてメインスレッドで順に行い、書き込みはキューで直列化している。
+- ライブラリのバージョンは、AGP 8.7.3 / Kotlin 2.0.21 / Gradle 8.10.2 / compileSdk 35 の組み合わせでビルドを確認している。
+
 ## ハードウェア上の制約
 
 これらはコードを読むだけでは分からず、実機で判明したもの。

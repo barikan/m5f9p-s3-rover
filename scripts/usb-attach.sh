@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
-# WSL2用: Windows側のusbipdで、ESP32-S3 (VID 303a) をWSLに接続する。
+# WSL2用: Windows側のusbipdで、USBデバイスをWSLに接続する。
 # USBを抜き差しするたびに実行する。
+#
+#   usb-attach.sh          ESP32-S3 (VID 303a)
+#   usb-attach.sh 18d1     Android端末 (Google。VIDは usbipd list で確認できる)
 set -euo pipefail
+
+vid="${1:-303a}"
 
 if ! command -v usbipd.exe >/dev/null; then
 	echo "usbipd.exe が見つかりません。WSL2 以外では不要です。" >&2
@@ -10,9 +15,9 @@ if ! command -v usbipd.exe >/dev/null; then
 fi
 
 # 「Connected:」の一覧から 303a の行を取り出す
-line=$(usbipd.exe list | tr -d '\r' | sed -n '/^Connected:/,/^$/p' | grep -i ' 303a:' | head -1 || true)
+line=$(usbipd.exe list | tr -d '\r' | sed -n '/^Connected:/,/^$/p' | grep -i " $vid:" | head -1 || true)
 if [ -z "$line" ]; then
-	echo "ESP32-S3 (VID 303a) が Windows に接続されていません。" >&2
+	echo "USBデバイス (VID $vid) が Windows に接続されていません。" >&2
 	exit 1
 fi
 busid=$(echo "$line" | awk '{print $1}')
@@ -31,6 +36,9 @@ case "$line" in
 		usbipd.exe attach --wsl --busid "$busid"
 		;;
 esac
+
+# ESP32-S3以外はここまで
+[ "$vid" = "303a" ] || exit 0
 
 # ポートが現れるのを待つ
 for _ in $(seq 20); do

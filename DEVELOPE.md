@@ -215,6 +215,68 @@ Wi-Fi と BLE は1つの無線を時分割で使う。次の構成で、NTRIP �
 - SoftAP は既定で無効。使うときは INI で `[softap] enable=1` にする。SoftAP に端末が接続している間は、BLE との同時利用が不安定になる可能性がある(Espressif の資料で、この組み合わせだけ条件付きの扱い)。
 - BLE を使わないときは `[ble] enable=0` にできる。
 
+## Android アプリ
+
+`android/` に、BLE で本体に接続して状況の表示と操作を行うアプリがある。Kotlin と Jetpack Compose で書いている。対象は Android 12 以降。
+
+### 準備
+
+```bash
+mise install               # JDK と Android のコマンドラインツールを入れる
+mise run android-setup     # SDK のパッケージを入れる(Google のライセンスに同意する)
+```
+
+端末側は、開発者向けオプションの「USB デバッグ」を有効にする。
+
+WSL2 では、端末を USB でつないだあとに次を行う。
+
+```bash
+mise run android-attach    # 端末を WSL に接続する(抜き差しのたびに実行)
+```
+
+初回は、管理者権限の PowerShell で `usbipd bind --busid <BUSID>` が必要(ESP32-S3 と同じ)。また、WSL 側で端末にアクセスする権限がないと `adb devices` に `no permissions` と出る。その場合は次の設定を1回だけ行い、端末を接続し直す。
+
+```bash
+echo 'SUBSYSTEM=="usb", ATTR{idVendor}=="18d1", MODE="0660", GROUP="plugdev"' | sudo tee /etc/udev/rules.d/51-android.rules
+sudo udevadm control --reload-rules
+```
+
+`18d1` は Google(Pixel)のベンダー ID。他社の端末では `usbipd list` で確認して読み替える。
+
+#### Wi-Fi 経由でつなぐ(WSL2 ではこちらを推奨)
+
+WSL2 では、USB 経由(usbipd)の adb が不安定で、APK の転送中に接続が切れた。Wi-Fi 経由なら安定してインストールできる。端末と PC が同じ LAN にいる必要がある。
+
+1. 端末の「開発者向けオプション」で「ワイヤレス デバッグ」をオンにし、その画面に出る「IP アドレスとポート」を控える。
+2. 次を実行する。
+
+```bash
+mise run android-connect 192.168.0.196:38717    # 控えたアドレス
+```
+
+先に USB で一度「USB デバッグを許可」していれば、ペア設定なしで接続できた。接続を拒否される場合は、同じ画面の「ペア設定コードによるデバイスのペア設定」に出るアドレスとコードで `mise run android-pair <アドレス> <コード>` を先に行う。ポート番号は、ワイヤレス デバッグをオフ・オンするたびに変わる。
+
+### ビルドとインストール
+
+| コマンド | 内容 |
+|---|---|
+| `mise run android-build` | デバッグ用 APK をビルドする |
+| `mise run android-install` | ビルドして端末に入れ、起動する |
+| `mise run android-log 10` | アプリのログを10秒間読む |
+| `mise run android-screenshot` | 端末の画面を `screenshot.png` に保存する |
+
+### 構成
+
+```
+android/app/src/main/java/jp/azukimap/m5f9p/
+  BleClient.kt      スキャン、接続、MTU の要求、行単位の送受信、切断時の再接続
+  RoverStatus.kt    本体が送る状況(JSON)の読み取り
+  MainViewModel.kt  接続先の記憶、コマンドの送信、受信量の計算
+  MainActivity.kt   画面(権限の要求、本体の選択、状況と操作)
+```
+
+接続すると MTU を 247 に要求し、本体から1秒ごとに届く状況を表示する。本体が再起動して切れたときは、自動でつなぎ直す。前回接続した本体は覚えていて、次回の起動時に自動で接続する。
+
 ## ソースの構成
 
 ```
@@ -328,7 +390,10 @@ M5Unified は `Serial` を初期化しない。`setup()` の先頭にある `Ser
 | Wi-Fi、NTRIP | 確認済み(geortk.jp。Fix まで到達。接続はバックグラウンドで行われる) |
 | USB からのコマンド(状況、レート、INI の読み書き、起動設定の変更) | 確認済み |
 | BLE での状況の通知 | 確認済み(nRF Connect) |
-| BLE での NMEA の送信、BLE からのコマンド | 未確認 |
+| BLE からのコマンド | 確認済み(Android アプリから測位レートを変更) |
+| BLE での NMEA の送信 | 未確認(アプリ側でまだ使っていない) |
+| Android アプリ(スキャン、接続、状況の表示、測位レートの変更、再接続) | 確認済み(Pixel 8a) |
+| Android アプリ(ログ保存の開始・停止) | 未確認 |
 | rtk2go の局選択 | 未確認 |
 | TCP サーバ配信 | 確認済み(Wi-Fi 経由で PC から受信) |
 | TCP クライアント送信 | 未確認 |

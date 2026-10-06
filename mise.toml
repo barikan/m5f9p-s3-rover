@@ -10,6 +10,9 @@
 [tools]
 "pipx:platformio" = "6.1.19"
 uv = "0.12.13"
+# Androidアプリ(android/)用
+java = "temurin-21"
+android-sdk = "19.0"
 
 [tasks.setup]
 description = "ESP32のツールチェーンとライブラリをインストールする(初回のみ)"
@@ -108,3 +111,78 @@ set -euo pipefail
 port=$(scripts/find-port.sh)
 uv run --quiet scripts/devcmd.py "$port" ini-put "${usage_file?}"
 '''
+
+# ---------------------------------------------------------------- Androidアプリ (android/)
+
+[tasks.android-setup]
+description = "Android SDKのパッケージをインストールする(初回のみ。ライセンスに同意する)"
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+yes | sdkmanager --licenses >/dev/null || true
+sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "build-tools;34.0.0"
+'''
+
+[tasks.android-build]
+description = "Androidアプリをビルドする(デバッグ用APK)"
+dir = "android"
+run = "./gradlew --no-daemon -q assembleDebug"
+
+[tasks.android-attach]
+description = "WSL2用: Android端末をWSLに接続する(抜き差しのたびに実行)"
+usage = 'arg "[vid]" help="USBのベンダーID。Pixelは18d1" default="18d1"'
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+scripts/usb-attach.sh "${usage_vid?}"
+sleep 2
+"$ANDROID_HOME/platform-tools/adb" devices
+'''
+
+[tasks.android-pair]
+description = "Android端末とWi-Fi経由でペア設定する(ワイヤレスデバッグ。初回のみ)"
+usage = '''
+arg "<address>" help="「ペア設定コードによるデバイスのペア設定」に表示されるIPアドレスとポート"
+arg "<code>" help="同じ画面に表示される6桁のコード"
+'''
+run = '"$ANDROID_HOME/platform-tools/adb" pair "${usage_address?}" "${usage_code?}"'
+
+[tasks.android-connect]
+description = "Android端末にWi-Fi経由で接続する(ワイヤレスデバッグ)"
+usage = 'arg "<address>" help="「ワイヤレス デバッグ」の画面に表示されるIPアドレスとポート"'
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+adb="$ANDROID_HOME/platform-tools/adb"
+"$adb" connect "${usage_address?}"
+"$adb" devices
+'''
+
+[tasks.android-install]
+description = "Androidアプリをビルドして端末にインストールし、起動する"
+depends = ["android-build"]
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+adb="$ANDROID_HOME/platform-tools/adb"
+"$adb" install -r android/app/build/outputs/apk/debug/app-debug.apk
+"$adb" shell am start -n jp.azukimap.m5f9p/.MainActivity
+'''
+
+[tasks.android-log]
+description = "Androidアプリのログを指定秒数だけ読み出す"
+usage = 'arg "[seconds]" help="読み出す秒数" default="10"'
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+adb="$ANDROID_HOME/platform-tools/adb"
+pid=$("$adb" shell pidof jp.azukimap.m5f9p || true)
+if [ -z "$pid" ]; then echo "アプリが起動していません" >&2; exit 1; fi
+timeout "${usage_seconds?}" "$adb" logcat --pid="$pid" -v brief || true
+'''
+
+[tasks.android-screenshot]
+description = "Android端末の画面を画像ファイルに保存する"
+usage = 'arg "[file]" help="保存先" default="screenshot.png"'
+run = '"$ANDROID_HOME/platform-tools/adb" exec-out screencap -p > "${usage_file?}"'
+
