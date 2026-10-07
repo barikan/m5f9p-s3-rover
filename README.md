@@ -65,7 +65,7 @@ WSL2 での USB の接続方法、SD カードリーダがない場合の設定�
 
 | ページ | 内容 | 操作 |
 |---|---|---|
-| Status | 測位の状態(`Fix` / `Float` / `DGPS` / `Single` / `No fix`)、補正の方法(`NTRIP` / `TCP` / `UART` / `CLAS` / `None`)、緯度(Lat)、経度(Lon)、楕円体高(Alt)、推定精度(Acc。水平 / 垂直)、衛星数(Sat) | タップで Menu |
+| Status | 測位の状態(`Fix` / `Float` / `DGPS` / `Single` / `No fix`)、補正の方法(`NTRIP` / `TCP` / `UART` / `CLAS` / `None`)、衛星数(右上、衛星のアイコン)、緯度(Lat)、経度(Lon)、楕円体高(Alt)、推定精度(Acc。水平 / 垂直)。最下段に本体の状態(左から CPU 温度、CPU 使用率、メモリ使用率、電圧、SD カードの空き) | タップで Menu |
 | Logging | ログ保存の状態、形式、書き込み回数、SD カードの容量 | 保存の開始・停止、起動時から保存するかどうか |
 | Rate | 測位レート | 1 / 2 / 5 / 10 / 20 Hz から選ぶ |
 | Corrections | 補正データの取得先、受信量、RTCM のエラー率、再接続回数、CLAS の受信量 | |

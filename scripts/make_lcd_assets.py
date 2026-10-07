@@ -41,6 +41,15 @@ ICONS = [
     ("iconDevice", "cpu", 44),
     ("iconSetup", "settings", 44),
     ("iconBack", "chevron-left", 28),
+    # Status の最下段（ラベルの代わり）
+    ("iconTemp", "thermometer", 20),
+    ("iconCpu", "cpu", 20),
+    ("iconMemory", "memory-stick", 20),
+    ("iconPower", "zap", 20),
+    ("iconBattery", "battery", 20),
+    ("iconSd", "hard-drive", 20),
+    # Status の左上（衛星数）
+    ("iconSat", "satellite", 26),
 ]
 
 

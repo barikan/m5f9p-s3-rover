@@ -214,6 +214,24 @@ int setCsvData( struct stGpsData* pGpsData, char* buff, int buffSize );
 
 void cmdPollUsb();
 // ************************************************************
+//                        sysmon.cpp
+// ************************************************************
+
+// 本体の状態
+struct stSysmon {
+	float cpuTemp;		// CPUの温度（℃）
+	int cpuPercent;		// CPU使用率（2コアの平均、推定）
+	int memPercent;		// 内蔵RAMの使用率
+	float voltage;		// 電圧（V）
+	bool onBattery;		// voltage がバッテリーの電圧（falseの時はVBUS）
+	int sdFreeMB;		// SDカードの空き。-1:分からない
+};
+extern struct stSysmon mSysmon;
+
+void sysmonBegin();
+void sysmonPoll();
+
+// ************************************************************
 //                        sats.cpp
 // ************************************************************
 

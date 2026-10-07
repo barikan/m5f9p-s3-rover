@@ -163,6 +163,8 @@ mise run android-screenshot          # 端末の画面を screenshot.png に保�
 
 `M5.update()` を呼ぶのは `screen.cpp` の `screenTouch()` だけ。
 
+Status の最下段に出す本体の状態は `sysmon.cpp` が測る。電源 IC の読み出しが I2C なので、`sysmonPoll()` は loopTask から呼ぶ。SD カードの空きの計算は SPI を使い、時間がかかることがあるので、間隔を空けている。
+
 **画面を変えたら、`mise run lcd-shot` で画像を取って確かめる**(Read で見られる)。`mise run lcd-tap <x> <y>` でタップもできる。取り出せるのは描画領域の内容で、実物の液晶の見え方とタッチの反応はユーザーに確かめてもらう。
 
 ### 設定ファイル

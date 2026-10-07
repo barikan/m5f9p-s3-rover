@@ -306,6 +306,8 @@ void setup() {
 	// 画面の向き、Wifi接続先、基準局データ取得先、保存形式
 	saveRunInfo( &mRunInfo );
 	
+	sysmonBegin();
+
 	// 初期化終了
 	dbgPrintf("Heap Size = %d\r\n", esp_get_free_heap_size());
 	dbgPrintf("setup() exit  %lu msec\r\n", millis());
@@ -368,6 +370,7 @@ void loop()
 
 	d9cPoll();
 	satsPoll();
+	sysmonPoll();
 	cmdPollUsb();
 	screenShotPoll( Serial );
 	blePoll();

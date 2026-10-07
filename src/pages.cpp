@@ -204,20 +204,70 @@ static void updateRates()
 
 // ---------------------------------------------------------------- 各ページ
 
-// Status: 上に測位の状態と補正の方法、下に5行の表
+// 推定精度の文字列。桁が増えても幅が大きく変わらないよう、大きい時は小数を減らす
+//
+static void accuracyText( char *buff, int size, double value )
+{
+	if ( value < 10 ) snprintf( buff, size, "%.3f", value );
+	else if ( value < 100 ) snprintf( buff, size, "%.1f", value );
+	else snprintf( buff, size, "%d", value > 9999 ? 9999 : (int) value );
+}
+
+// Status の最下段の1項目。ラベルの代わりにアイコンを付ける
+//
+// ・アイコンは枠の左端に固定し、文字はその右に左寄せで描く（値の桁数が変わっても
+//   アイコンが動かないようにする）。
+//
+static void drawGauge( int x, int y, int h, const uint8_t *icon, const char *text, int color = COLOR_TEXT )
+{
+	screenIcon( x, y + ( h - iconTempSize ) / 2, icon, iconTempSize, COLOR_MUTED, COLOR_BG );
+	screenText( x + iconTempSize + 3, y + h / 2 + 1, text, FONT_TEXT, color, lgfx::textdatum_t::middle_left );
+}
+
+// バッジ（色の地に文字）。right が true の時は、x を右端として描く
+//
+// 戻り値＝バッジの幅
+//
+static int drawBadge( int x, int y, int h, const char *text, int background, int foreground, bool right = false )
+{
+	int w = screenTextWidth( text, FONT_TITLE ) + 24;
+	int left = right ? x - w : x;
+	screenCanvas().fillSmoothRoundRect( left, y, w, h, 8, (uint16_t) background );
+	screenText( left + w / 2, y + h / 2 + 1, text, FONT_TITLE, foreground, lgfx::textdatum_t::middle_center );
+	return w;
+}
+
+// Status
+//
+//   1段目  左に測位の状態と補正の方法（バッジ）、右に衛星数
+//   2～4   緯度、経度、楕円体高
+//   5      推定精度（水平 / 垂直）
+//   6      本体の状態。CPU温度、CPU使用率、メモリ使用率、電圧、SDカードの空き
 //
 static void drawStatus()
 {
 	char text[40];
 	const int topHeight = 45;
 	const int rowHeight = ( SCREEN_HEIGHT - topHeight ) / 5;
-
-	int color;
-	const char *fix = fixName( mGpsData.ubxDone ? mGpsData.quality : 0, &color );
-	screenText( MARGIN, topHeight / 2 + 2, fix, FONT_VALUE, color, lgfx::textdatum_t::middle_left );
-	screenText( SCREEN_WIDTH - MARGIN, topHeight / 2 + 2, correctionName(), FONT_VALUE, COLOR_TEXT, lgfx::textdatum_t::middle_right );
-
 	bool valid = mGpsData.ubxDone;
+
+	// 左上に、測位の状態と補正の方法をバッジで並べる
+	const int badgeHeight = 32;
+	const int badgeY = ( topHeight - badgeHeight ) / 2 + 2;
+	int color;
+	const char *fix = fixName( valid ? mGpsData.quality : 0, &color );
+	const char *correction = correctionName();
+	bool none = ( strcmp( correction, "None" ) == 0 );
+	int fixWidth = drawBadge( MARGIN, badgeY, badgeHeight, fix, color, COLOR_BG );
+	drawBadge( MARGIN + fixWidth + 6, badgeY, badgeHeight, correction, COLOR_PRESSED, none ? COLOR_MUTED : COLOR_TEXT );
+
+	// 右上に衛星数（ラベルの代わりにアイコン）
+	snprintf( text, sizeof(text), "%d", mGpsData.numSatelites );
+	const char *sats = valid ? text : "--";
+	int satsWidth = screenTextWidth( sats, FONT_VALUE );
+	screenText( SCREEN_WIDTH - MARGIN, topHeight / 2 + 3, sats, FONT_VALUE, COLOR_TEXT, lgfx::textdatum_t::middle_right );
+	screenIcon( SCREEN_WIDTH - MARGIN - satsWidth - 6 - iconSatSize, ( topHeight - iconSatSize ) / 2 + 2, iconSat, iconSatSize, COLOR_MUTED, COLOR_BG );
+
 	int y = topHeight;
 	snprintf( text, sizeof(text), "%.9f°", mGpsData.lat );
 	drawRow( y, rowHeight, "Lat", valid ? text : "--", FONT_VALUE );
@@ -228,11 +278,31 @@ static void drawStatus()
 	snprintf( text, sizeof(text), "%.3f m", mGpsData.height );
 	drawRow( y, rowHeight, "Alt", valid ? text : "--", FONT_VALUE );
 	y += rowHeight;
-	snprintf( text, sizeof(text), "%.3f / %.3f m", mGpsData.hAcc, mGpsData.vAcc );
+
+	// 推定精度（水平 / 垂直、m）
+	char h[12], v[12];
+	accuracyText( h, sizeof(h), mGpsData.hAcc );
+	accuracyText( v, sizeof(v), mGpsData.vAcc );
+	snprintf( text, sizeof(text), "%s / %s m", h, v );
 	drawRow( y, rowHeight, "Acc", valid ? text : "--", FONT_VALUE );
 	y += rowHeight;
-	snprintf( text, sizeof(text), "%d", mGpsData.numSatelites );
-	drawRow( y, rowHeight, "Sat", valid ? text : "--", FONT_VALUE );
+
+	// 本体の状態。枠の位置は固定（値の最大の桁数に合わせた幅）
+	//   CPU温度 "65°"  CPU使用率 "100%"  メモリ使用率 "64%"  電圧 "4.2V"  SDカードの空き "1.5G"
+	static const int gaugeX[5] = { 8, 64, 134, 194, 258 };
+	snprintf( text, sizeof(text), "%.0f°", mSysmon.cpuTemp );
+	drawGauge( gaugeX[0], y, rowHeight, iconTemp, text );
+	snprintf( text, sizeof(text), "%d%%", mSysmon.cpuPercent );
+	drawGauge( gaugeX[1], y, rowHeight, iconCpu, text );
+	snprintf( text, sizeof(text), "%d%%", mSysmon.memPercent );
+	drawGauge( gaugeX[2], y, rowHeight, iconMemory, text );
+	snprintf( text, sizeof(text), "%.1fV", mSysmon.voltage );
+	drawGauge( gaugeX[3], y, rowHeight, mSysmon.onBattery ? iconBattery : iconPower, text );
+	if ( mSysmon.sdFreeMB < 0 ) snprintf( text, sizeof(text), "--" );
+	else if ( mSysmon.sdFreeMB >= 10000 ) snprintf( text, sizeof(text), "%dG", mSysmon.sdFreeMB / 1000 );
+	else if ( mSysmon.sdFreeMB >= 1000 ) snprintf( text, sizeof(text), "%.1fG", mSysmon.sdFreeMB / 1000.0 );
+	else snprintf( text, sizeof(text), "%dM", mSysmon.sdFreeMB );
+	drawGauge( gaugeX[4], y, rowHeight, iconSd, text, mSdTotalBytes == 0 ? COLOR_RED : COLOR_TEXT );
 }
 
 // Menu: 3x2 のタイル
