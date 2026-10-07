@@ -11,7 +11,7 @@
 //   Rate        1秒あたりの測位回数
 //   Corrections 補正データの受信状況
 //   Device      本体の情報
-//   Setup       起動時の設定の表示、設定のやり直し、再起動
+//   Setup       設定の一覧。項目をタップして変更する（すぐに反映する。再起動しない）
 //
 // 画面は毎回すべて描き直す（描画の土台 screen.cpp が、変わった所だけ液晶に送る）。
 // ボタンやタイルは、描く時に「タップできる範囲」として登録し(hit)、タップされた時に
@@ -23,6 +23,7 @@
 
 #include "app.h"
 #include "screen.h"
+#include "ui.h"
 #include "lcd_assets.h"
 
 enum {
@@ -44,7 +45,11 @@ enum {
 	HIT_SAVE = 30,
 	HIT_SAVE_AT_BOOT,
 	HIT_RATE = 40,			// + レートの番号
-	HIT_RUN_SETUP = 60,
+	HIT_SET_WIFI = 60,		// Setup の各項目
+	HIT_SET_SOURCE,
+	HIT_SET_FORMAT,
+	HIT_SET_DISPLAY,
+	HIT_SET_TCP,
 	HIT_RESTART,
 	HIT_CONFIRM_YES,
 	HIT_CONFIRM_NO,
@@ -648,45 +653,95 @@ static void drawDevice()
 	if ( mSoftApEnable ) tableAdd( "Soft AP", COLOR_TEXT, "%s  %s", mSoftApSsid, mSoftApIp.toString().c_str() );
 
 	// 警告
+	if ( mGpsInitResult < 0 ) tableAdd( NULL, COLOR_RED, "GNSS receiver does not respond" );
 	if ( mSecretError ) tableAdd( NULL, COLOR_RED, "Saved passwords can't be read" );
 	if ( mIniRemains ) tableAdd( NULL, COLOR_RED, "Old m5f9p.ini remains on SD" );
 	tableDraw( HEADER_HEIGHT, SCREEN_HEIGHT - 4 );
 }
 
+// Setup の1項目。行全体をタップできる
+//
+static void drawSetting( int y, int h, const char *label, const char *value, int id )
+{
+	int bg = ( mPressed == id ) ? COLOR_PRESSED : COLOR_SURFACE;
+	screenCanvas().fillSmoothRoundRect( 6, y, SCREEN_WIDTH - 12, h - 3, 8, (uint16_t) bg );
+	int middle = y + ( h - 3 ) / 2 + 1;
+	screenText( MARGIN + 4, middle, label, FONT_TEXT, COLOR_MUTED, lgfx::textdatum_t::middle_left );
+	screenText( SCREEN_WIDTH - MARGIN - 4, middle, value, FONT_TEXT, COLOR_TEXT, lgfx::textdatum_t::middle_right );
+	hitAdd( 6, y, SCREEN_WIDTH - 12, h, id );
+}
+
+// Setup: 設定の一覧。項目をタップすると、その項目だけを変更する
+//
+// ・どの項目も、変更はすぐに反映する（再起動しない）。
+// ・Restart は、設定ファイルを書き換えた後などに、手で再起動するためのもの。
+//
 static void drawSetup()
 {
 	static const char *formatName[4] = { "NMEA", "RAW", "RTCM", "CSV" };
-	const int buttonHeight = 56;
-	const int by = SCREEN_HEIGHT - buttonHeight - MARGIN;
-	const int bw = ( SCREEN_WIDTH - MARGIN * 3 ) / 2;
+	char text[48];
+	bool tcp = ( strlen( mAgribusIp ) > 0 );		// 送信先が設定ファイルにある時だけ出す
+	const int rows = tcp ? 6 : 5;
+	const int h = ( SCREEN_HEIGHT - HEADER_HEIGHT - 2 ) / rows;
 
 	drawHeader( "Setup" );
-	tableBegin();
-	tableAdd( "Wi-Fi", COLOR_TEXT, "%s", strlen( mRunInfo.wifiSsid ) ? mRunInfo.wifiSsid : "Off" );
+	int y = HEADER_HEIGHT;
+	drawSetting( y, h, "Wi-Fi", strlen( mRunInfo.wifiSsid ) ? mRunInfo.wifiSsid : "Off", HIT_SET_WIFI );
+	y += h;
 	struct stBaseSource *src = &mRunInfo.baseSrc;
-	if ( ! src->valid ) tableAdd( "Source", COLOR_TEXT, "None" );
-	else if ( src->type == BASE_TYPE_UART ) tableAdd( "Source", COLOR_TEXT, "UART" );
-	else tableAdd( "Source", COLOR_TEXT, "%.14s/%.10s", src->address, src->mountPoint );
+	if ( ! src->valid ) snprintf( text, sizeof(text), "None" );
+	else if ( src->type == BASE_TYPE_UART ) snprintf( text, sizeof(text), "UART" );
+	else snprintf( text, sizeof(text), "%.14s %.10s", src->address, src->mountPoint );
+	drawSetting( y, h, "Corrections", text, HIT_SET_SOURCE );
+	y += h;
 	int format = mRunInfo.saveFormat;
-	tableAdd( "Log format", COLOR_TEXT, "%s", formatName[ ( format >= 0 && format < 4 ) ? format : 0 ] );
-	tableAdd( "Display", COLOR_TEXT, mRunInfo.lcdRotation ? "Rotated 180°" : "Normal" );
-	tableDraw( HEADER_HEIGHT, by - 6 );
+	drawSetting( y, h, "Log format", formatName[ ( format >= 0 && format < 4 ) ? format : 0 ], HIT_SET_FORMAT );
+	y += h;
+	drawSetting( y, h, "Display", mRunInfo.lcdRotation ? "Rotated 180°" : "Normal", HIT_SET_DISPLAY );
+	y += h;
+	if ( tcp ){
+		snprintf( text, sizeof(text), "%s  %s", mAgribusIp, mAgribusReady ? "On" : "Off" );
+		drawSetting( y, h, "TCP send", text, HIT_SET_TCP );
+		y += h;
+	}
+	drawSetting( y, h, "Restart", "", HIT_RESTART );
+}
 
-	drawButton( MARGIN, by, bw, buttonHeight, "Run setup", HIT_RUN_SETUP );
-	drawButton( MARGIN * 2 + bw, by, bw, buttonHeight, "Restart", HIT_RESTART );
+// 保存形式の一覧
+//
+static void formatLabel( int index, char *buff, int buffSize )
+{
+	static const char *name[3] = { "NMEA", "RAW (UBX)", "RTCM" };
+	snprintf( buff, buffSize, "%s", ( index == 0 && mCsvFormat ) ? "CSV" : name[ index ] );
+}
+
+// Setup の項目がタップされた時の処理。選択の画面(ui.cpp)を出し、選ばれたら反映する
+//
+static void onSetting( int id )
+{
+	if ( id == HIT_SET_WIFI ) uiChooseWifi();
+	else if ( id == HIT_SET_SOURCE ){
+		struct stBaseSource src;
+		if ( uiChooseBaseSource( &src ) ) appSetBaseSource( &src );
+	}
+	else if ( id == HIT_SET_FORMAT ){
+		static const int formats[3] = { SAVE_NMEA, SAVE_RAW, SAVE_RTCM };
+		int index = uiSelectList( "Log format", 3, formatLabel, "Back" );
+		if ( index < 0 ) return;
+		int format = ( index == 0 && mCsvFormat ) ? SAVE_CSV : formats[ index ];
+		if ( appSetSaveFormat( format ) < 0 ) uiNotice( "Log format", "The receiver did not accept the setting." );
+	}
+	else if ( id == HIT_SET_DISPLAY ) appSetRotation( ! mRunInfo.lcdRotation );
+	else if ( id == HIT_SET_TCP ) appSetTcpClient( ! mAgribusReady );
 }
 
 // 確認。実行するかどうかを尋ねる
 //
 static void drawConfirm()
 {
-	const char *title = ( mConfirm == HIT_RUN_SETUP ) ? "Run setup?" : "Restart?";
-	const char *line1 = ( mConfirm == HIT_RUN_SETUP ) ? "The device restarts and asks" : "Positioning and logging stop";
-	const char *line2 = ( mConfirm == HIT_RUN_SETUP ) ? "for the settings again." : "for a few seconds.";
-
-	screenText( SCREEN_WIDTH / 2, 48, title, FONT_VALUE, COLOR_TEXT, lgfx::textdatum_t::middle_center );
-	screenText( SCREEN_WIDTH / 2, 96, line1, FONT_TEXT, COLOR_MUTED, lgfx::textdatum_t::middle_center );
-	screenText( SCREEN_WIDTH / 2, 120, line2, FONT_TEXT, COLOR_MUTED, lgfx::textdatum_t::middle_center );
+	screenText( SCREEN_WIDTH / 2, 48, "Restart?", FONT_VALUE, COLOR_TEXT, lgfx::textdatum_t::middle_center );
+	screenText( SCREEN_WIDTH / 2, 96, "Positioning and logging stop", FONT_TEXT, COLOR_MUTED, lgfx::textdatum_t::middle_center );
+	screenText( SCREEN_WIDTH / 2, 120, "for a few seconds.", FONT_TEXT, COLOR_MUTED, lgfx::textdatum_t::middle_center );
 
 	const int buttonHeight = 56;
 	const int by = SCREEN_HEIGHT - buttonHeight - MARGIN;
@@ -717,21 +772,22 @@ static void onTap( int id )
 		mRunInfo.saving = ! mRunInfo.saving;
 		saveRunInfo( &mRunInfo );
 	}
-	else if ( id >= HIT_RATE && id < HIT_RUN_SETUP ) appSetSolutionRate( mRates[ id - HIT_RATE ] );
-	else if ( id == HIT_RUN_SETUP || id == HIT_RESTART ) mConfirm = id;
+	else if ( id >= HIT_RATE && id < HIT_SET_WIFI ) appSetSolutionRate( mRates[ id - HIT_RATE ] );
+	else if ( id >= HIT_SET_WIFI && id <= HIT_SET_TCP ) onSetting( id );
+	else if ( id == HIT_RESTART ) mConfirm = id;
 	else if ( id == HIT_SAT_VIEW ) mSatView = ! mSatView;
 	else if ( id == HIT_CONFIRM_NO ) mConfirm = HIT_NONE;
-	else if ( id == HIT_CONFIRM_YES ){
-		if ( mConfirm == HIT_RUN_SETUP ){
-			// 再起動して、実行パラメータを本体の画面で選択し直す
-			mRunInfo.setupRequest = 1;
-			saveRunInfo( &mRunInfo );
-		}
-		ESP.restart();
-	}
+	else if ( id == HIT_CONFIRM_YES ) ESP.restart();
 }
 
 // ---------------------------------------------------------------- 全体
+
+// Setup のページを開く（初回の起動時）
+//
+void pagesOpenSetup()
+{
+	mPage = PAGE_SETUP;
+}
 
 static int mPreviewPasskey = -1;
 static unsigned long mPreviewMillis;

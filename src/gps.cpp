@@ -38,7 +38,7 @@ volatile bool mGpsUartReady = false;
 
 int byte2int( byte* pdata );
 static bool gpsSyncBaudrate( int baudrate );
-static int gpsSetRtcmMessage();
+static int gpsSetRtcmMessage( int rate );
 
 // ************************************************************
 //                         ZED-F9P
@@ -91,44 +91,38 @@ int gpsInit()
 	return 0;
 }
 
-// RAWデータまたはRTCMデータを出力するように設定する
+// 保存形式に合わせて、F9Pの出力を設定する（動作中に呼べる）
 //
-// saveFormat: SAVE_RAW または SAVE_RTCM
+// saveFormat: SAVE_RAW、SAVE_RTCM の時は、その形式のメッセージを出力させる。
+//             それ以外（NMEA、CSV）の時は、RAWとRTCMの出力を止める
 //
 int gpsRawInit( int saveFormat )
 {
 	int nret;
+	bool raw = ( saveFormat == SAVE_RAW );
+	bool rtcm = ( saveFormat == SAVE_RTCM );
 
 	// ボーレートは230400でないとCheck sum errorが起きる
-	if ( mGpsUartBaudrate > 230400 ) {
+	if ( ( raw || rtcm ) && mGpsUartBaudrate > 230400 ) {
 		// ボーレートを変更すると入出力メッセージの設定も変更されるので、最初に実行する
 		if ( gpsSyncBaudrate( 230400 ) ) mGpsUartBaudrate = 230400;
 		else gpsSyncBaudrate( mGpsUartBaudrate );
 	}
 
-	// input ubx:1 nmea:1 rtcm:1   output ubx:1 nmea:0 rtcm:1
-	nret = gpsSetUartPort( 1, mGpsUartBaudrate, 1, 1, 1, 1, 0, 1 );
+	// input ubx:1 nmea:1 rtcm:1   output ubx:1 nmea:0 rtcm:(RTCMで保存する時だけ)
+	nret = gpsSetUartPort( 1, mGpsUartBaudrate, 1, 1, 1, 1, 0, rtcm ? 1 : 0 );
 	if ( nret < 0 ) return -1;
 
-	// enable message
-	if ( saveFormat == SAVE_RAW ){
-		nret = gpsSetMessageRate( 0x02, 0x15, 1 );	// RXM-RAWX
-		nret = gpsSetMessageRate( 0x02, 0x13, 1 );	// RXM-SFRBX
-	}
-	else if ( saveFormat == SAVE_RTCM ){
-		nret = gpsSetRtcmMessage();
-	}
-
-	// output rate = 1Hz
-	nret = gpsSetMeasurementRate( 1000 );
-	if ( nret < 0 ) return -2;
+	// 保存する形式のメッセージだけを出力させる（ほかは止める）
+	nret = gpsSetMessageRate( 0x02, 0x15, raw ? 1 : 0 );	// RXM-RAWX
+	nret = gpsSetMessageRate( 0x02, 0x13, raw ? 1 : 0 );	// RXM-SFRBX
+	nret = gpsSetRtcmMessage( rtcm ? 1 : 0 );
 
 	return 0;	
 }
 
-static int gpsSetRtcmMessage()
+static int gpsSetRtcmMessage( int rate )
 {
-	int rate = 1;
 
 	// RTCM message
 	int retCode = 0;

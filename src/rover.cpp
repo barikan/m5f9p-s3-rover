@@ -322,6 +322,23 @@ static void taskUartRead(void* param)
 
 // TCPまたはUARTにより、基準局データを受信するスレッド
 //
+// 基準局データ取得先の切り替えの要求（baseSrcRequest → taskBaseRecv）
+static struct stBaseSource mBaseSrcNext;
+static volatile bool mBaseSrcChange;
+
+// 基準局データ取得先を切り替える（動作中に、どのタスクからでも呼べる）
+//
+// src: 新しい取得先。valid=false の時は、取得をやめる
+//
+// ・ここでは要求を置くだけで、切り替え（切断と接続）は taskBaseRecv が行う。
+//
+void baseSrcRequest( const struct stBaseSource *src )
+{
+	mBaseSrcChange = false;
+	memcpy( &mBaseSrcNext, src, sizeof( mBaseSrcNext ) );
+	mBaseSrcChange = true;
+}
+
 static void taskBaseRecv(void* param)
 {
 	int nret;
@@ -329,11 +346,24 @@ static void taskBaseRecv(void* param)
 	unsigned long msecGgaLastTime = 0;
 	unsigned long msecWifiBegin = 0;
 	char buff[ BASE_RECV_BUFF_MAX ];
-	bool isTcp = ( mBaseSrc.type == BASE_TYPE_TCP );
+	bool isTcp = ( mBaseSrc.valid && mBaseSrc.type == BASE_TYPE_TCP );
 	vTaskDelay(200);
 	while(1)
 	{
 		vTaskDelay(1);
+
+		// 取得先の切り替え。いまの接続を切り、新しい取得先にすぐ接続を試みる
+		if ( mBaseSrcChange ){
+			mBaseSrcChange = false;
+			mBaseRecvReady = false;
+			mBaseRecvClient->stop();
+			memcpy( &mBaseSrc, &mBaseSrcNext, sizeof( mBaseSrc ) );
+			isTcp = ( mBaseSrc.valid && mBaseSrc.type == BASE_TYPE_TCP );
+			mBaseRecvReady = ( mBaseSrc.valid && mBaseSrc.type == BASE_TYPE_UART );
+			mBaseReconnecting = isTcp;
+			mBaseRecvLastMillis = millis() - 5000;
+			dbgPrintf( "Base source: %s %s\r\n", ! mBaseSrc.valid ? "(none)" : isTcp ? mBaseSrc.address : "UART", mBaseSrc.mountPoint );
+		}
 
 		if (mBaseRecvReady){
 			int numRecvBytes;
@@ -518,10 +548,9 @@ int roverStartTasks()
 	xTaskCreatePinnedToCore( taskRover, "taskRover", 4096, NULL, 1, NULL, 1 );
 
 	// 基準局データ受信スタート（core 0）
-	if ( mBaseSrc.valid ){
-		// 未接続で開始する時は、すぐに接続を試みるようにする
-		mBaseRecvLastMillis = mBaseReconnecting ? millis() - 5000 : millis();
-		xTaskCreatePinnedToCore(taskBaseRecv, "taskBaseRecv", 8192, NULL, 1, NULL, 0);
-	}
+	// 取得先が無くても動かしておく（動作中に切り替えられるようにするため）
+	// 未接続で開始する時は、すぐに接続を試みるようにする
+	mBaseRecvLastMillis = mBaseReconnecting ? millis() - 5000 : millis();
+	xTaskCreatePinnedToCore(taskBaseRecv, "taskBaseRecv", 8192, NULL, 1, NULL, 0);
 	return 0;
 }

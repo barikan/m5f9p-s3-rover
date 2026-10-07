@@ -33,12 +33,9 @@ struct stBaseSource {
 	char password[32];
 };
 
-// Runモード
-#define RUN_UI 0
-#define RUN_NO_UI 1
 
 struct stRunInfo {
-	int setupRequest;	// 次回の起動時に、UIで実行パラメータを選択する時１。
+	int setupRequest;	// 使っていない（以前のウィザード用。保存したファイルとの互換のために残している）
 						// 0の時は、保存されている実行パラメータで起動する。
 	int lcdRotation;	// 画面の向き 0:回転無 1:180度回転
 	char wifiSsid[33];	// 接続するWifiのSSID。""の時はWifiを使わない
@@ -56,13 +53,20 @@ struct stRunInfo {
 extern byte mVersionMajor;
 extern byte mVersionMinor;
 extern byte mVersionPatch;
-extern int mRunMode;
+extern int mGpsInitResult;
 extern struct stRunInfo mRunInfo;
 extern bool mSetupDone;
 extern unsigned long mStartMillis;
 
 void dbgPrintf( const char* format, ... );
 void appSetSaving( bool on );
+void appSetRotation( int rotation );
+int appSetWifi( const char *ssid );
+void appSetBaseSource( const struct stBaseSource *src );
+int appSetSaveFormat( int format );
+void appSetTcpClient( bool on );
+void appBackground();
+void pagesOpenSetup();
 void pagesLoop();		// pages.cpp
 void pagesPreviewPairing( int passkey );
 int appSetSolutionRate( int rate );
@@ -129,14 +133,17 @@ extern volatile bool mBaseReconnecting;
 extern bool mAgribusReady;
 extern WiFiClient *mAgribusClient;
 
-int netStart();
+void netStart();
+int netSetWifi( const char *ssid );
+bool uiChooseWifi();
+void baseSrcInit();
+bool uiChooseBaseSource( struct stBaseSource *src );
+void baseSrcRequest( const struct stBaseSource *src );
+void tcpClientSet( bool on );
 int baseSrcFromList( int index, struct stBaseSource *src );
 void baseSrcName( const struct stBaseSource *src, char *buff, int buffSize );
 int baseSrcFind( const char *name );
-int baseSrcSelect( double lat, double lon );
 int baseSrcConnect();
-int connectBaseSource();
-int connectTcpServer();
 
 // ************************************************************
 //                        rover.cpp

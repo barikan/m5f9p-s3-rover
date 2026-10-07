@@ -43,8 +43,7 @@ byte mVersionPatch = 0;
 
 bool mSetupDone = false;
 
-int mRunMode = RUN_UI;		// リセット後、UIで実行パラメータを選択して実行する(既定値)か、
-							// 直前のパラメータで実行するか
+int mGpsInitResult = 0;	// gpsInit() の結果。負数の時、F9Pが応答していない
 struct stRunInfo mRunInfo;	// 実行パラメータ
 
 unsigned long mStartMillis;	//測位開始時刻
@@ -59,91 +58,6 @@ static unsigned long mD9CLastCountMillis;
 // ************************************************************
 //                         Arduino 初期化
 // ************************************************************
-
-// GPS受信テスト及び日時取得
-//
-// 戻り値＝ true:測位データ取得済
-//
-static bool gpsTest( struct stGpsData *gpsData )
-{
-	const char *title = "GNSS receiver";
-	int count = 0;
-	unsigned long msecLastCount = millis();
-
-	uiShow( title, "Cancel", NULL, NULL, "Testing the ZED-F9P receiver.\nWaiting for a position..." );
-	while(1){
-		if ( uiPoll() == 0 ) return false;
-
-		if ( millis() - msecLastCount >= 1000 ) {
-			msecLastCount = millis();
-			count++;
-			if ( count > 60 ){
-				int exit = uiAsk( title, "Exit", "Retry", NULL, "No position yet.\nCheck the GNSS antenna." );
-				if ( exit == 0 ) return false;
-				count = 0;
-			}
-			uiShow( title, "Cancel", NULL, NULL, "Testing the ZED-F9P receiver.\nWaiting for a position...  %d s", count );
-		}
-
-		// ボタンを読み飛ばさないように、短い時間で区切って受信する
-		if ( gpsGetPosition( gpsData, 30 ) < 0 ) continue;
-		if ( gpsData->quality == 0 ) continue;
-
-		uiNotice( title, "ZED-F9P test OK\n%d-%02d-%02d %02d:%02d:%02d UTC\nLat  %.8lf\nLon  %.8lf\nAlt  %.3lf m",
-					gpsData->year, gpsData->month, gpsData->day,
-					gpsData->hour, gpsData->minute, gpsData->second,
-					gpsData->lat, gpsData->lon, gpsData->height );
-		return true;
-	}
-}
-
-// 基準局データ取得先の選択と接続
-//
-static void setupBaseSource( double lat, double lon )
-{
-	mBaseRecvReady = false;
-	while(1){
-		if ( ! baseSrcSelect( lat, lon ) ) break;	// 接続しない
-
-		if ( mBaseSrc.type == BASE_TYPE_UART ){
-			if ( mRunMode == RUN_UI ) {
-				uiNotice( "Corrections", "Source: JST-PH connector (UART)\nBaud rate: %d", mPhUartBaudrate );
-			}
-			mBaseRecvReady = true;
-			break;
-		}
-
-		int nret = connectBaseSource();	// 無手順もしくはNTRIP経由
-		if ( nret == 0 ) mBaseRecvReady = true;
-		if ( nret == 0 || mRunMode != RUN_UI ) break;
-		mBaseSrc.valid = false;
-	}
-	memcpy( &mRunInfo.baseSrc, &mBaseSrc, sizeof( mBaseSrc ) );
-}
-
-// 保存形式の選択
-//
-static void setupSaveFormat()
-{
-	if ( mRunMode == RUN_UI ) {
-		static const int formats[3] = { SAVE_RAW, SAVE_RTCM, SAVE_NMEA };
-		int button = uiAsk( "Log format", "RAW", "RTCM", mCsvFormat ? "CSV" : "NMEA", "Select the data format for saving to the SD card." );
-		mSaveFormat = formats[ button ];
-		if ( mSaveFormat == SAVE_NMEA && mCsvFormat ) mSaveFormat = SAVE_CSV;
-	}
-	else {
-		mSaveFormat = mRunInfo.saveFormat;
-	}
-	mRunInfo.saveFormat = mSaveFormat;
-
-	if ( mSaveFormat == SAVE_RAW || mSaveFormat == SAVE_RTCM ){
-		int nret = gpsRawInit( mSaveFormat );
-		if ( nret < 0 ){
-			dbgPrintf( "gpsRawInit() error nret=%d\r\n", nret );
-			if ( mRunMode == RUN_UI ) uiNotice( "Log format", "RAW data is not available. (%d)", nret );
-		}
-	}
-}
 
 void setup() {
 	int nret;
@@ -184,41 +98,27 @@ void setup() {
 	secretInit();
 	int configResult = readConfig();
 	
-	// Runモード
-	// 実行パラメータが保存されていれば、それを使ってすぐに測位を始める。
-	// 保存されていない時と、ブート情報ページでSetupが押された後は、UIで選択する。
-	mRunMode = RUN_UI;
-	if ( readRunInfo( &mRunInfo ) == 0 && ! mRunInfo.setupRequest ) mRunMode = RUN_NO_UI;
+	// 実行パラメータ（Wifiの接続先、補正データの取得先、保存形式など）。
+	// 保存されていれば、それを使う。無い時（初回）は既定値で始め、Setup のページを開く。
+	// どちらの時も質問はせず、すぐに測位を始める。変更は Setup のページから、動作中に行う。
+	bool firstBoot = ( readRunInfo( &mRunInfo ) != 0 );
+	if ( firstBoot ){
+		memset( &mRunInfo, 0, sizeof( mRunInfo ) );
+		mRunInfo.saveFormat = mCsvFormat ? SAVE_CSV : SAVE_NMEA;
+		mRunInfo.solutionRate = 1;
+		if ( mNumWifi == 1 ) strlcpy( mRunInfo.wifiSsid, mWifiList[0].ssid, sizeof( mRunInfo.wifiSsid ) );	// 1件だけなら、それを使う
+	}
 
-	// 画面の初期化
-	if ( mRunMode == RUN_NO_UI ) {
-		dbgPrintf( "Running under the last condition\r\n" );
-		uiBegin( mRunInfo.lcdRotation );
-	}
-	else {
-		mRunInfo.lcdRotation = uiBegin( -1 );
-	}
+	// 画面
+	uiBegin( mRunInfo.lcdRotation );
 	uiStatus( "M5F9P Rover", "Version %d.%d.%d\nStarting...", mVersionMajor, mVersionMinor, mVersionPatch );
 
-	// 起動時の選択画面で長時間待つので、コア0のウォッチドッグは止めておく
+	// 起動時の処理で長く止まる事があるので、コア0のウォッチドッグは止めておく
 	disableCore0WDT();
 
-	// SD
-	if ( mSdTotalBytes == 0 ){
-		// 通常の起動では待たない（SDカードなしでも測位はできる）
-		if ( mRunMode == RUN_UI ){
-			int button = uiAsk( "SD card", "Continue", "Restart", NULL, "No SD card found.\nInsert a card and restart to check again." );
-			if ( button == 1 ) ESP.restart();
-		}
-	}
 	dbgPrintf("SD card totalBytes=%llu\r\n", mSdTotalBytes);
+	if ( configResult < 0 ) dbgPrintf( "!! Config file %s\r\n", configResult == -1 ? "not found" : "error" );
 
-	// INIファイル
-	if ( mRunMode == RUN_UI ){
-		if ( configResult == -1 ) uiNotice( "Config file", "m5f9p.yaml was not found on the SD card.\nDefault settings are used." );
-		else if ( configResult == -2 ) uiNotice( "Config file", "m5f9p.yaml has a format error.\nDefault settings are used." );
-	}
-	
 	// JST-PHコネクタ
 	Serial2.begin( mPhUartBaudrate, SERIAL_8N1, PIN_PH_RX, PIN_PH_TX );
 	dbgPrintf("JST-PH uart baudrate=%d\r\n", mPhUartBaudrate );
@@ -226,75 +126,46 @@ void setup() {
 	// GPSデータ受信スレッド（core 0)
 	roverStartUartTask();
 
-	// ネット接続。
-	// GPS受信機の衛星捕捉の時間を取るために先に行う。
-	nret = netStart();
-	if ( mRunMode == RUN_UI ){
-		// UIで選択しない時は書き換えない。設定ファイルが読めずに起動した時に、
-		// 保存してあるSSIDを消してしまわないようにする。
-		strlcpy( mRunInfo.wifiSsid, nret > 0 ? mWifiList[ nret - 1 ].ssid : "", sizeof( mRunInfo.wifiSsid ) );
-	}
+	// ネット接続。GPS受信機の衛星捕捉の時間を取るために先に行う。接続の完了は待たない。
+	netStart();
 
 	// GPS受信機の初期化
-	if ( mRunMode == RUN_UI ) uiStatus( "GNSS receiver", "Checking the ZED-F9P..." );
-	nret = gpsInit();	
-	if ( nret < 0 ){
-		dbgPrintf("gpsInit() error nret=%d\r\n", nret);
-		if ( mRunMode == RUN_UI ){
-			uiNotice( "GNSS receiver", "The M5F9P does not respond. (%d)\nThe device will restart.", nret );
-			ESP.restart();
-		}
-	}
+	nret = gpsInit();
+	if ( nret < 0 ) dbgPrintf("gpsInit() error nret=%d\r\n", nret);
+	mGpsInitResult = nret;
 
 	// SDカード保存スレッド（Core 1)
-	if ( sdSaveInit() < 0 && mSdTotalBytes > 0 && mRunMode == RUN_UI ) {
-		uiNotice( "SD card", "Can't use the SD card." );
-	}
+	sdSaveInit();
 
-	// GPS受信テスト及び日時取得
+	// boot ログ書き込み。日時は、測位を待たずに取れた分だけ
 	memset( &gpsData, 0, sizeof( gpsData ) );
-	double lat = 100;
-	double lon = 400;
-	if ( mRunMode == RUN_UI ){
-		if ( gpsTest( &gpsData ) ){
-			lat = gpsData.lat;
-			lon = gpsData.lon;
-		}
-	}
-	else gpsGetPosition( &gpsData, 1500 );	// 測位を待たない。bootログの日時用
-	
-	// boot ログ書き込み
+	gpsGetPosition( &gpsData, 1500 );
 	sprintf( buff, "<%d-%02d-%02d %02d:%02d:%02d UTC> boot (%d)\r\n", 
 				gpsData.year, gpsData.month, gpsData.day, 
 				gpsData.hour, gpsData.minute, gpsData.second, (int)resetReason );
 	sdSave( mBootLogPath, buff, strlen( buff ), FILE_APPEND );
 
-	// 基準局データ取得先の選択と接続
-	setupBaseSource( lat, lon );
-			
+	// 基準局データ取得先。接続は taskBaseRecv が行う
+	baseSrcInit();
+
 	// NEO-D9C接続テスト
 	if ( d9cNumBytes() >= 0 ) mD9CAddress = D9C_I2C_ADDRESS;
 	dbgPrintf( "NEO-D9C %s\r\n", mD9CAddress >= 0 ? "connected" : "not connected" );
 
-	// 保存形式の選択
-	setupSaveFormat();
-
-	// TCP Serverへの接続
-	connectTcpServer();
-
-	//
-	if ( mRunMode == RUN_UI ){
-		mSolutionRate = 1;	// number of solution per second
+	// 保存形式
+	mSaveFormat = mRunInfo.saveFormat;
+	if ( mSaveFormat == SAVE_RAW || mSaveFormat == SAVE_RTCM ){
+		nret = gpsRawInit( mSaveFormat );
+		if ( nret < 0 ) dbgPrintf( "gpsRawInit() error nret=%d\r\n", nret );
 	}
-	else {
-		mSolutionRate = mRunInfo.solutionRate;
-		if ( mSolutionRate < 1 ) mSolutionRate = 1;
-		if ( mRunInfo.saving && mSdSaveReady ) sdSaveStart();
-	}
-	mRunInfo.setupRequest = 0;
-	mRunInfo.saving = mFileSaving;
+
+	// TCPサーバ（AgriBus-NAVI等）への送信
+	tcpClientSet( mRunInfo.agribusConnect != 0 );
+
+	mSolutionRate = mRunInfo.solutionRate;
+	if ( mSolutionRate < 1 ) mSolutionRate = 1;
+	if ( mRunInfo.saving && mSdSaveReady ) sdSaveStart();
 	mRunInfo.solutionRate = mSolutionRate;
-	
 	if ( mSolutionRate > 1 ) gpsSetSolutionRate( mSolutionRate );
 
 	// 移動局タスクスタート
@@ -303,10 +174,11 @@ void setup() {
 	// BLE
 	if ( mBleEnable ) bleStart();
 
-	// 動作モード等の実行環境保存
-	// 画面の向き、Wifi接続先、基準局データ取得先、保存形式
-	saveRunInfo( &mRunInfo );
-	
+	if ( firstBoot ){
+		saveRunInfo( &mRunInfo );
+		pagesOpenSetup();		// 初回は Setup のページから始める
+	}
+
 	sysmonBegin();
 
 	// 初期化終了
@@ -330,6 +202,70 @@ void appSetSaving( bool on )
 	if ( on ) sdSaveStart();
 	else sdSaveStop();
 	dbgPrintf( "File saving=%d\r\n", mFileSaving );
+}
+
+// 画面の向きを変える
+//
+void appSetRotation( int rotation )
+{
+	rotation = rotation ? 1 : 0;
+	if ( rotation == mRunInfo.lcdRotation ) return;
+	uiRotate();
+	mRunInfo.lcdRotation = rotation;
+	saveRunInfo( &mRunInfo );
+}
+
+// 接続するWifiを切り替える。"" の時は使わない
+//
+// 戻り値＝ 0:正常終了
+//         負数:設定ファイルに無いSSID
+//
+int appSetWifi( const char *ssid )
+{
+	if ( netSetWifi( ssid ) < 0 ) return -1;
+	saveRunInfo( &mRunInfo );
+	return 0;
+}
+
+// 補正データの取得先を切り替える。valid=false の時は、取得をやめる
+//
+void appSetBaseSource( const struct stBaseSource *src )
+{
+	memcpy( &mRunInfo.baseSrc, src, sizeof( mRunInfo.baseSrc ) );
+	saveRunInfo( &mRunInfo );
+	baseSrcRequest( src );
+}
+
+// ログの保存形式を切り替える
+//
+// ・保存中の時は、いったん止めて、新しい形式で保存し直す（ファイルが分かれる）。
+//
+// 戻り値＝ 0:正常終了
+//         負数:F9Pの設定エラー
+//
+int appSetSaveFormat( int format )
+{
+	if ( format < SAVE_NMEA || format > SAVE_CSV ) return -1;
+	if ( format == mSaveFormat ) return 0;
+
+	bool saving = mFileSaving;
+	if ( saving ) sdSaveStop();
+	int nret = gpsRawInit( format );		// NMEA, CSVの時は、RAWとRTCMの出力を止める
+	if ( nret < 0 ) dbgPrintf( "gpsRawInit() error nret=%d\r\n", nret );
+	mSaveFormat = format;
+	mRunInfo.saveFormat = format;
+	saveRunInfo( &mRunInfo );
+	if ( saving ) sdSaveStart();
+	return nret < 0 ? -2 : 0;
+}
+
+// 測位データをTCPサーバ（設定ファイルの client.ip）に送るかどうかを切り替える
+//
+void appSetTcpClient( bool on )
+{
+	tcpClientSet( on );
+	mRunInfo.agribusConnect = mAgribusReady ? 1 : 0;
+	saveRunInfo( &mRunInfo );
 }
 
 // 1秒あたりの測位回数を変更する
@@ -364,11 +300,12 @@ static void dbgStatus()
 		(unsigned)heap_caps_get_free_size( MALLOC_CAP_INTERNAL ) );
 }
 
-void loop() 
+// 画面以外の定期的な処理。loop() と、画面で選択を待っている間(ui.cpp)に呼ばれる
+//
+// ・loopTask から呼ぶ事（I2Cを使う処理、コマンドの実行を含む）。
+//
+void appBackground()
 {
-	// 画面（タップの読み取りと描画）
-	pagesLoop();
-
 	d9cPoll();
 	satsPoll();
 	sysmonPoll();
@@ -376,6 +313,14 @@ void loop()
 	screenShotPoll( Serial );
 	blePoll();
 	dbgStatus();
+}
+
+void loop() 
+{
+	// 画面（タップの読み取りと描画）
+	pagesLoop();
+
+	appBackground();
 	delay(20);
 }
 

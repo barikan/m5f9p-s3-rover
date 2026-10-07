@@ -31,7 +31,7 @@ mise run config-get / config-put  # 本体の SD カードの設定ファイル(
 - `platform = espressif32@6.9.0` に固定している。6.13.0 はこの環境で esptool の導入に失敗する。
 - 開発機は WSL2。USB は抜き差しのたびに `mise run usb-attach` が必要(Windows 側の usbipd を呼ぶ)。書き込みは時々失敗するので、`upload` タスクは再試行する。
 - ログの確認には `mise run log` を使う。`monitor` は対話式なので、エージェントからは使えない。
-- 起動ウィザードは画面タッチで進むので、そこだけはユーザーの操作が要る。メイン画面に入ったあとは、`mise run cmd` で画面に触らずに操作できる。Wi-Fi や補正元の切り替えは `run.set`(設定を書き換えて再起動)、設定ファイルの編集は `config-get` / `config-put` を使う。ウィザードの途中では、画面の確認用(`lcd.shot`、`lcd.tap`)以外のコマンドに応答しない。
+- 本体は、`mise run cmd` で画面に触らずに操作できる。Wi-Fi や補正元の切り替えは `run.set`(すぐに反映される。再起動しない)、設定ファイルの編集は `config-get` / `config-put`(反映には再起動が要る)を使う。画面は `mise run lcd-shot` / `lcd-tap` で確かめられる。
 - メイン画面に入ると 10 秒ごとに `STAT ...` 行がシリアルに出る(`main.cpp` の `dbgStatus()`)。補正データの受信量、RTCM のエラー率、Wi-Fi、BLE、内蔵 RAM の空きが分かる。
 - PC(WSL)には Bluetooth がない。BLE の接続確認はユーザーのスマートフォン(nRF Connect)に頼る。
 - 取り出した設定ファイルのパスワードは暗号化されているが、平文で書き戻すための控えを作ったときは、リポジトリに置かず、作業後は必ず消す(スクラッチ用のフォルダも含む)。
@@ -114,7 +114,7 @@ mise run android-screenshot          # 端末の画面を screenshot.png に保�
 | `taskBaseRecv` | 0 | rover.cpp | NTRIP/TCP または PH コネクタの補正データを F9P へ書く。GGA 送信と再接続も行う |
 | `taskWifiServer` | 0 | rover.cpp | TCP サーバ(既定ポート 10000)でクライアントへ配信 |
 | `taskSdSave` | 1 | storage.cpp | SD への保存 |
-| loopTask | 1 | main.cpp | タッチ、画面描画、`d9cPoll()`、コマンドの実行(`cmdPollUsb()` / `blePoll()`) |
+| loopTask | 1 | main.cpp | タッチ、画面描画(`pagesLoop()`)と、いつもの処理(`appBackground()`: `d9cPoll()`、コマンドの実行 `cmdPollUsb()` / `blePoll()` など) |
 
 `mUartBuff` は読み手が複数いる。`taskRover` と `gpsGetAck()` は `mUartReadIndex` を共有し、RAW/RTCM 保存は別のインデックス(`mUartSaveIndex`)で同じバッファをそのまま SD に書く。
 
@@ -138,17 +138,25 @@ mise run android-screenshot          # 端末の画面を screenshot.png に保�
 - SoftAP は既定で無効(`[softap] enable`)。SoftAP に端末が接続している間は BLE との同時利用が不安定になり得る。
 - BLE は標準のライブラリ(Bluedroid)を使っている。内蔵 RAM を約 93KB 使う。
 
-### 起動の流れ
+### 起動の流れと設定の変更
 
-`setup()`(main.cpp)には2つの経路がある。選んだ内容は `stRunInfo` として `/m5f9p/m5f9p.run` にバイナリで保存される。
+**起動時に質問はしない(ウィザードは廃止した)。** `setup()`(main.cpp)は、保存してある `mRunInfo`(`/m5f9p/m5f9p.run.json`)を使ってすぐに測位を始める。起動を遅らせないよう、何も待たない。Wi-Fi は `WiFi.begin()` だけ、補正元は `mBaseReconnecting` を立てるだけで、接続は `taskBaseRecv` が行う。測位の成立も待たない。保存したものがない初回は、既定値(Wi-Fi は1件だけ登録されていればそれ、補正元なし、NMEA)で始めて、Setup のページを開く。
 
-- **通常の起動(`mRunMode == RUN_NO_UI`)**: 保存済みの `mRunInfo` を使い、質問なしで測位画面に入る。起動を遅らせないよう、ここでは何も待たない。Wi-Fi は `WiFi.begin()` だけ、補正元は `mBaseReconnecting` を立てるだけで、接続は `taskBaseRecv` が行う。測位の成立も待たない。
-- **ウィザード(`RUN_UI`)**: `m5f9p.run` が読めないとき、またはブート情報ページの「Setup」で `setupRequest` が立っているとき。画面の向き → Wi-Fi → F9P 初期化と受信テスト → 補正元 → 保存形式 → TCP クライアント、の順に質問する。
+**設定の変更は、動作中にその場で反映する。再起動を前提にしない。** 本体の画面(Setup のページ)とコマンド(`run.set`)は、どちらも次の関数を呼ぶ(main.cpp)。
 
-ウィザードに質問を足すときは、通常の起動の経路(保存値を使う、待たない)も必ず用意する。
+| 関数 | 内容 |
+|---|---|
+| `appSetWifi` | Wi-Fi をつなぎ替える(`net.cpp` の `netSetWifi`)。完了は待たない |
+| `appSetBaseSource` | 補正元を切り替える。要求を置くだけで(`baseSrcRequest`)、切断と接続は `taskBaseRecv` が行う。`mBaseSrc` をほかのタスクから直接書き換えない |
+| `appSetSaveFormat` | 保存形式を切り替える。F9P の出力(RAW、RTCM)も合わせて切り替える(`gpsRawInit`)。保存中なら、止めて新しい形式で保存し直す |
+| `appSetRotation` | 画面を 180 度回す |
+| `appSetTcpClient` | 測位データの TCP 送信の入・切 |
+| `appSetSolutionRate`、`appSetSaving` | 測位レート、ログ保存 |
 
-- `stRunInfo` のサイズが変わると旧ファイルは読み捨てられ、ウィザードに戻る。
+設定の項目を足すときも、この形(動作中に切り替える関数を作り、画面とコマンドの両方から呼ぶ)にする。**再起動が要るのは、設定ファイル(`m5f9p.yaml`)を書き換えたときだけ**(一覧を使っているタスクがあるため、起動時に1回だけ読む)。
+
 - F9P のボーレートは起動時点で分からない(電源投入直後は 38400bps、CoreS3 だけリセットされたときは前回のまま)。`gpsSyncBaudrate()` が目的のボーレートで応答を確かめ、だめなら候補を順に試す。どれにも応答しないときだけ I2C 経由でリセットする(`gpsI2cReset()`)。
+- `taskBaseRecv` は、補正元がなくても動かしておく(動作中に切り替えられるようにするため)。
 
 ### 補正データの経路
 
@@ -160,7 +168,7 @@ mise run android-screenshot          # 端末の画面を screenshot.png に保�
 画面はすべて `screen.cpp` の土台で描く。画面全体を描画領域(M5Canvas、PSRAM)に描き、変わった帯だけ液晶に送る。フォント(Noto Sans、アンチエイリアス)とアイコン(Lucide)は `lcd_assets.h` に埋め込んだ生成物で、手で直さない(`mise run lcd-assets`)。表示は英語(日本語フォントは入れていない)。
 
 - **測位中の画面**(`pages.cpp`): `loop()` から呼ばれ、ページを毎回全部描き直す。ボタンは描くときに `hitAdd()` で登録する。
-- **ウィザード**(`ui.cpp`): `setup()` の中から順に呼ぶ。待つ関数(`uiAsk`、`uiNotice`、`uiSelectList`)と、待たない関数(`uiStatus`、`uiShow` / `uiPoll`)がある。**通常の起動(`RUN_NO_UI`)の経路では、待つ関数を呼ばない。**
+- **選択や確認の画面**(`ui.cpp`): 処理の途中から呼ぶ。待つ関数(`uiAsk`、`uiNotice`、`uiSelectList`)と、待たない関数(`uiStatus`、`uiShow` / `uiPoll`)がある。Setup のページで項目を選ぶときに使う。待っている間も、いつもの処理(`appBackground`: 補正データの中継、BLE、コマンド)は動かしている。**起動の経路(`setup()`)では、待つ関数を呼ばない。**
 
 `M5.update()` を呼ぶのは `screen.cpp` の `screenTouch()` だけ。
 

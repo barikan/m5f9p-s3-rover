@@ -48,7 +48,7 @@ export interface Status {
   iniRemains?: boolean;     // 旧形式の設定ファイル(m5f9p.ini)がSDカードに残っている
 }
 
-/** 起動時の設定（run.get の応答） */
+/** 接続の設定（run.get の応答）。Wi-Fi、補正データの取得先、ログの保存形式など */
 export interface RunConfig {
   wifi: string;             // SSID。空は「使わない」
   source: string;           // 補正データの取得先の名前。空は「なし」
@@ -60,7 +60,7 @@ export interface RunConfig {
   sourceList: string[];
 }
 
-/** 起動時の設定のうち、画面から変えるもの（run.set） */
+/** 接続の設定のうち、画面から変えるもの（run.set）。本体はすぐに反映する（再起動しない） */
 export type RunValues = Pick<RunConfig, 'wifi' | 'source' | 'format' | 'saveAtBoot'>;
 
 /**

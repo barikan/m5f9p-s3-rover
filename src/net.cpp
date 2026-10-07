@@ -32,90 +32,42 @@ WiFiClient *mAgribusClient;
 //                           Wifi
 // ************************************************************
 
-static void wifiLabel( int index, char *buff, int buffSize )
+// Wifiのアクセスポイントへの接続を始める（完了は待たない）
+//
+// index: 設定ファイルのWifiの一覧の番号（0から）。負数の時は、Wifiを使わない
+//
+// ・切れた時のつなぎ直しは taskBaseRecv（rover.cpp）が行う。
+//
+static void wifiBegin( int index )
 {
-	snprintf( buff, buffSize, "%d %s", index + 1, mWifiList[index].ssid );
-}
+	mSsid = NULL;		// 先に消して、つなぎ直しの処理が古い相手に接続しないようにする
+	WiFi.disconnect();
+	if ( index < 0 || index >= mNumWifi ) return;
 
-// Wifiのアクセスポイントを選択した後、接続する
-//
-// ・UIで選択しないモードでは接続の完了を待たない。
-//
-// 戻り値＝ 1以上: 接続済または接続中　値はINIファイルのWIFI接続先番号(1から)
-//          0: 未接続
-//
-static int wifiConnect()
-{
-	int idx;
-	
-j1:
-	if ( mRunMode == RUN_UI ) {
-		idx = uiSelectList( "Wi-Fi", mNumWifi, wifiLabel, "No Wi-Fi" );
+	struct stWifi *wifi = &mWifiList[ index ];
+	if ( wifi->ip[0] > 0 ){
+		byte *p = wifi->ip;
+		WiFi.config( IPAddress( p ), IPAddress( p[0], p[1], p[2], 1 ), IPAddress( 255, 255, 255, 0 ), IPAddress( wifi->dns ) );
 	}
-	else {
-		idx = wifiIndexOf( mRunInfo.wifiSsid );
-	}
-	if ( idx < 0 ) return 0;
-
-	char* ssid = mWifiList[idx].ssid;
-	char* password = mWifiList[idx].password;
-	if ( mWifiList[idx].ip[0] > 0 ){
-		byte* p = mWifiList[idx].ip;
-		IPAddress ip( p );
-		IPAddress gateway( p[0], p[1], p[2], 1 );
-		IPAddress subnet( 255, 255, 255, 0 );
-		IPAddress dns( mWifiList[idx].dns );
-		
-		WiFi.config( ip, gateway, subnet, dns );
-	}
-	WiFi.begin( ssid, password );
-	mSsid = ssid;
-	mPassword = password;
-	if ( mRunMode != RUN_UI ) return idx + 1;
-
-	uiStatus( "Wi-Fi", "Connecting to %s...", ssid );
-	unsigned long msecStart = millis();
-	unsigned long msecLastTime = millis();
-	int count = 0;
-	while ( WiFi.status() != WL_CONNECTED ) {
-		if ( millis() - msecLastTime > 1000 ){
-			msecLastTime = millis();
-			uiStatus( "Wi-Fi", "Connecting to %s...  %d s", ssid, ++count );
-		}
-		delay(100);
-		if ( millis() - msecStart > 20000 ) {
-			int button = uiAsk( "Wi-Fi", "Back", "Keep trying", NULL, "Can't connect to %s yet.", ssid );
-			if ( button == 0 ) {
-				WiFi.disconnect();
-				mSsid = NULL;
-				goto j1;
-			}
-			msecStart = millis();
-			count = 0;
-			uiStatus( "Wi-Fi", "Connecting to %s...", ssid );
-		}
-	}
-	
-	return idx + 1;
+	else WiFi.config( INADDR_NONE, INADDR_NONE, INADDR_NONE );	// 自動(DHCP)に戻す
+	WiFi.begin( wifi->ssid, wifi->password );
+	mPassword = wifi->password;
+	mSsid = wifi->ssid;
 }
 
 // ネットワークを開始する
 //
-// ・soft APはINIファイルで有効にした時のみ使う。TCPサーバ（測位データ配信）への
+// ・soft APは設定ファイルで有効にした時のみ使う。TCPサーバ（測位データ配信）への
 //   接続に使える。
+// ・Wifiは、保存してある接続先(mRunInfo.wifiSsid)に接続を始める。完了は待たない。
 //
-// 戻り値＝ 1以上: Wifi接続済または接続中　値はINIファイルのWIFI接続先番号(1から)
-//          0: Wifiを使わない
-//
-int netStart()
+void netStart()
 {
 	strcpy( mSoftApSsid, mReceiverName );
 
 	if ( mSoftApEnable ){
 		WiFi.mode( WIFI_AP_STA );
-		if ( ! WiFi.softAP( mSoftApSsid, mSoftApPassword ) ){
-			dbgPrintf("softAP() failed\r\n");
-		}
+		if ( ! WiFi.softAP( mSoftApSsid, mSoftApPassword ) ) dbgPrintf("softAP() failed\r\n");
 
 		// softAPConfig()はWiFi.softAP()の後で実行しないと有効にならない
 		if ( ! WiFi.softAPConfig( mSoftApIp, mSoftApIp, IPAddress( 255, 255, 255, 0 ) ) ){
@@ -124,22 +76,48 @@ int netStart()
 	}
 	else WiFi.mode( WIFI_STA );
 
-	int wifiApNum = 0;
-	if ( mNumWifi > 0 ) wifiApNum = wifiConnect();
-	if ( mRunMode != RUN_UI ) return wifiApNum;
+	wifiBegin( wifiIndexOf( mRunInfo.wifiSsid ) );
+}
 
-	if ( mNumWifi == 0 ) {
-		uiNotice( "Wi-Fi", "No Wi-Fi access point is registered in the config file.\nWi-Fi is not used." );
+// 接続するWifiを切り替える（動作中に呼べる）
+//
+// ssid: 設定ファイルにあるSSID。"" の時は、Wifiを使わない
+//
+// 戻り値＝ 0:正常終了
+//         -1:設定ファイルに無いSSID
+//
+int netSetWifi( const char *ssid )
+{
+	int index = wifiIndexOf( ssid );
+	if ( strlen( ssid ) && index < 0 ) return -1;
+	wifiBegin( index );
+	strlcpy( mRunInfo.wifiSsid, index < 0 ? "" : mWifiList[ index ].ssid, sizeof( mRunInfo.wifiSsid ) );
+	dbgPrintf( "Wifi: %s\r\n", index < 0 ? "(off)" : mRunInfo.wifiSsid );
+	return 0;
+}
+
+// 本体の画面で選ぶ時の一覧。先頭は「使わない」
+//
+static void wifiLabel( int index, char *buff, int buffSize )
+{
+	if ( index == 0 ) snprintf( buff, buffSize, "Off" );
+	else snprintf( buff, buffSize, "%s", mWifiList[ index - 1 ].ssid );
+}
+
+// 本体の画面で、Wifiの接続先を選んで切り替える
+//
+// 戻り値＝ true:切り替えた
+//
+bool uiChooseWifi()
+{
+	if ( mNumWifi == 0 ){
+		uiNotice( "Wi-Fi", "No Wi-Fi access point is registered.\nAdd one in the app (Settings) or in the config file." );
+		return false;
 	}
-	else if ( wifiApNum ) {
-		dbgPrintf( "WiFi connected  IP=%s\r\n", WiFi.localIP().toString().c_str() );
-		uiNotice( "Wi-Fi", "Connected to %s\nIP  %s", mSsid, WiFi.localIP().toString().c_str() );
-	}
-	else {
-		dbgPrintf("WiFi not connected !!!\r\n");
-		uiNotice( "Wi-Fi", "Wi-Fi is not used." );
-	}
-	return wifiApNum;
+	int index = uiSelectList( "Wi-Fi", mNumWifi + 1, wifiLabel, "Back" );
+	if ( index < 0 ) return false;
+	netSetWifi( index == 0 ? "" : mWifiList[ index - 1 ].ssid );
+	return true;
 }
 
 // ************************************************************
@@ -259,10 +237,10 @@ static int ntripReadSourceTable( const char* server, int port, double lat, doubl
 //
 // lat,lon: 現在位置（度）。マウントポイントまでの距離の表示に使う。
 // 
-// 戻り値＝ 0:正常終了（mBaseSrcにパラメータ設定済）
+// 戻り値＝ 0:正常終了（outにパラメータ設定済）
 //         負数：エラーまたは取消
 //
-static int ntripSelect_caster( const char* server, int port, double lat, double lon )
+static int ntripSelect_caster( const char* server, int port, double lat, double lon, struct stBaseSource *out )
 {
 	uiStatus( "Mount point", "Getting the list from %s...", server );
 
@@ -287,15 +265,15 @@ static int ntripSelect_caster( const char* server, int port, double lat, double 
 								"%s\n%s\n%s  %s\n%.2f, %.2f%s",
 								mp->mountpoint, mp->city, mp->format, mp->nav, mp->lat, mp->lon, distance );
 		if ( command == 1 ){	// ok
-			memset( &mBaseSrc, 0, sizeof(mBaseSrc) );
-			strncpy( mBaseSrc.address, server, 63 );
-			mBaseSrc.port = port;
-			strncpy( mBaseSrc.mountPoint, mp->mountpoint, 31 );
-			strcpy( mBaseSrc.user, mRtk2goUser );
-			strcpy( mBaseSrc.password, mRtk2goPassword );
-			mBaseSrc.type = BASE_TYPE_TCP;
-			mBaseSrc.protocol = PROTO_NTRIP;
-			mBaseSrc.valid = true;
+			memset( out, 0, sizeof( *out ) );
+			strncpy( out->address, server, 63 );
+			out->port = port;
+			strncpy( out->mountPoint, mp->mountpoint, 31 );
+			strcpy( out->user, mRtk2goUser );
+			strcpy( out->password, mRtk2goPassword );
+			out->type = BASE_TYPE_TCP;
+			out->protocol = PROTO_NTRIP;
+			out->valid = true;
 			retCode = 0;
 			break;
 		}
@@ -310,12 +288,14 @@ static int ntripSelect_caster( const char* server, int port, double lat, double 
 //                         基準局
 // ************************************************************
 
+// 本体の画面で選ぶ時の一覧。先頭は「使わない」、次がUART、最後は rtk2go.com（Wifi接続中のみ）
+//
 static void baseSrcLabel( int index, char *buff, int buffSize )
 {
-	if ( index == 0 ) snprintf( buff, buffSize, "0 UART(PH connector)" );
-	else if ( index < mNumBaseSrc )
-		snprintf( buff, buffSize, "%d %s %s", index, mBaseSrcList[index].address, mBaseSrcList[index].mountPoint );
-	else snprintf( buff, buffSize, "%d rtk2go.com", index );
+	if ( index == 0 ) snprintf( buff, buffSize, "None" );
+	else if ( index == 1 ) snprintf( buff, buffSize, "UART (PH connector)" );
+	else if ( index <= mNumBaseSrc ) snprintf( buff, buffSize, "%s %s", mBaseSrcList[ index - 1 ].address, mBaseSrcList[ index - 1 ].mountPoint );
+	else snprintf( buff, buffSize, "rtk2go.com ..." );
 }
 
 // 基準局データ取得先の名前を作る
@@ -364,38 +344,39 @@ int baseSrcFromList( int index, struct stBaseSource *src )
 	return 0;
 }
 
-// 基準局データ取得先を選択する
+// 基準局データ取得先を、保存してある内容(mRunInfo.baseSrc)で用意する。起動時に1回呼ぶ
 //
-// lat,lon: 現在位置（度）
+// ・接続は taskBaseRecv（rover.cpp）が行う。
 //
-// 戻り値＝ 1: 選択済（mBaseSrcにパラメータ設定済）
-//          0: 選択無し
-//
-int baseSrcSelect( double lat, double lon )
+void baseSrcInit()
 {
-	if ( ! mBaseRecvClient ) {
-		mBaseRecvClient = new TcpClient( &mWifiClient );
-		mBaseRecvClient->setAgentName( mNtripClientName );
-	}
+	mBaseRecvClient = new TcpClient( &mWifiClient );
+	mBaseRecvClient->setAgentName( mNtripClientName );
+	memcpy( &mBaseSrc, &mRunInfo.baseSrc, sizeof(mBaseSrc) );
+	mBaseRecvReady = ( mBaseSrc.valid && mBaseSrc.type == BASE_TYPE_UART );
+	mBaseReconnecting = ( mBaseSrc.valid && mBaseSrc.type == BASE_TYPE_TCP );
+}
 
-	if ( mRunMode != RUN_UI ) {
-		memcpy( &mBaseSrc, &mRunInfo.baseSrc, sizeof(mBaseSrc) );
-		return mBaseSrc.valid ? 1 : 0;
-	}
-
-	mBaseSrc.valid = false;
-	int numItems = mNumBaseSrc;
+// 本体の画面で、基準局データ取得先を選ぶ
+//
+// 戻り値＝ true:選んだ（srcに内容。使わない時は valid=false）
+//          false:やめた
+//
+bool uiChooseBaseSource( struct stBaseSource *src )
+{
+	int numItems = mNumBaseSrc + 1;		// 先頭に「使わない」
 	if ( WiFi.status() == WL_CONNECTED ) numItems++;	// rtk2go.comのマウントポイントを選択する項目
-	int idx = uiSelectList( "Corrections", numItems, baseSrcLabel, "None" );
-	if ( idx < 0 ) return 0;
+	int index = uiSelectList( "Corrections", numItems, baseSrcLabel, "Back" );
+	if ( index < 0 ) return false;
 
-	if ( idx >= mNumBaseSrc ){
-		if ( ntripSelect_caster( "rtk2go.com", 2101, lat, lon ) < 0 ) return 0;
-		return 1;
+	memset( src, 0, sizeof( *src ) );
+	if ( index == 0 ) return true;		// 使わない
+	if ( index - 1 >= mNumBaseSrc ){
+		double lat = mGpsData.ubxDone ? mGpsData.lat : 100;		// 測位できていない時は距離を出さない
+		double lon = mGpsData.ubxDone ? mGpsData.lon : 400;
+		return ntripSelect_caster( "rtk2go.com", 2101, lat, lon, src ) == 0;
 	}
-
-	baseSrcFromList( idx, &mBaseSrc );
-	return 1;
+	return baseSrcFromList( index - 1, src ) == 0;
 }
 
 // 基準局（TCP）に１回接続する。NTRIPの場合はマウントポイントの要求まで行う。
@@ -421,61 +402,19 @@ int baseSrcConnect()
 	return 0;
 }
 
-// 基準局に接続する
+// 測位データをTCPサーバ（AgriBus-NAVI等）に送るかどうかを切り替える（動作中に呼べる）
 //
-// ・接続先等は mBaseSrcに設定しておく
-// ・UIで選択しないモードでは接続を待たず、mBaseReconnectingをセットして戻る。
-//   接続はtaskBaseRecv()が行う。
+// ・送信先は設定ファイルの client.ip。設定されていない時は何もしない。
+// ・接続は、taskRover が測位データを送る時に行う。
 //
-// 戻り値＝ 0:正常終了(接続完了）
-//         負数：エラー
-//
-int connectBaseSource()
+void tcpClientSet( bool on )
 {
-	if ( mRunMode != RUN_UI ) {
-		mBaseReconnecting = true;
-		return -1;
+	if ( strlen( mAgribusIp ) == 0 ) on = false;
+	if ( on && ! mAgribusClient ) mAgribusClient = new WiFiClient();
+	if ( ! on && mAgribusClient && mAgribusReady ){
+		mAgribusReady = false;
+		delay( 50 );		// taskRover が送信を終えるのを待つ
+		mAgribusClient->stop();
 	}
-
-	while(1){		
-		uiStatus( "Corrections", "Connecting to %s %s...", mBaseSrc.address, mBaseSrc.mountPoint );
-
-		int nret = baseSrcConnect();
-		dbgPrintf("connectBaseSource: nret=%d  src=%s\r\n",nret, mBaseSrc.address );
-		if ( nret == 0 ) return 0;
-
-		int button = uiAsk( "Corrections", "Cancel", "Retry", NULL, "Can't connect to %s. (%d)", mBaseSrc.address, nret );
-		if ( button == 0 ) return -2;
-	}
-}
-
-// TCP サーバに接続する。主にAgribus用。
-//
-int connectTcpServer()
-{
-	mAgribusReady = false;
-	if ( strlen( mAgribusIp ) == 0 ) return 0;
-
-	int yes = mRunInfo.agribusConnect;
-	if ( mRunMode == RUN_UI ){
-		yes = uiAsk( "TCP server", "No", "Yes", NULL, "Send positions to this TCP server?\n%s  port %d", mAgribusIp, mAgribusPort );
-		mRunInfo.agribusConnect = yes;
-	}
-	if ( ! yes ) return 0;
-
-	mAgribusClient = new WiFiClient();
-	if ( mRunMode != RUN_UI ){
-		// 接続を待たない。taskRover()が測位データの送信時に接続する。
-		mAgribusReady = true;
-		return 0;
-	}
-	while(1){
-		uiStatus( "TCP server", "Connecting to %s...", mAgribusIp );
-		if ( mAgribusClient->connect( mAgribusIp, mAgribusPort ) ){
-			mAgribusReady = true;
-			break;
-		}
-		if ( uiAsk( "TCP server", "Cancel", "Retry", NULL, "Can't connect to %s.", mAgribusIp ) == 0 ) break;
-	}
-	return 0;
+	mAgribusReady = on;
 }

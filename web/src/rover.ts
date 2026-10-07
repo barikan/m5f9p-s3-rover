@@ -28,7 +28,7 @@ export interface RoverState {
   status: Status | null;            // 本体が1秒毎に送る状況
   baseRate: number;                 // 補正データの受信量（バイト/秒）
   clasRate: number;
-  runConfig: RunConfig | null;      // 起動時の設定（run.get）
+  runConfig: RunConfig | null;      // 接続の設定（run.get）
   config: DeviceConfig | null;      // 本体の設定（config.get）
   deviceMapsKey: string;            // 本体の設定ファイルにあるGoogle MapsのAPIキー
   trackDay: string;                 // 地図に表示している日（YYYY-MM-DD）
@@ -162,7 +162,6 @@ export const setRate = (hz: number) => send({ cmd: 'rate', hz });
 export const loadRunConfig = () => send({ cmd: 'run.get' });
 export const applyRunConfig = (values: RunValues) => send({ cmd: 'run.set', ...values });
 export const restart = () => send({ cmd: 'restart' });
-export const requestSetup = () => send({ cmd: 'setup' });
 
 export function loadConfig() {
   state.config = null;
@@ -204,7 +203,7 @@ function onLine(line: string) {
   switch (m.re) {
     case 'status': onStatus(m as unknown as Status); break;
     case 'run.get': state.runConfig = m as unknown as RunConfig; notify('runConfig'); break;
-    case 'run.set': say('設定を保存しました。本体を再起動します'); break;
+    case 'run.set': say('設定を変更しました'); loadRunConfig(); break;      // 本体はすぐに反映する（再起動しない）
     case 'config.get': state.config = m.config ?? {}; notify('config'); break;
     case 'config.put': say('設定を保存しました。本体を再起動します'); restart(); break;
     case 'map.key': state.deviceMapsKey = m.key || ''; notify('mapsKey'); break;

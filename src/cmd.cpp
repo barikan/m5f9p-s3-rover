@@ -43,7 +43,7 @@
 //   ini.remove  旧形式の設定ファイル(m5f9p.ini)をSDカードから削除する。USBのみ
 //               （パスワードが平文で書かれているため。YAMLへの移行が済んでいる事）
 //   run.get   起動時の実行パラメータと、選択できるWifi接続先、基準局データ取得先を返す
-//   run.set   実行パラメータを書き換えて再起動する。指定した項目のみ変更する
+//   run.set   実行パラメータを変更する。指定した項目のみ変更し、すぐに反映する（再起動しない）
 //               {"wifi":"SSID"}  接続するWifi。"":使わない
 //               {"source":"名前"} 基準局データ取得先。"":接続しない "uart":UART
 //                                それ以外は "アドレス/マウントポイント"
@@ -51,6 +51,7 @@
 //               {"saveAtBoot":b} 起動時から保存する
 //               {"rate":n}       1秒あたりの測位回数
 //               {"rotation":n}   画面の向き 0:回転無 1:180度回転
+//               {"tcpClient":b}  測位データをTCPサーバ（設定ファイルの client.ip）に送る
 //   map.key   設定ファイルの google.key を返す（地図の表示用）
 //   sats.get  衛星の配置と信号強度を返す（詳しくは sats.cpp）。問い合わせている間だけ、
 //             F9Pに衛星のメッセージを出力させる
@@ -59,7 +60,6 @@
 //                                秒数）より後の点を古い順に返す。1回に返すのはTRACK_REPLY_MAX点
 //                                までで、続きがある時は "more":true になる
 //                                  "pts":[[時刻,緯度,経度,quality],...]
-//   setup     再起動して、実行パラメータを本体の画面で選択し直す
 //   restart   再起動する
 
 #include <Arduino.h>
@@ -277,34 +277,37 @@ static void cmdRunGet( JsonDocument &re )
 
 static void cmdRunSet( JsonDocument &cmd, JsonDocument &re )
 {
-	struct stRunInfo info;
-	memcpy( &info, &mRunInfo, sizeof(info) );
-
-	if ( cmd["wifi"].is<const char*>() ){
+	// 先に全部を確かめてから、反映する
+	struct stBaseSource src;
+	bool hasWifi = cmd["wifi"].is<const char*>(), hasSource = cmd["source"].is<const char*>();
+	if ( hasWifi ){
 		const char *ssid = cmd["wifi"];
 		if ( strlen( ssid ) && wifiIndexOf( ssid ) < 0 ) { re["error"] = "bad wifi"; return; }
-		strlcpy( info.wifiSsid, ssid, sizeof( info.wifiSsid ) );
 	}
-	if ( cmd["source"].is<const char*>() ){
+	if ( hasSource ){
 		const char *name = cmd["source"];
-		if ( strlen( name ) == 0 ) info.baseSrc.valid = false;
-		else if ( baseSrcFromList( baseSrcFind( name ), &info.baseSrc ) < 0 ) { re["error"] = "bad source"; return; }
+		memset( &src, 0, sizeof(src) );
+		if ( strlen( name ) && baseSrcFromList( baseSrcFind( name ), &src ) < 0 ) { re["error"] = "bad source"; return; }
 	}
 	if ( cmd["format"].is<int>() ){
 		int n = cmd["format"];
 		if ( n < SAVE_NMEA || n > SAVE_CSV ) { re["error"] = "bad format"; return; }
-		info.saveFormat = n;
 	}
-	if ( cmd["saveAtBoot"].is<bool>() ) info.saving = cmd["saveAtBoot"].as<bool>() ? 1 : 0;
 	if ( cmd["rate"].is<int>() ){
 		int n = cmd["rate"];
 		if ( n < 1 || n > 20 ) { re["error"] = "bad rate"; return; }
-		info.solutionRate = n;
 	}
-	if ( cmd["rotation"].is<int>() ) info.lcdRotation = cmd["rotation"].as<int>() ? 1 : 0;
 
-	if ( saveRunInfo( &info ) < 0 ) { re["error"] = "can't save"; return; }
-	mRestartRequest = true;
+	if ( hasWifi ) appSetWifi( cmd["wifi"] );
+	if ( hasSource ) appSetBaseSource( &src );
+	if ( cmd["format"].is<int>() ) appSetSaveFormat( cmd["format"] );
+	if ( cmd["rate"].is<int>() ) appSetSolutionRate( cmd["rate"] );
+	if ( cmd["rotation"].is<int>() ) appSetRotation( cmd["rotation"] );
+	if ( cmd["tcpClient"].is<bool>() ) appSetTcpClient( cmd["tcpClient"].as<bool>() );
+	if ( cmd["saveAtBoot"].is<bool>() ){
+		mRunInfo.saving = cmd["saveAtBoot"].as<bool>() ? 1 : 0;
+		saveRunInfo( &mRunInfo );
+	}
 	re["ok"] = true;
 }
 
@@ -433,12 +436,6 @@ void cmdExecute( char *line, String &reply, int channel )
 		re["ok"] = true;
 	}
 	else if ( strcmp( name, "track.get" ) == 0 ) cmdTrackGet( cmd, re );
-	else if ( strcmp( name, "setup" ) == 0 ){
-		mRunInfo.setupRequest = 1;
-		saveRunInfo( &mRunInfo );
-		mRestartRequest = true;
-		re["ok"] = true;
-	}
 	else if ( strcmp( name, "restart" ) == 0 ){
 		mRestartRequest = true;
 		re["ok"] = true;

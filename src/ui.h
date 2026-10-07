@@ -4,7 +4,8 @@
 // 一覧に表示する項目の文字列を返す関数
 typedef void (*uiLabelFunc)( int index, char *buff, int buffSize );
 
-int uiBegin( int setRotation );
+void uiBegin( int rotation );
+void uiRotate();
 void uiShow( const char *title, const char *button1, const char *button2, const char *button3, const char *format, ... );
 int uiPoll();
 int uiAsk( const char *title, const char *button1, const char *button2, const char *button3, const char *format, ... );

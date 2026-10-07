@@ -24,7 +24,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 #include "ui.h"
 #include "screen.h"
 
-// 起動時の画面（ウィザード）。setup()の中から、順に呼び出して使う。
+// 選択や確認の画面。処理の途中から呼び出して使う（Setup のページでの選択、起動中の表示）。
 //
 //   uiStatus()      経過を表示する（ボタン無し）
 //   uiAsk()         文章とボタンを表示し、ボタンが押されるまで待つ
@@ -34,8 +34,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 //
 // 描画は、測位中の画面と同じ土台(screen.cpp)を使う。
 //
-// 待っている間も、USBからの lcd.shot と lcd.tap は受け付ける（画面の確認用）。
-// ほかのコマンドは、測位を始めるまで "not ready" を返す。
+// 待っている間も、いつもの処理(appBackground)は動かす。補正データの中継やBLEを止めないため。
 
 #define MARGIN 12
 #define TITLE_HEIGHT 40
@@ -61,8 +60,12 @@ static int mPressed = -1;		// 押されているボタンの番号。-1:押さ�
 //
 static void uiIdle( int msec )
 {
-	cmdPollUsb();
-	screenShotPoll( Serial );
+	// 測位を始めた後は、いつもの処理（補正データの中継、BLE、コマンドなど）を止めない
+	if ( mSetupDone ) appBackground();
+	else {
+		cmdPollUsb();
+		screenShotPoll( Serial );
+	}
 	delay( msec );
 }
 
@@ -170,27 +173,21 @@ static void setScreen( const char *title, const char *button1, const char *butto
 
 // 画面を使えるようにする
 //
-// setRotation:  0=回転しない  1=180度回転  -1=画面で選択
+// rotation:  0=回転しない  1=180度回転
 //
-// 戻り値＝ 0:回転無し 1:180度回転
-//
-int uiBegin( int setRotation )
+void uiBegin( int rotation )
 {
 	if ( screenBegin() < 0 ) dbgPrintf( "!! Screen: not enough memory\r\n" );
+	if ( rotation ) uiRotate();
+}
 
-	if ( setRotation == 1 ){
-		mLcdRotation = 1;
-		M5.Display.setRotation( M5.Display.getRotation() ^ 2 );
-	}
-	else if ( setRotation < 0 ){
-		// "Rotate" が押される度に180度回す
-		while( uiAsk( "Display", "Rotate", "OK", NULL, "Is the display the right way up?" ) == 0 ){
-			mLcdRotation = ! mLcdRotation;
-			M5.Display.setRotation( M5.Display.getRotation() ^ 2 );
-			screenInvalidate();
-		}
-	}
-	return mLcdRotation;
+// 画面を180度回す
+//
+void uiRotate()
+{
+	mLcdRotation = ! mLcdRotation;
+	M5.Display.setRotation( M5.Display.getRotation() ^ 2 );
+	screenInvalidate();
 }
 
 // 文章とボタンを表示する（待たない）。押されたかどうかは uiPoll() で調べる

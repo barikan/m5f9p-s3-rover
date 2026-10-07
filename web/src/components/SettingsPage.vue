@@ -2,7 +2,7 @@
 // 設定タブ。
 //
 //   ・Google MapsのAPIキー（この端末に保存）
-//   ・本体の起動時の設定（Wi-Fi、補正データの取得先、保存形式）。保存すると本体は再起動する
+//   ・接続の設定（Wi-Fi、補正データの取得先、保存形式）。変更はすぐに反映される（再起動しない）
 //   ・本体の設定（設定ファイルの内容）の編集は ConfigEditor.vue
 import { computed, reactive, ref, watch } from 'vue';
 import { Button } from '@/components/ui/button';
@@ -43,7 +43,7 @@ function saveKey() {
   if (key !== savedKey) location.reload();
 }
 
-// ---------------------------------------------------------------- 起動時の設定
+// ---------------------------------------------------------------- 接続の設定
 
 const run = computed(() => state.runConfig);
 const values = reactive({ wifi: '', source: '', format: '0', saveAtBoot: false });
@@ -91,11 +91,6 @@ watch(() => state.config, config => {
 async function restart() {
   if (await confirmDialog('本体を再起動しますか？', '再起動の間、測位と記録が数秒止まります。')) rover.restart();
 }
-
-async function requestSetup() {
-  if (await confirmDialog('設定をやり直しますか？',
-    '本体が再起動し、本体の画面に設定の選択が表示されます。選び終わるまで測位は始まりません。')) rover.requestSetup();
-}
 </script>
 
 <template>
@@ -116,7 +111,7 @@ async function requestSetup() {
     </Section>
 
     <template v-if="connected">
-      <Section title="起動時の設定">
+      <Section title="接続の設定">
         <p v-if="!run">本体から読み込んでいます…</p>
         <template v-else>
           <div class="grid gap-2">
@@ -132,7 +127,7 @@ async function requestSetup() {
             <SelectField id="run-format" v-model="values.format" :options="formatOptions" />
           </div>
           <SwitchField v-model="values.saveAtBoot" label="起動時からログを保存する" />
-          <Button class="mt-4" :disabled="!runChanged" @click="applyRun">保存して本体を再起動</Button>
+          <Button class="mt-4" :disabled="!runChanged" @click="applyRun">変更する</Button>
           <p class="text-muted-foreground mt-3 text-xs">Wi-Fi や補正データの接続先を追加・変更するには、「本体の設定を編集」を使います。</p>
         </template>
       </Section>
@@ -142,7 +137,6 @@ async function requestSetup() {
           <Button variant="outline" @click="editConfig">本体の設定を編集</Button>
           <p v-if="editing === 'loading'" class="text-muted-foreground text-xs">本体から読み込んでいます…</p>
           <Button variant="outline" @click="restart">本体を再起動</Button>
-          <Button variant="outline" @click="requestSetup">本体の画面で設定をやり直す</Button>
         </div>
       </Section>
     </template>
