@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import * as rover from '../rover';
-import { state } from '../store';
+import { state, toast } from '../store';
 import { confirmDialog } from '../dialogs';
 import { userMapsKey } from '../map';
 import type { Option } from '../types';
@@ -80,13 +80,16 @@ function applyRun() {
 
 // ---------------------------------------------------------------- 本体
 
-function editConfig() {
+async function editConfig() {
   editing.value = 'loading';
-  rover.loadConfig();
+  try {
+    await rover.loadConfig();
+    if (editing.value === 'loading') editing.value = 'editing';
+  } catch (e) {
+    if (editing.value === 'loading') editing.value = '';
+    toast(e instanceof Error ? e.message : String(e));
+  }
 }
-watch(() => state.config, config => {
-  if (editing.value === 'loading' && config) editing.value = 'editing';
-});
 
 async function restart() {
   if (await confirmDialog('本体を再起動しますか？', '再起動の間、測位と記録が数秒止まります。')) rover.restart();

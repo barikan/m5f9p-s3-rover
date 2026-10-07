@@ -153,7 +153,7 @@ mise run android-screenshot          # 端末の画面を screenshot.png に保�
 | `appSetTcpClient` | 測位データの TCP 送信の入・切 |
 | `appSetSolutionRate`、`appSetSaving` | 測位レート、ログ保存 |
 
-設定の項目を足すときも、この形(動作中に切り替える関数を作り、画面とコマンドの両方から呼ぶ)にする。**再起動が要るのは、設定ファイル(`m5f9p.yaml`)を書き換えたときだけ**(一覧を使っているタスクがあるため、起動時に1回だけ読む)。
+設定の項目を足すときも、この形(動作中に切り替える関数を作り、画面とコマンドの両方から呼ぶ)にする。**再起動が要るのは、起動時にしか反映できない設定の項目を変えたときと、設定ファイルを直接書き換えたとき(`file.put`)だけ**(「設定ファイル」の節を参照)。
 
 - F9P のボーレートは起動時点で分からない(電源投入直後は 38400bps、CoreS3 だけリセットされたときは前回のまま)。`gpsSyncBaudrate()` が目的のボーレートで応答を確かめ、だめなら候補を順に試す。どれにも応答しないときだけ I2C 経由でリセットする(`gpsI2cReset()`)。
 - `taskBaseRecv` は、補正元がなくても動かしておく(動作中に切り替えられるようにするため)。
@@ -183,12 +183,13 @@ SD カードの `/m5f9p/m5f9p.yaml`。読み書きは `config.cpp`、書式の�
 - 読み込みは YAMLDuino で `JsonDocument` に変換して行う。**変換の前に `configCheckYaml()`(libyaml)で書式を検査する。** 誤った YAML をそのまま渡すと YAMLDuino が異常終了し、本体が起動を繰り返す。
 - **書き出しは自前(`yamlEmit`)で行い、文字列は必ず引用符で囲む。** YAMLDuino の `serializeYml` は囲まないので、先頭が 0 の数字や `#`、`:` を含むパスワードが壊れる。
 - 起動時の設定(`stRunInfo`)は別のファイル `/m5f9p/m5f9p.run.json`。本体が測位レートの変更などで随時書き直すので、設定ファイルと分けてある(分けないと、そのたびに手書きのコメントが消える)。Wi-Fi は番号ではなく SSID で覚える。
-- 設定は起動時に1回だけ読む。`config.put` / `file.put` はファイルを書くだけで、動作中の変数は変えない(一覧を使っているタスクがあるため)。反映は再起動で行う。
+- **`config.put`(アプリの「本体の設定を編集」)は、再起動なしで反映する。** ファイルを書いたあと `configApply` で動作中の変数を書き換え、使用中の Wi-Fi と取得先は `netConfigBegin` / `netConfigEnd`(net.cpp)が `id` で追って、内容が変わっていればつなぎ直す。起動時にしか反映できない項目(受信機名、BLE の入・切とペアリング、soft AP、TCP サーバのポート、PH コネクタのボーレート)が変わるときだけ、ファイルを書くだけにして、応答に `restart: true` を入れる(`config.cpp` の `configNeedsRestart`。項目を足したら、`ConfigEditor.vue` の `restart` の印も揃える)。`file.put` は、いつもファイルを書くだけで、反映は再起動で行う。
+- 設定の一覧(`mWifiList`、`mBaseSrcList`)を読むのは loopTask だけにする。`taskBaseRecv` は Wi-Fi のつなぎ直しに `mSsid` / `mPassword`(一覧の中を指す)を使うので、一覧を書き換える間は `mSsid` を NULL にしている。
 - **パスワードは本体の外に返さない。** `config.get` は `password` の代わりに、一覧の中の番号 `id` と `hasPassword` を返す。`config.put` で `password` が書かれていない項目は、本体が `id` の番号のパスワードを保つ(`config.cpp` の `configRestoreSecrets`)。パスワードの項目を増やすときは、`configToJson`、`configRestoreSecrets`、画面の `ConfigEditor.vue` を揃える。
 - `file.get`(YAML をそのまま返す)はパスワードを含むので、USB からだけ受け付ける(`cmdExecute` の `channel`)。`mise run config-get` はこれを使う。
 - **設定ファイルのパスワードと API キーは暗号化して書く**(`src/secret.cpp`。AES-256-GCM、鍵は NVS)。書き出しは `configSave` が暗号化し、読み込みは `cfgSecret` が復号する。平文も読め、起動時に暗号化して書き直す。暗号化する項目を増やすときは、`config.cpp` の `encryptSecrets` と `configFromJson` の両方に足す。`m5f9p.run.json` の取得先のパスワードも同じ(`storage.cpp`)。
 - `secretInit()` は無線を始める前に呼ぶ(鍵を作るときの乱数源が、無線と同時に使えない)。内蔵フラッシュを全部消す操作(`pio run -t erase`)は鍵を消し、SD カードのパスワードが読めなくなる。ユーザーに断らずに行わない。
-- 設定を書き換えたあとは、再起動するまで `config.get` / `config.put` はエラーになる(本体が持っている一覧と `id` がずれるため)。
+- 再起動が要る書き換え(`restart: true` の `config.put`、`file.put`)のあとは、再起動するまで `config.get` / `config.put` はエラーになる(本体が持っている一覧と `id` がずれるため)。
 - BLE はペアリングが必要(`ble.pairing`、既定は `true`)。仕組みと、確かめた挙動は `DEVELOPE.md` の「BLE のペアリング」にある。
 - 旧形式の INI は、YAML がないときだけ読んで変換する(`settings.cpp` の `readIniFile()`)。
 

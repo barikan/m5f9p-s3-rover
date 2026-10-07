@@ -72,6 +72,7 @@ type Listener = (what: Change) => void;
 
 /** 本体からの応答（{"re": コマンド名, "ok": 成否, ...}）と通知（{"ev": ...}） */
 interface Message {
+  restart?: boolean;        // config.put: 再起動しないと反映されない
   ev?: string;
   re?: string;
   ok?: boolean;
@@ -174,14 +175,34 @@ export const loadRunConfig = () => send({ cmd: 'run.get' });
 export const applyRunConfig = (values: RunValues) => send({ cmd: 'run.set', ...values });
 export const restart = () => send({ cmd: 'restart' });
 
-export function loadConfig() {
+/** 本体の設定を読み込む（state.config に入る）。読めない時は例外 */
+export async function loadConfig() {
   state.config = null;
   notify('config');
-  send({ cmd: 'config.get' });
+  let m: Message;
+  try {
+    m = await request({ cmd: 'config.get' });
+  } catch (e) {
+    // 再起動が要る設定を保存したまま、再起動していない時
+    if (e instanceof Error && e.message === 'restart required') throw new Error('本体を再起動するまで、本体の設定は編集できません');
+    throw e;
+  }
+  state.config = m.config ?? {};
+  notify('config');
 }
 
-/** 本体の設定を書き換える。成功したら本体を再起動する */
-export const saveConfig = (config: DeviceConfig) => send({ cmd: 'config.put', config });
+/**
+ * 本体の設定を書き換える。
+ * 戻り値が true の時は、再起動しないと反映されない項目が変わっている（本体はファイルを
+ * 書いただけ）。false の時は、本体がすぐに反映している。
+ */
+export async function saveConfig(config: DeviceConfig): Promise<boolean> {
+  const m = await request({ cmd: 'config.put', config });
+  // 古いファームウェアは restart を返さず、いつも再起動が要る
+  const restartNeeded = m.restart !== false;
+  if (!restartNeeded) loadRunConfig();      // Wi-Fi と取得先の一覧が変わっている
+  return restartNeeded;
+}
 
 // ---------------------------------------------------------------- 受信
 
@@ -215,8 +236,6 @@ function onLine(line: string) {
     case 'status': onStatus(m as unknown as Status); break;
     case 'run.get': state.runConfig = m as unknown as RunConfig; notify('runConfig'); break;
     case 'run.set': say('設定を変更しました'); loadRunConfig(); break;      // 本体はすぐに反映する（再起動しない）
-    case 'config.get': state.config = m.config ?? {}; notify('config'); break;
-    case 'config.put': say('設定を保存しました。本体を再起動します'); restart(); break;
     case 'map.key': state.deviceMapsKey = m.key || ''; notify('mapsKey'); break;
     case 'track.get': onTrackReply(m); break;
     case 'sats.get': onSatsReply(m); break;

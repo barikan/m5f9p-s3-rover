@@ -96,6 +96,82 @@ int netSetWifi( const char *ssid )
 	return 0;
 }
 
+// ---------------------------------------------------------------- 設定の一覧の書き換え
+//
+// 動作中に設定の一覧（mWifiList, mBaseSrcList）を書き換える時は、前後で
+// netConfigBegin() / netConfigEnd() を呼ぶ。いま使っているWifiと補正データの取得先の
+// 内容が変わっていれば、つなぎ直す。変わっていなければ、接続はそのまま保つ。
+
+static bool mWifiListed;			// 書き換える前、使っているWifiが一覧にあった
+static struct stWifi mWifiBefore;	// その内容
+static bool mBaseSrcListed;			// 書き換える前、使っている取得先が一覧にあった
+
+// 一覧を書き換える前に呼ぶ
+//
+// wifiId, srcId: いま使っているWifiと取得先の、一覧の中の番号（config.get が返す id）。
+//                一覧に無い時、使っていない時は -1
+//
+void netConfigBegin( int *wifiId, int *srcId )
+{
+	*wifiId = wifiIndexOf( mRunInfo.wifiSsid );
+	mWifiListed = ( *wifiId >= 0 );
+	if ( mWifiListed ) mWifiBefore = mWifiList[ *wifiId ];
+	mSsid = NULL;		// 一覧の中を指しているので、書き換えている間は taskBaseRecv がつなぎ直さないようにする
+
+	// 本体の画面で選んだ rtk2go.com の局とUARTは、一覧に無いので対象にしない
+	*srcId = -1;
+	mBaseSrcListed = false;
+	if ( mRunInfo.baseSrc.valid && mRunInfo.baseSrc.type == BASE_TYPE_TCP ){
+		char name[100];
+		baseSrcName( &mRunInfo.baseSrc, name, sizeof(name) );
+		int index = baseSrcFind( name );
+		if ( index > 0 ){
+			*srcId = index - 1;		// 0番目はUART
+			mBaseSrcListed = true;
+		}
+	}
+}
+
+// 一覧を書き換えた後に呼ぶ
+//
+// wifiId, srcId: netConfigBegin() が返した項目の、新しい一覧の中の番号（何番目か）。
+//                分からない時は -1（名前で探す）
+//
+// ・一覧から無くなった時は、使うのをやめる。
+//
+void netConfigEnd( int wifiId, int srcId )
+{
+	if ( mWifiListed ){
+		if ( wifiId < 0 || wifiId >= mNumWifi ) wifiId = wifiIndexOf( mRunInfo.wifiSsid );
+		if ( wifiId < 0 ) appSetWifi( "" );
+		else {
+			struct stWifi *wifi = &mWifiList[ wifiId ];
+			bool same = strcmp( wifi->ssid, mWifiBefore.ssid ) == 0 && strcmp( wifi->password, mWifiBefore.password ) == 0
+					&& memcmp( wifi->ip, mWifiBefore.ip, sizeof( wifi->ip ) ) == 0 && memcmp( wifi->dns, mWifiBefore.dns, sizeof( wifi->dns ) ) == 0;
+			if ( same ){
+				mPassword = wifi->password;
+				mSsid = wifi->ssid;
+			}
+			else appSetWifi( wifi->ssid );
+		}
+	}
+
+	if ( mBaseSrcListed ){
+		char name[100];
+		baseSrcName( &mRunInfo.baseSrc, name, sizeof(name) );
+		int index = ( srcId >= 0 && srcId + 1 < mNumBaseSrc ) ? srcId + 1 : baseSrcFind( name );
+		struct stBaseSource src, *now = &mRunInfo.baseSrc;
+		memset( &src, 0, sizeof( src ) );
+		if ( index <= 0 || baseSrcFromList( index, &src ) < 0 ) appSetBaseSource( &src );	// 無くなった。取得をやめる
+		else {
+			bool same = strcmp( src.address, now->address ) == 0 && src.port == now->port
+					&& strcmp( src.mountPoint, now->mountPoint ) == 0 && strcmp( src.user, now->user ) == 0
+					&& strcmp( src.password, now->password ) == 0 && src.ggaPeriod == now->ggaPeriod && src.protocol == now->protocol;
+			if ( ! same ) appSetBaseSource( &src );
+		}
+	}
+}
+
 // 本体の画面で選ぶ時の一覧。先頭は「使わない」
 //
 static void wifiLabel( int index, char *buff, int buffSize )

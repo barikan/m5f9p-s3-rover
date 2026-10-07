@@ -1,5 +1,7 @@
 <script setup lang="ts">
-// 本体の設定（設定ファイルの内容）を項目ごとに編集する。保存すると本体は再起動する。
+// 本体の設定（設定ファイルの内容）を項目ごとに編集する。
+// 保存すると、本体はすぐに反映する。再起動が要るのは restart の印を付けた項目を変えた時だけで、
+// 要るかどうかは本体が決める（src/config.cpp の configNeedsRestart。印はその注意書き）。
 //
 // 本体はパスワードを返さない（設定済みかどうかの hasPassword だけが来る）。設定済みの
 // パスワードの欄は空で表示し、入力した時だけ送る。送らなければ本体が元の値を保つ。
@@ -32,7 +34,11 @@ interface ListDef {
 /** その他の項目。path は設定の中の位置（[グループ, 項目]） */
 interface PathField extends Field {
   path: [string, string];
+  restart?: boolean;    // 変えると、本体の再起動が要る
 }
+
+const RESTART_NOTE = '変更すると本体の再起動が必要です';
+const withNote = (f: PathField): PathField => (f.restart ? { ...f, help: f.help ? `${f.help}。${RESTART_NOTE}` : RESTART_NOTE } : f);
 
 const WIFI_FIELDS: FormField[] = [
   { key: 'ssid', label: 'SSID', required: true },
@@ -69,29 +75,29 @@ const LISTS: ListDef[] = [
 const OTHER_GROUPS: { title: string; fields: PathField[] }[] = [
   {
     title: '受信機', fields: [
-      { path: ['receiver', 'name'], label: '受信機名', help: 'BLE と soft AP の名前になります（15文字以内）' },
+      { path: ['receiver', 'name'], label: '受信機名', restart: true, help: 'BLE と soft AP の名前になります（15文字以内）' },
       { path: ['receiver', 'usbNmea'], label: 'USB から NMEA も出力する', type: 'bool' },
     ],
   },
   {
     title: 'BLE', fields: [
-      { path: ['ble', 'enable'], label: 'BLE を使う', type: 'bool', help: '切ると、このアプリから BLE で接続できなくなります' },
+      { path: ['ble', 'enable'], label: 'BLE を使う', type: 'bool', restart: true, help: '切ると、このアプリから BLE で接続できなくなります' },
       {
-        path: ['ble', 'pairing'], label: 'ペアリングを使う', type: 'bool',
+        path: ['ble', 'pairing'], label: 'ペアリングを使う', type: 'bool', restart: true,
         help: '初めて接続する時に、本体の画面に出る番号の入力を求めます。切ると、近くにいる誰でも接続して操作できます',
       },
-      { path: ['ble', 'nmea'], label: 'NMEA を送る回数（1秒あたり。0〜5）', type: 'number' },
+      { path: ['ble', 'nmea'], label: 'NMEA を送る回数（1秒あたり。0〜5）', type: 'number', help: '次に BLE で接続した時から使われます' },
     ],
   },
   {
     title: 'soft AP', fields: [
-      { path: ['softap', 'enable'], label: 'soft AP を使う', type: 'bool', help: 'BLE と同時に使うと、soft AP に端末が接続している間は通信が不安定になる事があります' },
-      { path: ['softap', 'ip'], label: 'soft AP の IP アドレス' },
+      { path: ['softap', 'enable'], label: 'soft AP を使う', type: 'bool', restart: true, help: 'BLE と同時に使うと、soft AP に端末が接続している間は通信が不安定になる事があります' },
+      { path: ['softap', 'ip'], label: 'soft AP の IP アドレス', restart: true },
     ],
   },
   {
     title: '測位データの配信', fields: [
-      { path: ['server', 'port'], label: 'TCP サーバのポート', type: 'number' },
+      { path: ['server', 'port'], label: 'TCP サーバのポート', type: 'number', restart: true },
       { path: ['client', 'ip'], label: '送信先 TCP サーバの IP アドレス', help: '空欄なら送信しません（AgriBus-NAVI 等）' },
       { path: ['client', 'port'], label: '送信先 TCP サーバのポート', type: 'number' },
     ],
@@ -104,7 +110,7 @@ const OTHER_GROUPS: { title: string; fields: PathField[] }[] = [
   },
   {
     title: 'PH コネクタ（UART）', fields: [
-      { path: ['jstph', 'baudrate'], label: 'ボーレート', type: 'number' },
+      { path: ['jstph', 'baudrate'], label: 'ボーレート', type: 'number', restart: true },
       {
         path: ['jstph', 'format'], label: '出力フォーマット', type: 'select',
         options: [{ value: 'nmea', label: 'NMEA' }, { value: 'csv', label: 'CSV' }],
@@ -207,20 +213,38 @@ async function close() {
   emit('close');
 }
 
+const saving = ref(false);
+
 async function save() {
-  if (!await confirmDialog('保存して本体を再起動しますか？',
-    '本体の設定ファイルを書き換えます。手で書いたコメントは消えます。再起動の間、測位と記録が数秒止まります。', '保存')) return;
-  rover.saveConfig(payload());
-  toast('本体に送信しました');
+  if (!await confirmDialog('設定を保存しますか？',
+    '本体の設定ファイルを書き換えます。手で書いたコメントは消えます。使用中の Wi-Fi や補正データの取得先を変えた時は、つなぎ直します。', '保存')) return;
+  saving.value = true;
+  let restartNeeded: boolean;
+  try {
+    restartNeeded = await rover.saveConfig(payload());
+  } catch (e) {
+    toast(`保存できません: ${e instanceof Error ? e.message : e}`);
+    return;
+  } finally {
+    saving.value = false;
+  }
   emit('close');
+  if (!restartNeeded) {
+    toast('設定を保存しました');
+    return;
+  }
+  // 再起動が要る項目を変えた時だけ、再起動を求める
+  if (await confirmDialog('本体を再起動しますか？',
+    '設定を保存しました。変更した項目は、本体を再起動すると反映されます。再起動の間、測位と記録が数秒止まります。', '再起動')) rover.restart();
+  else toast('変更は、次に本体を再起動した時に反映されます');
 }
 </script>
 
 <template>
   <div class="mb-4 flex flex-wrap items-center gap-2">
     <div class="flex-1 text-lg font-semibold">本体の設定</div>
-    <Button size="sm" variant="ghost" @click="close">やめる</Button>
-    <Button size="sm" @click="save">保存して再起動</Button>
+    <Button size="sm" variant="ghost" :disabled="saving" @click="close">やめる</Button>
+    <Button size="sm" :disabled="saving" @click="save">保存</Button>
   </div>
   <div class="grid grid-cols-[repeat(auto-fit,minmax(20rem,1fr))] items-start gap-3">
     <Section v-for="list in LISTS" :key="list.key" :title="list.title">
@@ -247,7 +271,7 @@ async function save() {
               :model-value="getPath(f.path)" @update:model-value="setPath(f.path, $event)" />
             <SwitchField v-model="rtk2goClear" :label="CLEAR_LABEL" @update:model-value="dirty = true" />
           </template>
-          <FieldInput v-else :field="f" :model-value="getPath(f.path)" @update:model-value="setPath(f.path, $event)" />
+          <FieldInput v-else :field="withNote(f)" :model-value="getPath(f.path)" @update:model-value="setPath(f.path, $event)" />
         </template>
       </div>
     </Section>

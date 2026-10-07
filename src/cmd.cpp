@@ -19,14 +19,18 @@
 //   config.get  設定（設定ファイルの内容）をJSONで返す。パスワードは返さない。
 //               一覧（wifi, sources）の項目には、password の代わりに、一覧の中の番号 id と、
 //               設定済みかどうかの hasPassword が入る
-//   config.put  {"config":{...}}  設定を書き換える（再起動後に有効）。設定ファイルのコメントは消える
+//   config.put  {"config":{...}}  設定を書き換える。設定ファイルのコメントは消える
+//               再起動しなくても反映できる時は、すぐに反映する。いま使っているWifiや
+//               補正データの取得先の内容が変わった時は、つなぎ直す。
+//               再起動が要る項目（config.cpp の configNeedsRestart）が変わった時は、
+//               ファイルを書くだけで、応答に "restart":true が入る（再起動後に有効）
 //               パスワードとAPIキーは暗号化して書く（secret.cpp）
 //               一覧の項目で password を書かなければ、id の番号のパスワードを保つ
 //               （詳しくは config.cpp の configRestoreSecrets）
 //   file.get    設定ファイル(YAML)のテキストをそのまま返す。パスワードを含むので、USBのみ
 //
-//   設定を書き換えた後は、再起動するまで config.get / config.put は使えない
-//   （本体が持っている一覧と id がずれるため）
+//   再起動が要る書き換え（"restart":true、file.put）の後は、再起動するまで
+//   config.get / config.put は使えない（本体が持っている一覧と id がずれるため）
 //   file.put    {"text":"..."}    設定ファイル(YAML)をテキストで書き換える（再起動後に有効）
 //                                 YAMLとして正しくない時は書き込まずにエラーを返す
 //   lcd.shot    本体の画面の内容を返す（確認用）。USBのみ。応答の後に、画像が
@@ -165,6 +169,8 @@ void cmdRestartIfRequested()
 void configToJson( JsonDocument &doc, bool secrets );
 int configRestoreSecrets( JsonDocument &config );
 int configSave( JsonVariantConst config );
+bool configNeedsRestart( JsonVariantConst config );
+void configApply( JsonDocument &config );
 
 void satsToJson( JsonDocument &re );
 void logList( JsonDocument &re, int start, int max );
@@ -182,6 +188,25 @@ static void cmdConfigGet( JsonDocument &re )
 	re["ok"] = true;
 }
 
+// 一覧(list)の中で、id の項目が何番目になったか調べる
+//
+// key: 空の時に読み飛ばされる項目の名前（configFromJson と数え方を合わせる）
+//
+// 戻り値＝ 0以上:番号  -1:無い
+//
+static int positionOfId( JsonVariantConst list, const char *key, int id )
+{
+	if ( id < 0 ) return -1;
+	int n = 0;
+	for( JsonVariantConst entry : list.as<JsonArrayConst>() ){
+		JsonVariantConst name = entry[key];
+		if ( name.isNull() || ( name.is<const char*>() && strlen( name.as<const char*>() ) == 0 ) ) continue;
+		if ( entry["id"].is<int>() && entry["id"].as<int>() == id ) return n;
+		n++;
+	}
+	return -1;
+}
+
 static void cmdConfigPut( JsonDocument &cmd, JsonDocument &re )
 {
 	if ( mConfigWritten ) { re["error"] = "restart required"; return; }
@@ -196,8 +221,21 @@ static void cmdConfigPut( JsonDocument &cmd, JsonDocument &re )
 	if ( nret == -1 ) re["error"] = "no config";
 	else if ( nret == -2 ) re["error"] = "too large";
 	else if ( nret < 0 ) re["error"] = "can't write config file";
-	else {
+	else if ( configNeedsRestart( config.as<JsonVariantConst>() ) ){
+		// 起動時にしか反映できない項目が変わった。動作中の設定は変えない
 		mConfigWritten = true;
+		re["restart"] = true;
+		re["ok"] = true;
+	}
+	else {
+		// いま使っているWifiと取得先を、id で追う（名前を書き換えた時も、同じ項目として扱う）
+		int wifiId, srcId;
+		netConfigBegin( &wifiId, &srcId );
+		wifiId = positionOfId( cmd["config"]["wifi"], "ssid", wifiId );
+		srcId = positionOfId( cmd["config"]["sources"], "address", srcId );
+		configApply( config );
+		netConfigEnd( wifiId, srcId );
+		re["restart"] = false;
 		re["ok"] = true;
 	}
 }

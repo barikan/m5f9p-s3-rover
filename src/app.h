@@ -135,6 +135,8 @@ extern WiFiClient *mAgribusClient;
 
 void netStart();
 int netSetWifi( const char *ssid );
+void netConfigBegin( int *wifiId, int *srcId );
+void netConfigEnd( int wifiId, int srcId );
 bool uiChooseWifi();
 void baseSrcInit();
 bool uiChooseBaseSource( struct stBaseSource *src );

@@ -327,6 +327,54 @@ void configFromJson( JsonDocument &doc )
 	mPhUartFormat = ( format == "csv" || format == "1" ) ? PH_UART_CSV : PH_UART_NMEA;
 }
 
+// 再起動しないと反映できない項目が、現在の設定から変わるか調べる
+//
+// ・起動時に1回だけ使う項目（BLEの開始、soft AP、TCPサーバのポート、PHコネクタのボーレート）
+//   と、受信機名（BLEとsoft APの名前）。項目を増やす時は、画面（ConfigEditor.vue）の
+//   注意書きも揃える。
+//
+// 戻り値＝ true:再起動が要る
+//
+bool configNeedsRestart( JsonVariantConst config )
+{
+	char name[ sizeof(mReceiverName) ];
+	copyStr( name, sizeof(name), cfgStr( config["receiver"]["name"], mReceiverName ) );
+	if ( strcmp( name, mReceiverName ) != 0 ) return true;
+
+	if ( cfgBool( config["ble"]["enable"], mBleEnable != 0 ) != ( mBleEnable != 0 ) ) return true;
+	if ( cfgBool( config["ble"]["pairing"], mBlePairing != 0 ) != ( mBlePairing != 0 ) ) return true;
+
+	if ( cfgBool( config["softap"]["enable"], mSoftApEnable != 0 ) != ( mSoftApEnable != 0 ) ) return true;
+	byte ip[4];
+	parseIp( cfgStr( config["softap"]["ip"] ), ip );
+	if ( ip[0] && IPAddress( ip[0], ip[1], ip[2], ip[3] ) != mSoftApIp ) return true;
+
+	if ( cfgInt( config["server"]["port"], mServerPort ) != mServerPort ) return true;
+	if ( cfgInt( config["jstph"]["baudrate"], mPhUartBaudrate ) != mPhUartBaudrate ) return true;
+	return false;
+}
+
+// 設定(JSON)を、動作中の本体に反映する（configNeedsRestart() が false の時に使う）
+//
+// ・loopTaskから呼ぶ事。
+// ・一覧（wifi, sources）を書き換えるので、前後で netConfigBegin() / netConfigEnd()
+//   を呼ぶ事（net.cpp）。
+// ・パスワードは平文で渡す（configRestoreSecrets() の後の内容）。
+//
+void configApply( JsonDocument &config )
+{
+	// 測位データの送信先が変わる時は、taskRoverが使っていない間に書き換える
+	String ip = cfgStr( config["client"]["ip"], mAgribusIp );
+	int port = cfgInt( config["client"]["port"], mAgribusPort );
+	bool clientChanged = ( ip != mAgribusIp || port != mAgribusPort );
+	if ( clientChanged ) tcpClientSet( false );
+
+	mSecretError = false;		// 書き換えた後のファイルに、復号できない値は残らない
+	configFromJson( config );
+
+	if ( clientChanged ) tcpClientSet( mRunInfo.agribusConnect != 0 );
+}
+
 // ---------------------------------------------------------------- YAMLの書き出し
 
 static void yamlScalar( String &out, JsonVariantConst v )
@@ -435,7 +483,7 @@ bool configCheckYaml( const char *text, String &error )
 
 // 設定(JSON)をYAMLにして設定ファイルに書く
 //
-// ・現在の設定は変えない。反映は次回の起動時。
+// ・現在の設定は変えない。反映は configApply() か、次回の起動時。
 //
 // 戻り値＝ 0:正常終了
 //         負数:エラー
