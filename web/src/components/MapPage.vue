@@ -75,9 +75,9 @@ async function deleteDay(day: string) {
   </div>
 
   <div class="absolute inset-x-0 bottom-4 flex justify-center gap-2">
-    <Button v-if="canFollow" variant="outline" class="bg-background dark:bg-background shadow-sm" @click="map?.followCurrent()">現在地</Button>
-    <Button variant="outline" class="bg-background dark:bg-background shadow-sm" @click="map?.toggleSatellite()">{{ view && view.satellite ? '地図' : '航空写真' }}</Button>
-    <Button variant="outline" class="bg-background dark:bg-background shadow-sm" @click="showDays">履歴</Button>
+    <Button size="sm" v-if="canFollow" variant="outline" class="bg-background dark:bg-background shadow-sm" @click="map?.followCurrent()">現在地</Button>
+    <Button size="sm" variant="outline" class="bg-background dark:bg-background shadow-sm" @click="map?.toggleSatellite()">{{ view && view.satellite ? '地図' : '航空写真' }}</Button>
+    <Button size="sm" variant="outline" class="bg-background dark:bg-background shadow-sm" @click="showDays">履歴</Button>
   </div>
 
   <Dialog v-model:open="daysOpen">
@@ -94,7 +94,7 @@ async function deleteDay(day: string) {
         </div>
       </div>
       <DialogFooter>
-        <DialogClose as-child><Button variant="outline">閉じる</Button></DialogClose>
+        <DialogClose as-child><Button size="sm" variant="outline">閉じる</Button></DialogClose>
       </DialogFooter>
     </DialogContent>
   </Dialog>

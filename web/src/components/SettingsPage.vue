@@ -96,10 +96,10 @@ async function restart() {
 <template>
   <ConfigEditor v-if="editing === 'editing' && state.config" :config="state.config" @close="editing = ''" />
 
-  <div v-else class="grid grid-cols-[repeat(auto-fit,minmax(20rem,1fr))] items-start gap-4">
+  <div v-else class="grid grid-cols-[repeat(auto-fit,minmax(20rem,1fr))] items-start gap-3">
     <Section title="Google Maps の API キー">
       <Input v-model="keyInput" type="text" placeholder="API キー" aria-label="API キー" autocomplete="off" spellcheck="false" />
-      <Button class="mt-3" @click="saveKey">保存</Button>
+      <Button size="sm" class="mt-3" @click="saveKey">保存</Button>
       <p class="text-muted-foreground mt-3 text-xs">
         {{ savedKey ? 'ここに保存したキーを使います。'
           : state.deviceMapsKey ? '未入力のため、本体の設定にあるキーを使います。'
@@ -127,16 +127,16 @@ async function restart() {
             <SelectField id="run-format" v-model="values.format" :options="formatOptions" />
           </div>
           <SwitchField v-model="values.saveAtBoot" label="起動時からログを保存する" />
-          <Button class="mt-4" :disabled="!runChanged" @click="applyRun">変更する</Button>
+          <Button size="sm" class="mt-4" :disabled="!runChanged" @click="applyRun">変更する</Button>
           <p class="text-muted-foreground mt-3 text-xs">Wi-Fi や補正データの接続先を追加・変更するには、「本体の設定を編集」を使います。</p>
         </template>
       </Section>
 
       <Section title="本体">
         <div class="grid gap-2">
-          <Button variant="outline" @click="editConfig">本体の設定を編集</Button>
+          <Button size="sm" variant="outline" @click="editConfig">本体の設定を編集</Button>
           <p v-if="editing === 'loading'" class="text-muted-foreground text-xs">本体から読み込んでいます…</p>
-          <Button variant="outline" @click="restart">本体を再起動</Button>
+          <Button size="sm" variant="outline" @click="restart">本体を再起動</Button>
         </div>
       </Section>
     </template>

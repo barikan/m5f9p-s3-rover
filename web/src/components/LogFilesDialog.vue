@@ -118,8 +118,8 @@ async function remove(f: LogFile) {
       </div>
 
       <DialogFooter>
-        <Button variant="outline" :disabled="loading || !!busy" @click="load">更新</Button>
-        <DialogClose as-child><Button variant="outline" :disabled="!!busy">閉じる</Button></DialogClose>
+        <Button size="sm" variant="outline" :disabled="loading || !!busy" @click="load">更新</Button>
+        <DialogClose as-child><Button size="sm" variant="outline" :disabled="!!busy">閉じる</Button></DialogClose>
       </DialogFooter>
     </DialogContent>
   </Dialog>

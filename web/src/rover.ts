@@ -6,15 +6,26 @@
 import * as host from './host';
 import type { Change, Connection, ConnectionKind, DeviceConfig, LogFile, RunConfig, RunValues, Satellite, Status, TrackPoint, ConnState } from './types';
 
+// 表記は本体の画面（src/pages.cpp の fixName）と揃える
 export const QUALITY: Record<number, { label: string; color: string }> = {
-  0: { label: '測位不能', color: '#C62828' },
-  1: { label: '単独測位', color: '#546E7A' },
+  0: { label: 'No fix', color: '#C62828' },
+  1: { label: 'Single', color: '#546E7A' },
   2: { label: 'DGPS', color: '#546E7A' },
-  4: { label: 'RTK Fix', color: '#2E7D32' },
-  5: { label: 'RTK Float', color: '#EF6C00' },
-  6: { label: '推測', color: '#546E7A' },
+  4: { label: 'Fix', color: '#2E7D32' },
+  5: { label: 'Float', color: '#EF6C00' },
+  6: { label: 'Estimated', color: '#546E7A' },
 };
 export const qualityOf = (q: number) => QUALITY[q] || QUALITY[0];
+
+/** いま使っている補正の方法。本体の画面（src/pages.cpp の correctionName）と同じ決め方 */
+export function correctionOf(status: Status | null, clasRate: number) {
+  const base = status?.base;
+  if (base?.valid && base.ready && !base.reconnecting) {
+    return base.type === 4 ? 'UART' : base.protocol === 0 ? 'TCP' : 'NTRIP';
+  }
+  // 補正データの取得先に接続していない間は、CLAS(NEO-D9C)をF9Pに渡している
+  return (status?.clas ?? -1) >= 0 && clasRate > 0 ? 'CLAS' : 'None';
+}
 
 const TRACK_MIN_DISTANCE = 0.05;    // m。これ以上動いた時に軌跡の点を増やす
 const SYNC_TIMEOUT_MS = 5000;

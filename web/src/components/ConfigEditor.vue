@@ -219,10 +219,10 @@ async function save() {
 <template>
   <div class="mb-4 flex flex-wrap items-center gap-2">
     <div class="flex-1 text-lg font-semibold">本体の設定</div>
-    <Button variant="ghost" @click="close">やめる</Button>
-    <Button @click="save">保存して再起動</Button>
+    <Button size="sm" variant="ghost" @click="close">やめる</Button>
+    <Button size="sm" @click="save">保存して再起動</Button>
   </div>
-  <div class="grid grid-cols-[repeat(auto-fit,minmax(20rem,1fr))] items-start gap-4">
+  <div class="grid grid-cols-[repeat(auto-fit,minmax(20rem,1fr))] items-start gap-3">
     <Section v-for="list in LISTS" :key="list.key" :title="list.title">
       <div class="divide-y border-y">
         <div v-for="(entry, i) in entriesOf(list)" :key="i" class="flex items-center gap-1 py-2" data-entry>
@@ -235,7 +235,7 @@ async function save() {
         </div>
       </div>
       <p v-if="!entriesOf(list).length" class="text-muted-foreground mt-2 text-xs">登録されていません。</p>
-      <Button variant="outline" class="mt-3" @click="editEntry(list, -1)">{{ list.addLabel }}</Button>
+      <Button size="sm" variant="outline" class="mt-3" @click="editEntry(list, -1)">{{ list.addLabel }}</Button>
     </Section>
 
     <Section v-for="group in OTHER_GROUPS" :key="group.title" :title="group.title">

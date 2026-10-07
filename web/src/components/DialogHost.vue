@@ -38,7 +38,7 @@ function submit() {
       <AlertDialogFooter>
         <AlertDialogCancel>やめる</AlertDialogCancel>
         <!-- AlertDialogAction は、押した時に先に「閉じた」が届いて、やめた扱いになる。普通のボタンで受ける -->
-        <Button @click="finish(true)">{{ confirm.okLabel }}</Button>
+        <Button size="sm" @click="finish(true)">{{ confirm.okLabel }}</Button>
       </AlertDialogFooter>
     </AlertDialogContent>
   </AlertDialog>
@@ -52,8 +52,8 @@ function submit() {
         </DialogHeader>
         <FieldInput v-for="f in form.fields" :key="f.key" v-model="values[f.key]" :field="f" />
         <DialogFooter class="mt-6">
-          <DialogClose as-child><Button type="button" variant="outline">やめる</Button></DialogClose>
-          <Button type="submit">OK</Button>
+          <DialogClose as-child><Button size="sm" type="button" variant="outline">やめる</Button></DialogClose>
+          <Button size="sm" type="submit">OK</Button>
         </DialogFooter>
       </form>
     </DialogContent>

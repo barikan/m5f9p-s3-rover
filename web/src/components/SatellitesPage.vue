@@ -45,7 +45,7 @@ const title = (s: Satellite) => `${satName(s)}  仰角 ${s.elev}°  方位角 ${
   <p v-if="state.conn !== 'connected'" class="text-muted-foreground text-sm">衛星の状況は、本体に接続している時に表示されます。</p>
   <p v-else-if="!state.sats || state.satsAge < 0 && !sats.length" class="text-sm">本体から衛星の情報を取得しています…</p>
 
-  <div v-else class="grid items-start gap-4 lg:grid-cols-[minmax(0,26rem)_1fr]">
+  <div v-else class="grid items-start gap-3 lg:grid-cols-[minmax(0,26rem)_1fr]">
     <Section title="衛星の配置">
       <svg :viewBox="`-118 -118 236 236`" class="mx-auto block w-full max-w-md" role="img" aria-label="衛星の配置">
         <!-- 仰角 0°(外周)、30°、60° -->

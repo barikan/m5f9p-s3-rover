@@ -2,9 +2,7 @@
 // 状況タブ。未接続の時は接続先の選択、接続中は測位・補正データ・本体の状況と操作。
 // どちらも、ページの幅いっぱいに表示する。
 import { computed, ref } from 'vue';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import * as host from '../host';
 import * as rover from '../rover';
 import { state, toast } from '../store';
@@ -12,9 +10,11 @@ import type { ConnectionKind, FoundDevice } from '../types';
 import Item from './Item.vue';
 import LogFilesDialog from './LogFilesDialog.vue';
 import Section from './Section.vue';
+import SegmentGroup from './SegmentGroup.vue';
+import StateBadge from './StateBadge.vue';
 
 const SAVE_FORMATS = ['NMEA', 'RAW', 'RTCM', 'CSV'];
-const RATES = [1, 2, 5, 10];
+const RATES = [1, 2, 5, 10].map(hz => ({ value: String(hz), label: `${hz} Hz` }));
 
 // ---------------------------------------------------------------- 接続先の選択
 
@@ -23,9 +23,9 @@ const scanKind = ref<ConnectionKind>(kinds[0].id);
 const scanning = ref(false);
 const devices = ref<FoundDevice[]>([]);
 
-function selectKind(value: unknown) {
+function selectKind(value: string) {
   const kind = kinds.find(k => k.id === value)?.id;
-  if (!kind) return;        // 選択中のものをもう一度押した時
+  if (!kind) return;
   host.stopScan();
   scanning.value = false;
   devices.value = [];
@@ -52,7 +52,6 @@ async function connectTo(device: FoundDevice) {
 // ---------------------------------------------------------------- 状況
 
 const s = computed(() => state.status);
-const quality = computed(() => rover.qualityOf(s.value?.pos.quality ?? 0));
 const sourceName = computed(() => {
   const base = s.value?.base;
   return !base || !base.valid ? 'なし' : base.type === 4 ? 'UART（PHコネクタ）' : `${base.address} / ${base.mount}`;
@@ -62,22 +61,19 @@ const logsOpen = ref(false);
 
 const gigabytes = (megabytes: number) => (megabytes / 1000).toFixed(1);
 
-function setRate(hz: unknown) {
-  if (hz) rover.setRate(Number(hz));
-}
+// 推定精度。大きい時は小数を減らす
+const accuracy = (m: number) => (m < 10 ? m.toFixed(3) : m < 100 ? m.toFixed(1) : String(Math.min(9999, Math.round(m))));
 </script>
 
 <template>
   <!-- 未接続 -->
   <div v-if="state.conn === 'disconnected'">
-    <ToggleGroup
-      v-if="kinds.length > 1" type="single" variant="outline" aria-label="接続の方法"
-      :model-value="scanKind" @update:model-value="selectKind">
-      <ToggleGroupItem v-for="k in kinds" :key="k.id" :value="k.id">{{ k.label }}</ToggleGroupItem>
-    </ToggleGroup>
+    <SegmentGroup
+      v-if="kinds.length > 1" label="接続の方法" :options="kinds.map(k => ({ value: k.id, label: k.label }))"
+      :model-value="scanKind" @update:model-value="selectKind" />
     <div class="mt-4 flex items-center gap-3">
       <div class="flex-1 text-sm">{{ scanning ? '接続する本体を選んでください' : '本体に接続していません' }}</div>
-      <Button @click="startScan">{{ scanning ? '探し直す' : '本体を探す' }}</Button>
+      <Button size="sm" @click="startScan">{{ scanning ? '探し直す' : '本体を探す' }}</Button>
     </div>
     <p v-if="scanning && !devices.length" class="text-muted-foreground mt-3 text-sm">探しています…　本体の電源が入っているか確認してください。</p>
     <Button
@@ -99,20 +95,26 @@ function setRate(hz: unknown) {
       SD カードに旧形式の設定ファイル（m5f9p.ini）が残っています。パスワードが暗号化されずに書かれているので、SD カードから削除してください。
     </div>
   <!-- 幅に入るだけ横に並べ、折り返した行もページの幅いっぱいに広げる -->
-  <div class="flex flex-wrap items-stretch gap-4 *:min-w-80 *:flex-1">
+  <div class="flex flex-wrap items-stretch gap-3 *:min-w-80 *:flex-1">
     <Section title="測位">
-      <Badge class="mb-2 border-transparent text-white" :style="{ background: quality.color }">{{ quality.label }}</Badge>
+      <template #action>
+        <StateBadge kind="fix" />
+      </template>
       <template v-if="s.pos.valid">
         <Item label="緯度" mono>{{ s.pos.lat.toFixed(9) }}°</Item>
         <Item label="経度" mono>{{ s.pos.lon.toFixed(9) }}°</Item>
         <Item label="楕円体高" mono>{{ s.pos.height.toFixed(3) }} m</Item>
+        <Item v-if="s.pos.hAcc !== undefined && s.pos.vAcc !== undefined" label="精度" mono>{{ accuracy(s.pos.hAcc) }} / {{ accuracy(s.pos.vAcc) }} m</Item>
       </template>
       <div v-else>測位データがありません</div>
       <Item label="衛星数">{{ s.pos.sats }}</Item>
       <Item label="測位レート">{{ s.rate }} Hz</Item>
     </Section>
 
-    <Section title="補正データ">
+    <Section title="補正">
+      <template #action>
+        <StateBadge kind="correction" />
+      </template>
       <Item label="取得先">{{ sourceName }}</Item>
       <template v-if="s.base.valid">
         <Item label="状態">{{ s.base.ready ? '受信中' : '接続待ち' }}</Item>
@@ -130,19 +132,17 @@ function setRate(hz: unknown) {
           <div>{{ s.save.on ? `ログを保存中（${SAVE_FORMATS[s.save.format] || '?'}）` : 'ログ保存は停止中' }}</div>
           <div class="text-muted-foreground text-xs">{{ s.save.ready ? `書き込み ${s.save.count} 回` : 'SDカードが使えません' }}</div>
         </div>
-        <Button v-if="s.save.on" variant="outline" @click="rover.setSaving(false)">停止</Button>
-        <Button v-else :disabled="!s.save.ready" @click="rover.setSaving(true)">保存開始</Button>
+        <Button v-if="s.save.on" variant="outline" size="sm" @click="rover.setSaving(false)">停止</Button>
+        <Button v-else size="sm" :disabled="!s.save.ready" @click="rover.setSaving(true)">保存開始</Button>
       </div>
-      <!-- ログファイルの取り出しは、USBで接続している時だけ（BLEでは時間がかかりすぎる） -->
-      <div class="mt-3 flex items-center gap-3">
+      <!-- ログファイルの取り出しは、USBで接続している時だけ（BLEでは時間がかかりすぎる）。AndroidはUSBで接続できないので出さない -->
+      <div v-if="host.platform !== 'android'" class="mt-3 flex items-center gap-3">
         <Button variant="outline" size="sm" :disabled="state.kind !== 'usb' || !s.save.ready" @click="logsOpen = true">ログファイル…</Button>
         <span v-if="state.kind !== 'usb'" class="text-muted-foreground text-xs">ダウンロードは USB で接続している時に使えます</span>
       </div>
       <LogFilesDialog v-model:open="logsOpen" />
       <div class="text-muted-foreground mt-4 mb-2 text-xs">測位レート</div>
-      <ToggleGroup type="single" variant="outline" aria-label="測位レート" :model-value="String(s.rate)" @update:model-value="setRate">
-        <ToggleGroupItem v-for="hz in RATES" :key="hz" :value="String(hz)">{{ hz }} Hz</ToggleGroupItem>
-      </ToggleGroup>
+      <SegmentGroup label="測位レート" :options="RATES" :model-value="String(s.rate)" @update:model-value="rover.setRate(Number($event))" />
     </Section>
 
     <Section title="本体">

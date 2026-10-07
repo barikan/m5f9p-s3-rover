@@ -102,6 +102,7 @@ static void cmdStatus( JsonDocument &re )
 	base["type"] = mBaseSrc.type;
 	base["address"] = mBaseSrc.address;
 	base["mount"] = mBaseSrc.mountPoint;
+	base["protocol"] = mBaseSrc.protocol;
 	base["ready"] = (bool)mBaseRecvReady;
 	base["reconnecting"] = (bool)mBaseReconnecting;
 	base["bytes"] = (int)mBaseRecvCount;

@@ -14,6 +14,8 @@ export interface Status {
     lon: number;
     height: number;         // 楕円体高 m
     sats: number;
+    hAcc?: number;          // 推定精度（水平）m。古いファームウェアには無い
+    vAcc?: number;          // 推定精度（垂直）m
   };
   rate: number;             // 測位レート Hz
   base: {
@@ -21,6 +23,7 @@ export interface Status {
     type: number;           // 4:UART（PHコネクタ）
     address: string;
     mount: string;
+    protocol?: number;      // 0:無手順(TCP) それ以外:NTRIP。古いファームウェアには無い
     ready: boolean;
     reconnecting: boolean;
     bytes: number;
