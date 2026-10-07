@@ -64,7 +64,7 @@ mise run android-screenshot          # 端末の画面を screenshot.png に保�
 - `web/src/host.ts`: 動作環境の違い(接続、ファイル)を吸収する。Windows は Web Serial と Web Bluetooth を画面側で扱い、Android は `window.AndroidBridge` と `window.onNative` で Kotlin の `BleClient` とやり取りする。
 - 画面は両方とも `https://m5f9p.azukimap.jp/` から読み込んだ扱いにしている(Electron は `protocol.handle`、Android は `WebViewAssetLoader`)。地図の API キーの制限を同じ URL で登録できるようにするためで、変えるときは両方を揃える。
 - 本体との通信仕様は `src/cmd.cpp` と `src/ble.cpp` の先頭にある。状況やコマンドの項目を増減したら `web/src/rover.ts` と画面を合わせる。
-- 衛星の配置と信号強度(`src/sats.cpp`、`web/src/satellites.ts`、`SatellitesPage.vue`)は、アプリが問い合わせている間だけ F9P に出力させる。常に出力させる作りにしない(F9P の UART と BLE の負荷が増え、RAW 形式のログにも入る)。
+- 衛星の配置と信号強度(`src/sats.cpp`、`web/src/satellites.ts`、`SatellitesPage.vue`、本体の画面は `pages.cpp` の `drawSatellites`)は、アプリが問い合わせている間と、本体の Satellites ページを開いている間だけ F9P に出力させる。常に出力させる作りにしない(F9P の UART と BLE の負荷が増え、RAW 形式のログにも入る)。
 - 状況は BLE では本体が1秒ごとに送り、USB では送らない。`rover.ts` は届いていないときだけ `status` を問い合わせる。
 - Google Maps の API キーは、利用者がアプリの設定タブか本体の設定ファイル(`google.key`)に置く。リポジトリやビルド設定に入れない。地図は Maps JavaScript API で、Maps SDK for Android には戻さない(キーを実行時に渡せないため)。
 

@@ -34,12 +34,14 @@ FONTS = [
 
 # (名前, SVGファイル, 大きさ(px))
 ICONS = [
-    ("iconStatus", "locate-fixed", 44),
-    ("iconLogging", "save", 44),
-    ("iconRate", "gauge", 44),
-    ("iconCorrections", "radio-tower", 44),
-    ("iconDevice", "cpu", 44),
-    ("iconSetup", "settings", 44),
+    # Menu のタイル
+    ("iconStatus", "locate-fixed", 32),
+    ("iconSatellites", "satellite", 32),
+    ("iconLogging", "save", 32),
+    ("iconRate", "gauge", 32),
+    ("iconCorrections", "radio-tower", 32),
+    ("iconDevice", "cpu", 32),
+    ("iconSetup", "settings", 32),
     ("iconBack", "chevron-left", 28),
     # Status の最下段（ラベルの代わり）
     ("iconTemp", "thermometer", 20),

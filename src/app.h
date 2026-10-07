@@ -235,7 +235,27 @@ void sysmonPoll();
 //                        sats.cpp
 // ************************************************************
 
+#define SATS_MAX 64				// 覚える衛星の数
+#define SIGNALS_MAX 4			// 1機あたりの信号の数
+
+struct stSignal {
+	uint8_t sigId;
+	uint8_t cno;		// 強度 dBHz
+	uint8_t used;		// 測位に使っている
+};
+
+struct stSatellite {
+	uint8_t gnssId;		// 0:GPS 1:SBAS 2:Galileo 3:BeiDou 5:QZSS 6:GLONASS
+	uint8_t svId;
+	int8_t elev;		// 仰角（度）
+	int16_t azim;		// 方位角（度）
+	uint8_t used;		// 測位に使っている
+	uint8_t numSignals;
+	struct stSignal signals[ SIGNALS_MAX ];
+};
+
 bool satsDecode( struct stUbxStatus *ubx );
+int satsGet( struct stSatellite *out, int max );
 void satsPoll();
 
 // ************************************************************

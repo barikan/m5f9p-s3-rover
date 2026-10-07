@@ -6,6 +6,7 @@
 //
 //   Status      測位の状況。ボタンは無く、どこをタップしても Menu に移る
 //   Menu        各ページへのタイル
+//   Satellites  衛星の配置と信号強度。画面をタップすると、配置と信号強度が切り替わる
 //   Logging     ログ保存の開始・停止、起動時から保存するかどうか
 //   Rate        1秒あたりの測位回数
 //   Corrections 補正データの受信状況
@@ -32,6 +33,7 @@ enum {
 	PAGE_CORRECTIONS,
 	PAGE_DEVICE,
 	PAGE_SETUP,
+	PAGE_SATELLITES,
 };
 
 // タップできる範囲の番号
@@ -46,6 +48,7 @@ enum {
 	HIT_RESTART,
 	HIT_CONFIRM_YES,
 	HIT_CONFIRM_NO,
+	HIT_SAT_VIEW,			// Satellites の表示の切り替え
 };
 
 #define DRAW_PERIOD 250			// 画面を描き直す間隔（ミリ秒）
@@ -305,32 +308,240 @@ static void drawStatus()
 	drawGauge( gaugeX[4], y, rowHeight, iconSd, text, mSdTotalBytes == 0 ? COLOR_RED : COLOR_TEXT );
 }
 
-// Menu: 3x2 のタイル
+// Menu: タイルを3列×2段、その下に横長のタイルを1つ
 //
 static void drawMenu()
 {
-	static const struct { const char *label; const uint8_t *icon; int page; } items[6] = {
+	static const struct { const char *label; const uint8_t *icon; int page; } items[7] = {
 		{ "Status", iconStatus, PAGE_STATUS },
+		{ "Satellites", iconSatellites, PAGE_SATELLITES },
+		{ "Corrections", iconCorrections, PAGE_CORRECTIONS },
 		{ "Logging", iconLogging, PAGE_LOGGING },
 		{ "Rate", iconRate, PAGE_RATE },
-		{ "Corrections", iconCorrections, PAGE_CORRECTIONS },
 		{ "Device", iconDevice, PAGE_DEVICE },
-		{ "Setup", iconSetup, PAGE_SETUP },
+		{ "Setup", iconSetup, PAGE_SETUP },		// 最下段。横いっぱい
 	};
 	const int gap = 8;
 	const int w = ( SCREEN_WIDTH - gap * 4 ) / 3;
-	const int h = ( SCREEN_HEIGHT - gap * 3 ) / 2;
+	const int h = 82;
+	const int lastY = gap + ( h + gap ) * 2;
+	const int lastHeight = SCREEN_HEIGHT - lastY - gap;
 
-	for( int i=0; i < 6; i++ ){
-		int x = gap + ( i % 3 ) * ( w + gap );
-		int y = gap + ( i / 3 ) * ( h + gap );
+	for( int i=0; i < 7; i++ ){
+		bool last = ( i == 6 );
+		int x = last ? gap : gap + ( i % 3 ) * ( w + gap );
+		int y = last ? lastY : gap + ( i / 3 ) * ( h + gap );
+		int tw = last ? SCREEN_WIDTH - gap * 2 : w;
+		int th = last ? lastHeight : h;
 		int id = HIT_PAGE + items[i].page;
 		int bg = ( mPressed == id ) ? COLOR_PRESSED : COLOR_SURFACE;
-		screenCanvas().fillSmoothRoundRect( x, y, w, h, 12, (uint16_t) bg );
-		screenIcon( x + ( w - iconStatusSize ) / 2, y + 22, items[i].icon, iconStatusSize, COLOR_TEXT, bg );
-		screenText( x + w / 2, y + h - 24, items[i].label, FONT_TEXT, COLOR_TEXT, lgfx::textdatum_t::middle_center );
-		hitAdd( x, y, w, h, id );
+		screenCanvas().fillSmoothRoundRect( x, y, tw, th, 12, (uint16_t) bg );
+		if ( last ){
+			// アイコンと文字を横に並べて、中央に置く
+			int total = iconStatusSize + 10 + screenTextWidth( items[i].label, FONT_TEXT );
+			int left = x + ( tw - total ) / 2;
+			screenIcon( left, y + ( th - iconStatusSize ) / 2, items[i].icon, iconStatusSize, COLOR_TEXT, bg );
+			screenText( left + iconStatusSize + 10, y + th / 2 + 1, items[i].label, FONT_TEXT, COLOR_TEXT, lgfx::textdatum_t::middle_left );
+		}
+		else {
+			screenIcon( x + ( tw - iconStatusSize ) / 2, y + 12, items[i].icon, iconStatusSize, COLOR_TEXT, bg );
+			screenText( x + tw / 2, y + th - 18, items[i].label, FONT_TEXT, COLOR_TEXT, lgfx::textdatum_t::middle_center );
+		}
+		hitAdd( x, y, tw, th, id );
 	}
+}
+
+// ---------------------------------------------------------------- Satellites
+
+// 衛星系。色と、表示する順番
+static const struct { int gnssId; const char *name; uint16_t color; } mGnss[] = {
+	// 名前は3文字の略称（画面が狭いため）
+	{ 0, "GPS", 0x4D6A },		// 緑
+	{ 5, "QZS", 0xEAD0 },		// QZSS。赤紫
+	{ 2, "GAL", 0x4D5F },		// Galileo。青
+	{ 3, "BDS", 0xFCC0 },		// BeiDou。橙
+	{ 6, "GLO", 0xB3BB },		// GLONASS。紫
+	{ 1, "SBS", 0x9CF3 },		// SBAS。灰
+};
+#define GNSS_COUNT ( (int)( sizeof(mGnss) / sizeof(mGnss[0]) ) )
+
+static int mSatView = 0;		// 0:配置 1:信号強度
+static struct stSatellite mSatList[ SATS_MAX ];
+
+static int gnssIndex( int gnssId )
+{
+	for( int i=0; i < GNSS_COUNT; i++ ) if ( mGnss[i].gnssId == gnssId ) return i;
+	return GNSS_COUNT - 1;
+}
+
+// 信号が L1 の帯（1.5GHz付近）かどうか。それ以外（L2, L5, E5, B2 など）は L2 の帯として扱う
+//
+static bool isL1( int gnssId, int sigId )
+{
+	switch( gnssId ){
+		case 2: return sigId <= 1;					// Galileo E1C, E1B
+		case 3: return sigId <= 1 || sigId == 5;	// BeiDou B1I, B1C
+		case 5: return sigId <= 1;					// QZSS L1C/A, L1S
+	}
+	return sigId == 0;								// GPS, SBAS L1C/A、GLONASS L1OF
+}
+
+// 衛星の、指定した帯の信号の強度（複数ある時は強い方）。無ければ 0
+//
+static int bandCno( const struct stSatellite *sat, bool l1, bool *used )
+{
+	int best = 0;
+	*used = false;
+	for( int i=0; i < sat->numSignals; i++ ){
+		if ( isL1( sat->gnssId, sat->signals[i].sigId ) != l1 ) continue;
+		if ( sat->signals[i].cno > best ){
+			best = sat->signals[i].cno;
+			*used = sat->signals[i].used;
+		}
+	}
+	return best;
+}
+
+// 色を暗くする（測位に使っていない信号の棒）
+//
+static uint16_t dim( uint16_t color )
+{
+	int r = ( color >> 11 ) & 0x1F, g = ( color >> 5 ) & 0x3F, b = color & 0x1F;
+	return (uint16_t)( ( ( r * 2 / 5 ) << 11 ) | ( ( g * 2 / 5 ) << 5 ) | ( b * 2 / 5 ) );
+}
+
+// 衛星の配置。天頂が中心、外周が地平線。北が上
+//
+static void drawSkyPlot( int num )
+{
+	M5Canvas &canvas = screenCanvas();
+	const int radius = 92;
+	const int cx = MARGIN + radius + 8;
+	const int cy = HEADER_HEIGHT + ( SCREEN_HEIGHT - HEADER_HEIGHT ) / 2;
+
+	// 仰角 0°(外周)、30°、60° の円と、東西・南北の線
+	for( int e = 0; e < 90; e += 30 ) canvas.drawCircle( cx, cy, radius * ( 90 - e ) / 90, (uint16_t) COLOR_PRESSED );
+	canvas.drawFastHLine( cx - radius, cy, radius * 2, (uint16_t) COLOR_PRESSED );
+	canvas.drawFastVLine( cx, cy - radius, radius * 2, (uint16_t) COLOR_PRESSED );
+	screenText( cx, cy - radius + 1, "N", FONT_TEXT, COLOR_MUTED, lgfx::textdatum_t::bottom_center );
+	screenText( cx + radius + 3, cy, "E", FONT_TEXT, COLOR_MUTED, lgfx::textdatum_t::middle_left );
+	screenText( cx - radius - 3, cy, "W", FONT_TEXT, COLOR_MUTED, lgfx::textdatum_t::middle_right );
+
+	// 衛星。使っていないものを先に描き、使っているものを上に重ねる
+	int visible[ GNSS_COUNT ] = {}, used[ GNSS_COUNT ] = {};
+	for( int pass = 0; pass < 2; pass++ ){
+		for( int i=0; i < num; i++ ){
+			struct stSatellite *sat = &mSatList[i];
+			int g = gnssIndex( sat->gnssId );
+			if ( pass == 0 ){
+				visible[g]++;
+				if ( sat->used ) used[g]++;
+			}
+			if ( sat->elev < 0 || sat->elev > 90 || (int) sat->used != pass ) continue;
+			float r = radius * ( 90 - sat->elev ) / 90.0f;
+			float a = sat->azim * DEG_TO_RAD;
+			int x = cx + (int) lroundf( r * sinf( a ) );
+			int y = cy - (int) lroundf( r * cosf( a ) );
+			if ( sat->used ) canvas.fillSmoothCircle( x, y, 5, mGnss[g].color );
+			else {
+				canvas.fillSmoothCircle( x, y, 5, mGnss[g].color );
+				canvas.fillSmoothCircle( x, y, 3, (uint16_t) COLOR_BG );
+			}
+		}
+	}
+
+	// 右側: 衛星系ごとの「使っている数 / 見えている数」
+	const int listX = cx + radius + 16;
+	const int rowHeight = 30;
+	int y = HEADER_HEIGHT + 8;
+	for( int g = 0; g < GNSS_COUNT; g++ ){
+		if ( visible[g] == 0 ) continue;
+		char text[16];
+		canvas.fillSmoothCircle( listX + 5, y + rowHeight / 2, 5, mGnss[g].color );
+		screenText( listX + 15, y + rowHeight / 2 + 1, mGnss[g].name, FONT_TEXT, COLOR_MUTED, lgfx::textdatum_t::middle_left );
+		snprintf( text, sizeof(text), "%d/%d", used[g], visible[g] );
+		screenText( SCREEN_WIDTH - MARGIN + 4, y + rowHeight / 2 + 1, text, FONT_TEXT, COLOR_TEXT, lgfx::textdatum_t::middle_right );
+		y += rowHeight;
+	}
+}
+
+// 信号強度。衛星ごとに、L1の帯とL2の帯の棒を並べる。衛星系ごとにまとめ、番号順
+//
+static void drawSignals( int num )
+{
+	M5Canvas &canvas = screenCanvas();
+	const int cnoMax = 55;
+	const int top = HEADER_HEIGHT + 6;
+	const int bottom = SCREEN_HEIGHT - 26;		// 棒の下端。その下に衛星系の名前
+	const int height = bottom - top;
+
+	// 信号を受信している衛星を数え、1機あたりの幅を決める
+	int count = 0;
+	for( int i=0; i < num; i++ ) if ( mSatList[i].numSignals ) count++;
+	if ( count == 0 ){
+		screenText( SCREEN_WIDTH / 2, ( top + bottom ) / 2, "No signals", FONT_TEXT, COLOR_MUTED, lgfx::textdatum_t::middle_center );
+		return;
+	}
+	const int groupGap = 5;
+	int groups = 0;
+	for( int g = 0; g < GNSS_COUNT; g++ ){
+		for( int i=0; i < num; i++ ) if ( gnssIndex( mSatList[i].gnssId ) == g && mSatList[i].numSignals ){ groups++; break; }
+	}
+	int slot = ( SCREEN_WIDTH - MARGIN - 22 - groupGap * ( groups - 1 ) ) / count;	// 左に目盛りの数字
+	if ( slot > 14 ) slot = 14;
+	if ( slot < 4 ) slot = 4;
+	int bar = ( slot - 1 ) / 2;
+	if ( bar < 1 ) bar = 1;
+
+	// 目盛り（数字だけ。線は引かない）
+	for( int cno = 20; cno <= 40; cno += 20 ){
+		char text[8];
+		snprintf( text, sizeof(text), "%d", cno );
+		screenText( 20, bottom - height * cno / cnoMax, text, FONT_TEXT, COLOR_MUTED, lgfx::textdatum_t::middle_right );
+	}
+
+	int x = 26;
+	for( int g = 0; g < GNSS_COUNT; g++ ){
+		int startX = x;
+		// 番号順に並べる（一覧は衛星系ごとに番号順で届くが、念のため小さい順に探す）
+		for( int sv = 0; sv < 256; sv++ ){
+			for( int i=0; i < num; i++ ){
+				struct stSatellite *sat = &mSatList[i];
+				if ( sat->svId != sv || gnssIndex( sat->gnssId ) != g || sat->numSignals == 0 ) continue;
+				for( int band = 0; band < 2; band++ ){
+					bool used;
+					int cno = bandCno( sat, band == 0, &used );
+					if ( cno == 0 ) continue;
+					int h = height * ( cno > cnoMax ? cnoMax : cno ) / cnoMax;
+					canvas.fillRect( x + band * bar, bottom - h, bar, h, used ? mGnss[g].color : dim( mGnss[g].color ) );
+				}
+				x += slot;
+			}
+		}
+		if ( x == startX ) continue;
+		// 衛星系の印を、まとまりの下に置く
+		canvas.fillRect( startX, bottom + 4, x - startX - 1, 3, mGnss[g].color );
+		if ( x - startX >= 34 ) screenText( ( startX + x ) / 2, bottom + 16, mGnss[g].name, FONT_TEXT, COLOR_MUTED, lgfx::textdatum_t::middle_center );
+		x += groupGap;
+	}
+}
+
+// Satellites: 衛星の配置、または信号強度。画面をタップすると切り替わる
+//
+static void drawSatellites()
+{
+	drawHeader( mSatView == 0 ? "Satellites" : "Signal (dBHz)" );
+	screenText( SCREEN_WIDTH - MARGIN, HEADER_HEIGHT / 2 + 1, mSatView == 0 ? "1/2" : "2/2", FONT_TEXT, COLOR_MUTED, lgfx::textdatum_t::middle_right );
+	hitAdd( 0, HEADER_HEIGHT, SCREEN_WIDTH, SCREEN_HEIGHT - HEADER_HEIGHT, HIT_SAT_VIEW );
+
+	// 表示している間だけ、F9Pに衛星の情報を出力させる（satsGet を呼んでいる間）
+	int num = satsGet( mSatList, SATS_MAX );
+	if ( num < 0 ){
+		screenText( SCREEN_WIDTH / 2, ( HEADER_HEIGHT + SCREEN_HEIGHT ) / 2, "Waiting for satellite data...", FONT_TEXT, COLOR_MUTED, lgfx::textdatum_t::middle_center );
+		return;
+	}
+	if ( mSatView == 0 ) drawSkyPlot( num );
+	else drawSignals( num );
 }
 
 static void drawLogging()
@@ -492,6 +703,7 @@ static void onTap( int id )
 	}
 	else if ( id >= HIT_RATE && id < HIT_RUN_SETUP ) appSetSolutionRate( mRates[ id - HIT_RATE ] );
 	else if ( id == HIT_RUN_SETUP || id == HIT_RESTART ) mConfirm = id;
+	else if ( id == HIT_SAT_VIEW ) mSatView = ! mSatView;
 	else if ( id == HIT_CONFIRM_NO ) mConfirm = HIT_NONE;
 	else if ( id == HIT_CONFIRM_YES ){
 		if ( mConfirm == HIT_RUN_SETUP ){
@@ -531,6 +743,7 @@ static void draw( int passkey )
 		case PAGE_CORRECTIONS: drawCorrections(); break;
 		case PAGE_DEVICE: drawDevice(); break;
 		case PAGE_SETUP: drawSetup(); break;
+		case PAGE_SATELLITES: drawSatellites(); break;
 	}
 	screenFlush();
 }

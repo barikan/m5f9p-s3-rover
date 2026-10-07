@@ -2,14 +2,14 @@
 //                    衛星の配置と信号強度
 // ************************************************************
 //
-// アプリの「衛星」タブ用。F9Pの次のメッセージから、衛星ごとの方位角・仰角と、
+// アプリの「衛星」タブと、本体の画面の Satellites ページ用。F9Pの次のメッセージから、衛星ごとの方位角・仰角と、
 // 信号ごと（衛星×周波数）の強度を取り出す。
 //
 //   NAV-SAT (0x01 0x35)  衛星ごとの方位角、仰角、測位に使っているか
 //   NAV-SIG (0x01 0x43)  信号ごとの強度(C/N0)、測位に使っているか
 //
-// どちらも大きい（合わせて1～2KB）ので、普段は出力させない。sats.get コマンドで
-// 問い合わせがあった時に出力を始め、SATS_TIMEOUT の間問い合わせが無ければ止める。
+// どちらも大きい（合わせて1～2KB）ので、普段は出力させない。sats.get コマンド、または
+// 本体の画面(satsGet)から問い合わせがあった時に出力を始め、SATS_TIMEOUT の間問い合わせが無ければ止める。
 // 出力は1秒に1回（測位レートがNHzなら、N回に1回）。
 //
 //   ・メッセージのデコードは taskRover（satsDecode）。
@@ -21,25 +21,7 @@
 
 #include "app.h"
 
-#define SATS_MAX 64				// 覚える衛星の数
-#define SIGNALS_MAX 4			// 1機あたりの信号の数
 #define SATS_TIMEOUT 10000		// 問い合わせが無い時に、出力を止めるまでの時間（ミリ秒）
-
-struct stSignal {
-	uint8_t sigId;
-	uint8_t cno;		// 強度 dBHz
-	uint8_t used;		// 測位に使っている
-};
-
-struct stSatellite {
-	uint8_t gnssId;		// 0:GPS 1:SBAS 2:Galileo 3:BeiDou 5:QZSS 6:GLONASS
-	uint8_t svId;
-	int8_t elev;		// 仰角（度）
-	int16_t azim;		// 方位角（度）
-	uint8_t used;		// 測位に使っている
-	uint8_t numSignals;
-	struct stSignal signals[ SIGNALS_MAX ];
-};
 
 static struct stSatellite mWork[ SATS_MAX ];	// 受信中の内容（taskRoverだけが触る）
 static int mNumWork;
@@ -156,6 +138,29 @@ void satsToJson( JsonDocument &re )
 		}
 	}
 	xSemaphoreGive( mSatsMutex );
+}
+
+// 衛星の一覧を取り出す（本体の画面用）
+//
+// ・呼び出している間、F9Pに衛星のメッセージを出力させる（しばらく呼ばれなければ止まる）。
+//
+// 戻り値＝ 取り出した数
+//         -1:まだ受信していない
+//
+int satsGet( struct stSatellite *out, int max )
+{
+	mRequestMillis = millis();
+	mRequested = true;
+	if ( ! mSatsMutex ) return -1;
+
+	int num = -1;
+	xSemaphoreTake( mSatsMutex, portMAX_DELAY );
+	if ( mSatsMillis != 0 && millis() - mSatsMillis < SATS_TIMEOUT ){
+		num = mNumSats < max ? mNumSats : max;
+		memcpy( out, mSats, sizeof( struct stSatellite ) * num );
+	}
+	xSemaphoreGive( mSatsMutex );
+	return num;
 }
 
 // F9Pの出力間隔を設定する
