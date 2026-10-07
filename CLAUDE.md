@@ -127,6 +127,7 @@ mise run android-screenshot          # 端末の画面を screenshot.png に保�
 
 ### コマンドと BLE
 
+- **USB への応答は、長さが 64 バイトの倍数にならないようにしている**(`cmdPollUsb`)。倍数だと USB の送信の区切りが付かず、次に何か出力するまで相手に届かない(数秒止まる)。USB に行を出す処理を足すときは、同じことに気をつける。
 - コマンドは1行の JSON で、入口は USB シリアル(cmd.cpp)と BLE(ble.cpp)。どちらも `cmdExecute()` を通り、**実行は loopTask で行う。**
 - **ペアリングは相手(Android、Windows)から始めさせる。`BLEDevice::setEncryptionLevel()` を呼ばない。** 本体から暗号化を求めるのは、接続して数秒たっても暗号化されないときだけ(`blePoll`)。 呼ぶと本体が接続のたびにペアリングを求め、Android では画面が通知になり、Windows ではアプリの番号入力が呼ばれずに接続できなくなる。
 - ペアリングのコールバック(`SecurityCallbacks`)も BLE のタスクから呼ばれる。変数に入れるだけにし、番号の表示は `loop()` が `blePasskey()` を見て行う。

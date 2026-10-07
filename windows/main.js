@@ -109,6 +109,19 @@ function dataFile(name) {
   return path.join(dataDir(), name);
 }
 
+// ファイルを「ダウンロード」フォルダに保存する（本体から取り出したログファイル）。
+// 同じ名前がある時は、"名前 (2).log" のように番号を付ける。戻り値は保存した場所。
+ipcMain.handle('save-file', (event, name, bytes) => {
+  const base = path.basename(String(name)).replace(/[^\w.\- ()]/g, '_') || 'file';
+  const dir = app.getPath('downloads');
+  const ext = path.extname(base);
+  const stem = base.slice(0, base.length - ext.length);
+  let file = path.join(dir, base);
+  for (let n = 2; fs.existsSync(file); n++) file = path.join(dir, `${stem} (${n})${ext}`);
+  fs.writeFileSync(file, Buffer.from(bytes));
+  return file;
+});
+
 ipcMain.handle('storage-read', (event, name) => {
   const file = dataFile(name);
   return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null;

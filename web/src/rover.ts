@@ -4,7 +4,7 @@
 // 画面へは store.ts が橋渡しする（ここの state を写し、変化の通知(subscribe)を受けて描き直す）。
 
 import * as host from './host';
-import type { Change, Connection, DeviceConfig, RunConfig, RunValues, Satellite, Status, TrackPoint, ConnState } from './types';
+import type { Change, Connection, ConnectionKind, DeviceConfig, LogFile, RunConfig, RunValues, Satellite, Status, TrackPoint, ConnState } from './types';
 
 export const QUALITY: Record<number, { label: string; color: string }> = {
   0: { label: '測位不能', color: '#C62828' },
@@ -24,6 +24,7 @@ const SATS_POLL_MS = 2000;         // 衛星の配置と信号強度を問い合
 export interface RoverState {
   conn: ConnState;
   name: string;
+  kind: ConnectionKind | null;      // 接続の種類。ログファイルの取り出しはUSBだけ
   status: Status | null;            // 本体が1秒毎に送る状況
   baseRate: number;                 // 補正データの受信量（バイト/秒）
   clasRate: number;
@@ -41,6 +42,7 @@ export interface RoverState {
 export const state: RoverState = {
   conn: 'disconnected',
   name: '',
+  kind: null,
   status: null,
   baseRate: 0,
   clasRate: 0,
@@ -65,6 +67,11 @@ interface Message {
   error?: string;
   config?: DeviceConfig;
   key?: string;
+  files?: LogFile[];
+  saving?: string;
+  data?: string;
+  size?: number;
+  bytes?: number;
   pts?: [number, number, number, number][];     // [時刻(秒), 緯度, 経度, quality]
   age?: number;
   // [gnssId, svId, 仰角, 方位角, 使用, [[sigId, 強度, 使用], ...]]
@@ -107,6 +114,7 @@ function dayOf(ms: number) {
 export function attach(conn: Connection) {
   connection = conn;
   state.name = conn.name;
+  state.kind = conn.kind;
   conn.onLine = onLine;
   conn.onMessage = say;
   conn.onState = s => {
@@ -116,6 +124,8 @@ export function attach(conn: Connection) {
     else {
       state.status = null;
       state.sats = null;
+      for (const waiting of pending.values()) clearTimeout(waiting.timer);
+      pending.clear();
       endSync();
       if (s === 'disconnected') connection = null;
     }
@@ -178,6 +188,14 @@ function onLine(line: string) {
     return;
   }
   if (!m.re) return;
+  // request() で待っている応答は、そちらに渡す（失敗の応答も）
+  const waiting = pending.get(m.re);
+  if (waiting) {
+    pending.delete(m.re);
+    clearTimeout(waiting.timer);
+    waiting.resolve(m);
+    return;
+  }
   if (!m.ok) {
     if (m.re === 'track.get') endSync();
     say(`${m.re}: ${m.error || '失敗しました'}`);
@@ -308,6 +326,72 @@ function endSync() {
   state.syncing = false;
   notify('track');
 }
+
+// ---------------------------------------------------------------- 応答を待つコマンド
+//
+// コマンドを送り、その応答を受け取る。同じコマンドを同時に2つは送れない。
+
+const REQUEST_TIMEOUT_MS = 8000;
+const pending = new Map<string, { resolve: (m: Message) => void; timer: ReturnType<typeof setTimeout> }>();
+
+function request(command: { cmd: string; [key: string]: unknown }): Promise<Message> {
+  return new Promise((resolve, reject) => {
+    if (state.conn !== 'connected') return reject(new Error('本体に接続していません'));
+    if (pending.has(command.cmd)) return reject(new Error('前の処理が終わっていません'));
+    const timer = setTimeout(() => {
+      pending.delete(command.cmd);
+      reject(new Error('本体から応答がありません'));
+    }, REQUEST_TIMEOUT_MS);
+    pending.set(command.cmd, {
+      timer,
+      resolve: m => (m.ok ? resolve(m) : reject(new Error(m.error || '失敗しました'))),
+    });
+    send(command);
+  });
+}
+
+// ---------------------------------------------------------------- ログファイル
+//
+// 本体のSDカードに保存したログファイルの一覧、取り出し、削除（USB接続の時だけ使える）。
+
+/** ログファイルの一覧。saving は、いま書き込んでいるファイルの名前 */
+export async function listLogs(): Promise<{ files: LogFile[]; saving: string }> {
+  const files: LogFile[] = [];
+  let saving = '';
+  for (;;) {
+    const m = await request({ cmd: 'log.list', start: files.length });
+    files.push(...(m.files ?? []));
+    saving = m.saving ?? '';
+    if (!m.more || !(m.files ?? []).length) break;
+  }
+  return { files, saving };
+}
+
+/** ログファイルを読み出す。onProgress には、読んだバイト数と全体のバイト数が渡る */
+export async function readLog(name: string, onProgress?: (done: number, total: number) => void): Promise<Uint8Array> {
+  const parts: Uint8Array[] = [];
+  let offset = 0;
+  for (;;) {
+    const m = await request({ cmd: 'log.get', name, offset });
+    const binary = atob(m.data ?? '');
+    const chunk = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) chunk[i] = binary.charCodeAt(i);
+    parts.push(chunk);
+    offset += chunk.length;
+    const total = m.size ?? offset;
+    if (onProgress) onProgress(offset, total);
+    if (!chunk.length || offset >= total) break;
+  }
+  const bytes = new Uint8Array(offset);
+  let position = 0;
+  for (const part of parts) {
+    bytes.set(part, position);
+    position += part.length;
+  }
+  return bytes;
+}
+
+export const removeLog = (name: string) => request({ cmd: 'log.remove', name }).then(() => undefined);
 
 // ---------------------------------------------------------------- 衛星
 //

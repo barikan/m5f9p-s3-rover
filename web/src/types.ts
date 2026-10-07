@@ -116,6 +116,12 @@ export interface Satellite {
   signals: SatSignal[];
 }
 
+/** 本体のSDカードにあるログファイル（log.list の応答） */
+export interface LogFile {
+  name: string;             // "20261006/gps_r0_20261006_123456.log" の形
+  size: number;             // バイト数
+}
+
 /** 軌跡の1点 */
 export interface TrackPoint {
   t: number;                // 時刻 ms
@@ -146,6 +152,7 @@ export interface PairingReply {
 /** 本体との接続。動作環境ごとの実装は host.ts */
 export interface Connection {
   name: string;                           // 表示用の名前
+  kind: ConnectionKind;                   // 接続の種類
   send(line: string): void;               // 1行送る
   close(): void;                          // 切断する（再接続もしない）
   onLine: (line: string) => void;         // 受信した行の通知先

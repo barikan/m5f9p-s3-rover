@@ -129,6 +129,124 @@ int sdRemove( const char *fileName )
 	return ok ? 0 : -1;
 }
 
+// ---------------------------------------------------------------- ログファイルの取り出し
+//
+// アプリからのダウンロード用（log.list, log.get, log.remove コマンド）。
+// ファイル名は、ログのフォルダ(mGpsLogDir)からの相対で "20261006/gps_r0_20261006_123456.log" の形。
+
+// ファイル名が正しい形かどうか調べ、SDカード上のパスにする
+//
+// ・"日付(8桁)/ファイル名" の形だけを受け付ける（ほかのフォルダを指せないようにする）。
+//
+// 戻り値＝ true:正しい
+//
+static bool logPath( const char *name, char *path, int pathSize )
+{
+	if ( ! name || strlen( name ) < 10 || strlen( name ) > 48 ) return false;
+	for( int i=0; i < 8; i++ ) if ( ! isdigit( (unsigned char) name[i] ) ) return false;
+	if ( name[8] != '/' ) return false;
+	for( const char *p = name + 9; *p; p++ ){
+		if ( ! isalnum( (unsigned char) *p ) && *p != '_' && *p != '.' && *p != '-' ) return false;
+	}
+	if ( strstr( name, ".." ) ) return false;
+	snprintf( path, pathSize, "%s/%s", mGpsLogDir, name );
+	return true;
+}
+
+// ログファイルの一覧をJSONにする
+//
+//   "files": [{"name":"20261006/gps_r0_20261006_123456.log","size":12345}, ...]
+//   "saving": いま書き込んでいるファイルの名前（保存していない時は ""）
+//   "more": 入りきらなかった時 true
+//
+// start: 何番目のファイルから返すか（0から）
+// max: 返す数
+//
+void logList( JsonDocument &re, int start, int max )
+{
+	JsonArray files = re["files"].to<JsonArray>();
+	int prefix = strlen( mGpsLogDir ) + 1;
+	re["saving"] = ( mFileSaving && strlen( mSaveFileName ) > (size_t) prefix ) ? mSaveFileName + prefix : "";
+	re["more"] = false;
+	if ( ! mSdTotalBytes ) return;
+
+	spiLock();
+	File root = SD.open( mGpsLogDir );
+	int index = 0;
+	while( root && root.isDirectory() ){
+		File dir = root.openNextFile();
+		if ( ! dir ) break;
+		if ( dir.isDirectory() ){
+			String dirName = dir.name();
+			while(1){
+				File file = dir.openNextFile();
+				if ( ! file ) break;
+				if ( ! file.isDirectory() ){
+					if ( index >= start ){
+						if ( (int) files.size() >= max ) re["more"] = true;
+						else {
+							JsonObject item = files.add<JsonObject>();
+							item["name"] = dirName + "/" + file.name();
+							item["size"] = (uint32_t) file.size();
+						}
+					}
+					index++;
+				}
+				file.close();
+			}
+		}
+		dir.close();
+	}
+	if ( root ) root.close();
+	spiUnlock();
+}
+
+// ログファイルの一部を読む
+//
+// 戻り値＝ 読んだバイト数（ファイルの終わりでは 0）
+//         -1:ファイルが無い、名前が正しくない
+//
+int logRead( const char *name, uint32_t offset, uint8_t *buff, int numBytes, uint32_t *fileSize )
+{
+	char path[80];
+	if ( ! mSdTotalBytes || ! logPath( name, path, sizeof(path) ) ) return -1;
+
+	spiLock();
+	int nret = -1;
+	File fd = SD.open( path, FILE_READ );
+	if ( fd && ! fd.isDirectory() ){
+		*fileSize = fd.size();
+		nret = 0;
+		if ( offset < *fileSize && fd.seek( offset ) ) nret = fd.read( buff, numBytes );
+	}
+	if ( fd ) fd.close();
+	spiUnlock();
+	return nret;
+}
+
+// ログファイルを削除する。フォルダが空になったら、フォルダも削除する
+//
+// 戻り値＝ 0:正常終了
+//         -1:ファイルが無い、名前が正しくない
+//         -2:いま書き込んでいるファイル
+//
+int logRemove( const char *name )
+{
+	char path[80];
+	if ( ! mSdTotalBytes || ! logPath( name, path, sizeof(path) ) ) return -1;
+	if ( mFileSaving && strcmp( path, mSaveFileName ) == 0 ) return -2;
+
+	spiLock();
+	int nret = SD.remove( path ) ? 0 : -1;
+	if ( nret == 0 ){
+		char dir[80];
+		snprintf( dir, sizeof(dir), "%s/%.8s", mGpsLogDir, name );
+		SD.rmdir( dir );		// 空でなければ失敗する（そのままでよい）
+	}
+	spiUnlock();
+	return nret;
+}
+
 // 実行パラメータを保存する
 //
 // ・JSONで保存する。Wifiは番号ではなくSSIDで覚えるので、設定ファイルの一覧を

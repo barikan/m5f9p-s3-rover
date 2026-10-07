@@ -10,6 +10,7 @@ import * as rover from '../rover';
 import { state, toast } from '../store';
 import type { ConnectionKind, FoundDevice } from '../types';
 import Item from './Item.vue';
+import LogFilesDialog from './LogFilesDialog.vue';
 import Section from './Section.vue';
 
 const SAVE_FORMATS = ['NMEA', 'RAW', 'RTCM', 'CSV'];
@@ -56,6 +57,8 @@ const sourceName = computed(() => {
   const base = s.value?.base;
   return !base || !base.valid ? 'なし' : base.type === 4 ? 'UART（PHコネクタ）' : `${base.address} / ${base.mount}`;
 });
+
+const logsOpen = ref(false);
 
 const gigabytes = (megabytes: number) => (megabytes / 1000).toFixed(1);
 
@@ -130,6 +133,12 @@ function setRate(hz: unknown) {
         <Button v-if="s.save.on" variant="outline" @click="rover.setSaving(false)">停止</Button>
         <Button v-else :disabled="!s.save.ready" @click="rover.setSaving(true)">保存開始</Button>
       </div>
+      <!-- ログファイルの取り出しは、USBで接続している時だけ（BLEでは時間がかかりすぎる） -->
+      <div class="mt-3 flex items-center gap-3">
+        <Button variant="outline" size="sm" :disabled="state.kind !== 'usb' || !s.save.ready" @click="logsOpen = true">ログファイル…</Button>
+        <span v-if="state.kind !== 'usb'" class="text-muted-foreground text-xs">ダウンロードは USB で接続している時に使えます</span>
+      </div>
+      <LogFilesDialog v-model:open="logsOpen" />
       <div class="text-muted-foreground mt-4 mb-2 text-xs">測位レート</div>
       <ToggleGroup type="single" variant="outline" aria-label="測位レート" :model-value="String(s.rate)" @update:model-value="setRate">
         <ToggleGroupItem v-for="hz in RATES" :key="hz" :value="String(hz)">{{ hz }} Hz</ToggleGroupItem>

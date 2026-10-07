@@ -33,6 +33,13 @@
 //               "LCD:" で始まる行で続く（screen.cpp の「画像の取り出し」を参照）
 //   lcd.tap     {"x":0-319,"y":0-239}  本体の画面をタップした事にする（確認用）。USBのみ
 //   ble.unpair  BLEのペアリングの記憶を全て消す。USBのみ
+//   ログファイルの取り出し（USBのみ。BLEでは時間がかかりすぎるため）
+//   log.list    {"start":n}  SDカードのログファイルの一覧を返す。1回に LOG_LIST_MAX 件まで
+//                 "files":[{"name":"20261006/gps_r0_20261006_123456.log","size":バイト数},...]
+//                 "saving": いま書き込んでいるファイルの名前  "more": 続きがある時 true
+//   log.get     {"name":"...","offset":n}  ファイルの offset から LOG_CHUNK バイトまでを返す
+//                 "data": Base64  "size": ファイル全体のバイト数  "bytes": 返したバイト数
+//   log.remove  {"name":"..."}  ファイルを削除する（書き込んでいるファイルは削除できない）
 //   ini.remove  旧形式の設定ファイル(m5f9p.ini)をSDカードから削除する。USBのみ
 //               （パスワードが平文で書かれているため。YAMLへの移行が済んでいる事）
 //   run.get   起動時の実行パラメータと、選択できるWifi接続先、基準局データ取得先を返す
@@ -62,10 +69,13 @@
 
 #include "app.h"
 #include "screen.h"
+#include <mbedtls/base64.h>
 
 #define CMD_LINE_MAX 8192
 #define FILE_SIZE_MAX 8192		// 設定ファイルの最大バイト数
 #define TRACK_REPLY_MAX 50		// track.getで1回に返す点数
+#define LOG_LIST_MAX 60			// log.listで1回に返すファイルの数
+#define LOG_CHUNK 4500			// log.getで1回に返すバイト数（Base64で6000文字）
 
 extern byte mVersionMajor, mVersionMinor, mVersionPatch;
 
@@ -156,6 +166,7 @@ int configRestoreSecrets( JsonDocument &config );
 int configSave( JsonVariantConst config );
 
 void satsToJson( JsonDocument &re );
+void logList( JsonDocument &re, int start, int max );
 
 static bool mConfigWritten = false;	// 設定ファイルを書き換えた（再起動するまで、本体の設定と合わない）
 bool configCheckYaml( const char *text, String &error );
@@ -297,6 +308,26 @@ static void cmdRunSet( JsonDocument &cmd, JsonDocument &re )
 	re["ok"] = true;
 }
 
+static void cmdLogGet( JsonDocument &cmd, JsonDocument &re )
+{
+	static uint8_t data[ LOG_CHUNK ];
+	static char text[ ( LOG_CHUNK + 2 ) / 3 * 4 + 4 ];
+
+	uint32_t offset = cmd["offset"] | 0;
+	uint32_t fileSize = 0;
+	int n = logRead( cmd["name"] | "", offset, data, sizeof(data), &fileSize );
+	if ( n < 0 ) { re["error"] = "can't read"; return; }
+
+	size_t length = 0;
+	mbedtls_base64_encode( (uint8_t*) text, sizeof(text), &length, data, n );
+	text[ length ] = '\0';
+	re["offset"] = offset;
+	re["bytes"] = n;
+	re["size"] = fileSize;
+	re["data"] = (const char*) text;	// 送るまで残っているので、コピーしない
+	re["ok"] = true;
+}
+
 // コマンドを１つ実行する
 //
 // line: コマンド（JSON）。パースの際に書き換えられる
@@ -370,6 +401,18 @@ void cmdExecute( char *line, String &reply, int channel )
 			re["ok"] = true;
 		}
 	}
+	else if ( strncmp( name, "log.", 4 ) == 0 && channel != CMD_USB ) re["error"] = "usb only";
+	else if ( strcmp( name, "log.list" ) == 0 ){
+		logList( re, cmd["start"] | 0, LOG_LIST_MAX );
+		re["ok"] = true;
+	}
+	else if ( strcmp( name, "log.get" ) == 0 ) cmdLogGet( cmd, re );
+	else if ( strcmp( name, "log.remove" ) == 0 ){
+		int nret = logRemove( cmd["name"] | "" );
+		if ( nret == -2 ) re["error"] = "file is being written";
+		else if ( nret < 0 ) re["error"] = "can't remove";
+		else re["ok"] = true;
+	}
 	else if ( strcmp( name, "ini.remove" ) == 0 ){
 		if ( channel != CMD_USB ) re["error"] = "usb only";
 		else if ( ! mIniRemains ) re["error"] = "no ini file";
@@ -430,6 +473,10 @@ void cmdPollUsb()
 
 		String reply;
 		cmdExecute( line, reply, CMD_USB );
+		// USBは64バイト単位で送られ、端数のある（短い）パケットが送信の区切りになる。
+		// 応答がちょうど64バイトの倍数だと区切りが付かず、次に何か出力するまで相手に
+		// 届かない（数秒止まる）。その時は空白を1つ足して、長さをずらす。
+		if ( ( reply.length() + 2 ) % 64 == 0 ) reply += ' ';
 		Serial.println( reply );
 		cmdRestartIfRequested();
 	}

@@ -14,6 +14,9 @@ contextBridge.exposeInMainWorld('host', {
     remove: name => ipcRenderer.invoke('storage-remove', name),
   },
 
+  // ファイルを「ダウンロード」フォルダに保存する。保存した場所を返す
+  saveFile: (name, bytes) => ipcRenderer.invoke('save-file', name, bytes),
+
   // BLEの接続先。見つかった本体の一覧を受け取り、選んだものを返す
   onBleDevices: callback => {
     ipcRenderer.removeAllListeners('ble-devices');

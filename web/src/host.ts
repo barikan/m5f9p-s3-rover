@@ -56,8 +56,8 @@ function lineSplitter(onLine: (line: string) => void) {
 //   onLine, onState          受信した行と、状態（'connecting' | 'connected' | 'disconnected'）の通知先
 // }
 
-function makeConnection(name: string): Connection {
-  return { name, onLine: () => {}, onState: () => {}, onMessage: () => {}, send: () => {}, close: () => {} };
+function makeConnection(name: string, kind: ConnectionKind): Connection {
+  return { name, kind, onLine: () => {}, onState: () => {}, onMessage: () => {}, send: () => {}, close: () => {} };
 }
 
 // ---------------------------------------------------------------- Windows: USB
@@ -65,7 +65,7 @@ function makeConnection(name: string): Connection {
 async function connectUsb() {
   // どのポートを使うかは、Electron側(main.js)がUSBのベンダーIDで選ぶ
   const port = await navigator.serial.requestPort({ filters: [{ usbVendorId: USB_VENDOR_ESPRESSIF }] });
-  const conn = makeConnection('USB');
+  const conn = makeConnection('USB', 'usb');
   let closed = false;
   let writer: WritableStreamDefaultWriter<Uint8Array> | null = null;
   let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
@@ -149,7 +149,7 @@ async function connectBle(id: string) {
   bleRequest = null;
   if (!device.gatt) throw new Error('この本体には接続できません');
   const gatt: BluetoothRemoteGATTServer = device.gatt;
-  const conn = makeConnection(plainName(device.name || 'Bluetooth'));
+  const conn = makeConnection(plainName(device.name || 'Bluetooth'), 'ble');
   let closed = false;
   let rx: BluetoothRemoteGATTCharacteristic | null = null;
   let queue: Promise<unknown> = Promise.resolve();      // 書き込みは1つずつ順に行う
@@ -247,7 +247,7 @@ window.onNative = message => {
 
 function connectAndroid(address: string | null, name?: string) {
   const bridge = android!;
-  const conn = makeConnection(plainName(name || address || 'Bluetooth'));
+  const conn = makeConnection(plainName(name || address || 'Bluetooth'), 'ble');
   nativeHandlers.line = m => conn.onLine(m.text ?? '');
   nativeHandlers.message = m => conn.onMessage(m.text ?? '');
   nativeHandlers.state = m => {
@@ -306,6 +306,22 @@ export function resume(): Connection | null {
   const conn = connectAndroid(null, state.name || last?.name);
   setTimeout(() => conn.onState(state.state), 0);
   return conn;
+}
+
+/**
+ * ファイルを利用者の端末に保存する（本体から取り出したログファイル）。
+ * 戻り値＝保存した場所（分かる時）
+ */
+export async function saveFile(name: string, bytes: Uint8Array): Promise<string> {
+  if (electron) return electron.saveFile(name, bytes);
+  // ブラウザ: ダウンロードとして渡す
+  const url = URL.createObjectURL(new Blob([bytes as BlobPart]));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  return name;
 }
 
 /** 軌跡などのファイル。名前は "tracks/2026-10-06.csv" の形 */

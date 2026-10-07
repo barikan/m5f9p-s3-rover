@@ -23,6 +23,7 @@ interface AndroidBridge {
 interface ElectronHost {
   platform: 'windows';
   storage: Storage;
+  saveFile(name: string, bytes: Uint8Array): Promise<string>;
   onBleDevices(callback: (list: FoundDevice[]) => void): void;
   selectBleDevice(id: string): void;
   onBlePairing(callback: (request: PairingRequest) => void): void;

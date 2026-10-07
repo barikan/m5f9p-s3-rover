@@ -151,6 +151,7 @@ void setup() {
 	struct stGpsData gpsData;
 	
 	Serial.setRxBufferSize( 8192 );	// INIファイルを含むコマンドを受け取れる大きさにする
+	Serial.setTxBufferSize( 8192 );	// ログファイルの取り出し(log.get)の応答が1回で入る大きさにする。小さいと送信が遅い
 	Serial.begin( 115200 );		// USB CDC。デバグ出力、NMEA出力、コマンドの受付に使う
 
 	auto cfg = M5.config();

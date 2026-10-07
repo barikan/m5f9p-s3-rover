@@ -199,6 +199,8 @@ int sdSave( const char *fileName, char *buff, int numBytes, const char* mode );
 int sdRead( const char *fileName, char *buff, int numBytes );
 int saveRunInfo( struct stRunInfo *runInfo );
 int sdRemove( const char *fileName );
+int logRead( const char *name, uint32_t offset, uint8_t *buff, int numBytes, uint32_t *fileSize );
+int logRemove( const char *name );
 int readRunInfo( struct stRunInfo *runInfo );
 
 // ************************************************************
