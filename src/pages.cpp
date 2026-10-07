@@ -50,6 +50,7 @@ enum {
 	HIT_SET_FORMAT,
 	HIT_SET_DISPLAY,
 	HIT_SET_TCP,
+	HIT_SET_BLE,			// BLEで接続している相手を切断する
 	HIT_RESTART,
 	HIT_CONFIRM_YES,
 	HIT_CONFIRM_NO,
@@ -681,7 +682,8 @@ static void drawSetup()
 	static const char *formatName[4] = { "NMEA", "RAW", "RTCM", "CSV" };
 	char text[48];
 	bool tcp = ( strlen( mAgribusIp ) > 0 );		// 送信先が設定ファイルにある時だけ出す
-	const int rows = tcp ? 6 : 5;
+	bool ble = ( mBleEnable && mBleConnected );		// 接続している相手がいる時だけ出す
+	const int rows = 5 + ( tcp ? 1 : 0 ) + ( ble ? 1 : 0 );
 	const int h = ( SCREEN_HEIGHT - HEADER_HEIGHT - 2 ) / rows;
 
 	drawHeader( "Setup" );
@@ -702,6 +704,10 @@ static void drawSetup()
 	if ( tcp ){
 		snprintf( text, sizeof(text), "%s  %s", mAgribusIp, mAgribusReady ? "On" : "Off" );
 		drawSetting( y, h, "TCP send", text, HIT_SET_TCP );
+		y += h;
+	}
+	if ( ble ){
+		drawSetting( y, h, "Bluetooth", "Disconnect", HIT_SET_BLE );
 		y += h;
 	}
 	drawSetting( y, h, "Restart", "", HIT_RESTART );
@@ -733,6 +739,11 @@ static void onSetting( int id )
 	}
 	else if ( id == HIT_SET_DISPLAY ) appSetRotation( ! mRunInfo.lcdRotation );
 	else if ( id == HIT_SET_TCP ) appSetTcpClient( ! mAgribusReady );
+	else if ( id == HIT_SET_BLE ){
+		// 0:Cancel 1:Disconnect
+		if ( uiAsk( "Bluetooth", "Cancel", "Disconnect", NULL,
+					"Disconnect the phone or PC connected via Bluetooth?\nIt can connect again later." ) == 1 ) bleDisconnect();
+	}
 }
 
 // 確認。実行するかどうかを尋ねる
@@ -773,7 +784,7 @@ static void onTap( int id )
 		saveRunInfo( &mRunInfo );
 	}
 	else if ( id >= HIT_RATE && id < HIT_SET_WIFI ) appSetSolutionRate( mRates[ id - HIT_RATE ] );
-	else if ( id >= HIT_SET_WIFI && id <= HIT_SET_TCP ) onSetting( id );
+	else if ( id >= HIT_SET_WIFI && id <= HIT_SET_BLE ) onSetting( id );
 	else if ( id == HIT_RESTART ) mConfirm = id;
 	else if ( id == HIT_SAT_VIEW ) mSatView = ! mSatView;
 	else if ( id == HIT_CONFIRM_NO ) mConfirm = HIT_NONE;

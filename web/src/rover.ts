@@ -218,6 +218,12 @@ function onLine(line: string) {
     onStatus(m as unknown as Status);
     return;
   }
+  if (m.ev === 'bye') {
+    // 本体の画面の操作で切断される。自動でつなぎ直さないよう、こちらからも切断する
+    say('本体の操作で切断されました');
+    disconnect();
+    return;
+  }
   if (!m.re) return;
   // request() で待っている応答は、そちらに渡す（失敗の応答も）
   const waiting = pending.get(m.re);

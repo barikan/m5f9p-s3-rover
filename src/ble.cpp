@@ -7,6 +7,8 @@
 //   本体 → 相手 (TX, notify)  状況 {"ev":"status", ...} を1秒毎
 //                             測位データ（NMEA。$で始まる行）
 //                             コマンドの応答
+//                             本体の操作で切断する時は、直前に {"ev":"bye"}
+//                             （受け取ったアプリは、自動でつなぎ直さない）
 //   相手 → 本体 (RX, write)   コマンド（cmd.cppを参照）
 //
 // 相手がMTUを大きくしない場合（既定値は23）、1回に20バイトしか送れない。
@@ -311,6 +313,24 @@ static void bleSendLine( const String &line )
 {
 	String text = line + "\n";
 	bleSend( text.c_str(), text.length() );
+}
+
+// 接続している相手を、本体の側から切断する
+//
+// ・loopTaskから呼ぶ事（送信を行うため）。
+// ・アプリは切れると自動でつなぎ直すので、先に {"ev":"bye"} を送って、利用者の操作で
+//   切断した事を知らせる。アプリ以外（nRF Connect等）は、ただ切断される。
+// ・ペアリングの記憶は消さない。相手は、あとで接続し直せる。
+//
+void bleDisconnect()
+{
+	if ( ! mServer || ! mBleConnected ) return;
+	if ( mAuthenticated ){
+		bleSendLine( "{\"ev\":\"bye\"}" );
+		delay( 200 );		// 相手に届くのを待つ
+	}
+	mServer->disconnect( mConnId );
+	dbgPrintf( "BLE disconnected by the device\r\n" );
 }
 
 // 受信したコマンドの実行と、状況の送信を行う

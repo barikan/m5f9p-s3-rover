@@ -300,6 +300,7 @@ extern int mBleNmeaRateNow;
 int bleStart();
 int blePasskey();
 int bleBondCount();
+void bleDisconnect();
 int bleUnpairAll();
 void blePoll();
 void bleQueueNmea( const char *nmea );
