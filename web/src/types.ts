@@ -32,6 +32,15 @@ export interface Status {
   save: { ready: boolean; on: boolean; count: number; format: number; qerr: number };
   wifi: { connected: boolean; ssid: string; ip: string; rssi: number };
   sdMB: number;
+  /** 本体の状態（本体側は src/sysmon.cpp）。古いファームウェアには無い */
+  sys?: {
+    temp: number;           // CPUの温度（℃）。チップの温度で、筐体より高い
+    cpu: number;            // CPU使用率（%、2コアの平均の推定）
+    mem: number;            // 内蔵RAMの使用率（%）
+    volt: number;           // 電圧（V）
+    battery: boolean;       // true:バッテリーの電圧 false:USB・外部電源の電圧
+    sdFreeMB: number;       // SDカードの空き。-1:分からない
+  };
   heap: number;
   bleNmea: number;
   track: number;

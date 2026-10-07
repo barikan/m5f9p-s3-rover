@@ -57,6 +57,8 @@ const sourceName = computed(() => {
   return !base || !base.valid ? 'なし' : base.type === 4 ? 'UART（PHコネクタ）' : `${base.address} / ${base.mount}`;
 });
 
+const gigabytes = (megabytes: number) => (megabytes / 1000).toFixed(1);
+
 function setRate(hz: unknown) {
   if (hz) rover.setRate(Number(hz));
 }
@@ -141,7 +143,16 @@ function setRate(hz: unknown) {
         <Item label="IPアドレス">{{ s.wifi.ip }}</Item>
       </template>
       <Item v-else label="Wi-Fi">{{ s.wifi.ssid }}（接続中）</Item>
-      <Item label="SDカード">{{ s.sdMB }} MB</Item>
+      <Item label="SDカード">
+        <template v-if="s.sdMB === 0">なし</template>
+        <template v-else-if="s.sys && s.sys.sdFreeMB >= 0">空き {{ gigabytes(s.sys.sdFreeMB) }} / {{ gigabytes(s.sdMB) }} GB</template>
+        <template v-else>{{ gigabytes(s.sdMB) }} GB</template>
+      </Item>
+      <template v-if="s.sys">
+        <Item label="CPU">{{ s.sys.cpu }} %　{{ s.sys.temp }} ℃</Item>
+        <Item label="メモリ">{{ s.sys.mem }} %</Item>
+        <Item :label="s.sys.battery ? 'バッテリー' : '電源'">{{ s.sys.volt.toFixed(2) }} V</Item>
+      </template>
       <Item label="バージョン">{{ s.ver }}</Item>
       <Item label="稼働時間">{{ Math.floor(s.uptime / 60) }} 分 {{ s.uptime % 60 }} 秒</Item>
     </Section>

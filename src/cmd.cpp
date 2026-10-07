@@ -115,6 +115,15 @@ static void cmdStatus( JsonDocument &re )
 	wifi["rssi"] = WiFi.RSSI();
 
 	re["sdMB"] = (int)( mSdTotalBytes / 1000000 );
+
+	// 本体の状態（sysmon.cpp）
+	JsonObject sys = re["sys"].to<JsonObject>();
+	sys["temp"] = serialized( String( mSysmon.cpuTemp, 0 ) );	// CPUの温度（℃）
+	sys["cpu"] = mSysmon.cpuPercent;							// CPU使用率（%、2コアの平均の推定）
+	sys["mem"] = mSysmon.memPercent;							// 内蔵RAMの使用率（%）
+	sys["volt"] = serialized( String( mSysmon.voltage, 2 ) );	// 電圧（V）
+	sys["battery"] = mSysmon.onBattery;							// true:バッテリーの電圧 false:USB・外部電源
+	sys["sdFreeMB"] = mSysmon.sdFreeMB;							// SDカードの空き。-1:分からない
 	re["heap"] = heap_caps_get_free_size( MALLOC_CAP_INTERNAL );
 	re["bleNmea"] = mBleNmeaRateNow;
 	re["track"] = trackCount();
