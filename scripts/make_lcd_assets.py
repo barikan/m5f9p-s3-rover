@@ -54,6 +54,9 @@ ICONS = [
     ("iconSat", "satellite", 26),
     # Status の1段目（BLEの相手が接続中）
     ("iconBle", "bluetooth", 24),
+    # Status の推定精度（水平、垂直）
+    ("iconAccH", "move-horizontal", 20),
+    ("iconAccV", "move-vertical", 20),
 ]
 
 
