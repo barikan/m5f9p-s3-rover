@@ -72,9 +72,11 @@ WSL2 での USB の接続方法、SD カードリーダがない場合の設定�
 | Rate | 測位レート | 1 / 2 / 5 / 10 / 20 Hz から選ぶ |
 | Corrections | 補正データの取得先、受信量、RTCM のエラー率、再接続回数、CLAS の受信量 | |
 | Device | 受信機名とバージョン、Wi-Fi、IP アドレス、Bluetooth、MAC アドレス、TCP ポート、警告 | |
-| Setup | Wi-Fi、補正データの取得先、ログの保存形式、画面の向き | 項目をタップして、その項目だけを変更する(すぐに反映。再起動は不要)。再起動 |
+| Setup | Wi-Fi、補正データの取得先、ログの保存形式、画面の明るさ、画面の向き、Bluetooth(接続している相手の情報と切断) | タイルをタップして、その項目だけを変更する(すぐに反映。再起動は不要) |
 
 BLE のペアリング中は、相手に入力してもらう6桁の番号を大きく表示します。
+
+画面の画像と、画面の移り方は [docs/screens-device.md](docs/screens-device.md) にあります。
 
 ## アプリ
 
@@ -194,6 +196,9 @@ SoftAP は既定で無効にしています。SoftAP に端末が接続してい
 | ファイル | 内容 |
 |---|---|
 | [DEVELOPE.md](DEVELOPE.md) | 環境の準備、ビルドと書き込み、実機での確認方法、ソースの構成、うまくいかないときの対処 |
+| [docs/screens-device.md](docs/screens-device.md) | 本体の画面と、画面の移り方(画像つき) |
+| [docs/screens-windows.md](docs/screens-windows.md) | Windows アプリの画面と、画面の移り方(画像つき) |
+| [docs/screens-android.md](docs/screens-android.md) | Android アプリの画面と、画面の移り方(画像つき) |
 | [CLAUDE.md](CLAUDE.md) | コードを変更するときの決まりごと(タスク構成、排他のルールなど) |
 | [m5f9p_src_v1_0_48/](m5f9p_src_v1_0_48/) | 移植元のプログラム(参照用。ビルドには使いません) |
 
