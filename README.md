@@ -4,6 +4,12 @@ u-blox ZED-F9P を載せた M5F9P モジュールを M5Stack CoreS3 に重ねて
 
 ジオセンス社の M5Stack Basic/Gray 用プログラム「m5f9p」(v1.0.48)を、CoreS3 向けに移動局専用として書き直したものです。
 
+<p align="center">
+  <img src="docs/images/cores3-status.png" width="360" alt="CoreS3 に表示した Status の画面(本体は絵で、画面は実機から取り出した画像)">
+</p>
+
+![本体の画面遷移](docs/images/device/transitions.png)
+
 ## できること
 
 **本体(CoreS3 + M5F9P)**
