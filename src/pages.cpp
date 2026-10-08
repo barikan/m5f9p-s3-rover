@@ -248,7 +248,7 @@ static int drawBadge( int x, int y, int h, const char *text, int background, int
 
 // Status
 //
-//   1段目  左に測位の状態と補正の方法（バッジ）、右に衛星数。ログの保存中は、その間に REC
+//   1段目  左に測位の状態と補正の方法（バッジ）、右に衛星数。その間に、BLEの接続中のアイコンと、ログの保存中の REC
 //   2～4   緯度、経度、楕円体高
 //   5      推定精度（水平 / 垂直）
 //   6      本体の状態。CPU温度、CPU使用率、メモリ使用率、電圧、SDカードの空き
@@ -278,19 +278,30 @@ static void drawStatus()
 	int satsLeft = SCREEN_WIDTH - MARGIN - satsWidth - 6 - iconSatSize;
 	screenIcon( satsLeft, ( topHeight - iconSatSize ) / 2 + 2, iconSat, iconSatSize, COLOR_MUTED, COLOR_BG );
 
-	// ログを保存している間は、バッジと衛星数の間に赤い丸（点滅）と REC を出す。
-	// 幅が足りない時（バッジの文字が長い時）は、丸だけにする
-	if ( mFileSaving ){
+	// バッジと衛星数の間に、BLEの相手が接続している間は Bluetooth のアイコンを、ログを
+	// 保存している間は赤い丸（点滅）と REC を、左から並べて出す。
+	// 幅が足りない時（バッジの文字が長い時）は、REC の文字を省いて丸だけにする
+	bool ble = ( mBleEnable && mBleConnected );
+	if ( mFileSaving || ble ){
 		const int dot = 6;
 		int left = MARGIN + fixWidth + 6 + correctionWidth;
 		int space = satsLeft - left;
 		int textWidth = screenTextWidth( "REC", FONT_TEXT );
-		bool withText = ( space >= dot * 2 + 4 + textWidth + 12 );
-		int width = dot * 2 + ( withText ? 4 + textWidth : 0 );
-		int x = left + ( space - width ) / 2;
+		int bleWidth = ble ? iconBleSize : 0;
+		int recWidth = mFileSaving ? dot * 2 : 0;
+		int between = ( ble && mFileSaving ) ? 4 : 0;
+		bool withText = ( mFileSaving && space >= bleWidth + between + recWidth + 4 + textWidth + 12 );
+		if ( withText ) recWidth += 4 + textWidth;
+		int x = left + ( space - ( bleWidth + between + recWidth ) ) / 2;
 		int cy = topHeight / 2 + 2;
-		if ( ( millis() / 500 ) % 2 == 0 ) screenCanvas().fillSmoothCircle( x + dot, cy, dot, (uint16_t) COLOR_RED );
-		if ( withText ) screenText( x + dot * 2 + 4, cy + 1, "REC", FONT_TEXT, COLOR_RED, lgfx::textdatum_t::middle_left );
+		if ( ble ){
+			screenIcon( x, cy - iconBleSize / 2, iconBle, iconBleSize, COLOR_BLUE, COLOR_BG );
+			x += bleWidth + between;
+		}
+		if ( mFileSaving ){
+			if ( ( millis() / 500 ) % 2 == 0 ) screenCanvas().fillSmoothCircle( x + dot, cy, dot, (uint16_t) COLOR_RED );
+			if ( withText ) screenText( x + dot * 2 + 4, cy + 1, "REC", FONT_TEXT, COLOR_RED, lgfx::textdatum_t::middle_left );
+		}
 	}
 
 	int y = topHeight;

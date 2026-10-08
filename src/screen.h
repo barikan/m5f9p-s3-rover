@@ -30,6 +30,7 @@ enum {
 #define COLOR_ORANGE   0xFCC0
 #define COLOR_RED      0xEA8A
 #define COLOR_GRAY     0xB5F7
+#define COLOR_BLUE     0x3CBF	// Bluetooth
 #define COLOR_ACCENT   0xFFFF	// 選択中のボタン（白地に黒文字）
 #define COLOR_ON_ACCENT 0x0841
 

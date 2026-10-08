@@ -52,6 +52,8 @@ ICONS = [
     ("iconSd", "hard-drive", 20),
     # Status の左上（衛星数）
     ("iconSat", "satellite", 26),
+    # Status の1段目（BLEの相手が接続中）
+    ("iconBle", "bluetooth", 24),
 ]
 
 
