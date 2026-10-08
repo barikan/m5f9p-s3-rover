@@ -42,6 +42,13 @@ ICONS = [
     ("iconCorrections", "radio-tower", 32),
     ("iconDevice", "cpu", 32),
     ("iconSetup", "settings", 32),
+    # Setup のタイル（Corrections は Menu のものを使う）
+    ("iconWifi", "wifi", 32),
+    ("iconFormat", "file-text", 32),
+    ("iconRotate", "rotate-cw", 32),
+    ("iconSend", "send", 32),
+    ("iconBluetooth", "bluetooth", 32),
+    ("iconBrightness", "sun", 32),
     ("iconBack", "chevron-left", 28),
     # Status の最下段（ラベルの代わり）
     ("iconTemp", "thermometer", 20),

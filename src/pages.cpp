@@ -35,6 +35,7 @@ enum {
 	PAGE_DEVICE,
 	PAGE_SETUP,
 	PAGE_SATELLITES,
+	PAGE_BRIGHTNESS,		// Setup から開く
 };
 
 // タップできる範囲の番号
@@ -51,10 +52,9 @@ enum {
 	HIT_SET_DISPLAY,
 	HIT_SET_TCP,
 	HIT_SET_BLE,			// BLEで接続している相手を切断する
-	HIT_RESTART,
-	HIT_CONFIRM_YES,
-	HIT_CONFIRM_NO,
+	HIT_SET_BRIGHTNESS,		// 明るさのページを開く
 	HIT_SAT_VIEW,			// Satellites の表示の切り替え
+	HIT_BRIGHTNESS = 80,	// + 明るさの番号
 };
 
 #define DRAW_PERIOD 250			// 画面を描き直す間隔（ミリ秒）
@@ -64,7 +64,6 @@ enum {
 #define HIT_MAX 12
 
 static int mPage = PAGE_STATUS;
-static int mConfirm = HIT_NONE;			// 確認中の操作。HIT_NONE:確認していない
 static unsigned long mLastTouchMillis;
 
 struct stHit { int x, y, w, h, id; };
@@ -353,6 +352,30 @@ static void drawStatus()
 	drawGauge( gaugeX[4], y, rowHeight, iconSd, text, mSdTotalBytes == 0 ? COLOR_RED : COLOR_TEXT );
 }
 
+// タイル（Menu、Setup）。アイコンの下に文字を置く。全体をタップできる
+//
+// ・wide が true の時は、アイコンと文字を横に並べて中央に置く（横長のタイル用）。
+//
+static void drawTile( int x, int y, int w, int h, const uint8_t *icon, const char *label, int id, bool wide = false )
+{
+	int bg = ( mPressed == id ) ? COLOR_PRESSED : COLOR_SURFACE;
+	screenCanvas().fillSmoothRoundRect( x, y, w, h, 12, (uint16_t) bg );
+	if ( wide ){
+		int total = iconStatusSize + 10 + screenTextWidth( label, FONT_TEXT );
+		int left = x + ( w - total ) / 2;
+		screenIcon( left, y + ( h - iconStatusSize ) / 2, icon, iconStatusSize, COLOR_TEXT, bg );
+		screenText( left + iconStatusSize + 10, y + h / 2 + 1, label, FONT_TEXT, COLOR_TEXT, lgfx::textdatum_t::middle_left );
+	}
+	else {
+		// アイコンと文字をひとまとまりにして、縦の中央に置く
+		const int textHeight = 18, between = 6;
+		int top = y + ( h - ( iconStatusSize + between + textHeight ) ) / 2;
+		screenIcon( x + ( w - iconStatusSize ) / 2, top, icon, iconStatusSize, COLOR_TEXT, bg );
+		screenText( x + w / 2, top + iconStatusSize + between + textHeight / 2, label, FONT_TEXT, COLOR_TEXT, lgfx::textdatum_t::middle_center );
+	}
+	hitAdd( x, y, w, h, id );
+}
+
 // Menu: タイルを3列×2段、その下に横長のタイルを1つ
 //
 static void drawMenu()
@@ -373,26 +396,9 @@ static void drawMenu()
 	const int lastHeight = SCREEN_HEIGHT - lastY - gap;
 
 	for( int i=0; i < 7; i++ ){
-		bool last = ( i == 6 );
-		int x = last ? gap : gap + ( i % 3 ) * ( w + gap );
-		int y = last ? lastY : gap + ( i / 3 ) * ( h + gap );
-		int tw = last ? SCREEN_WIDTH - gap * 2 : w;
-		int th = last ? lastHeight : h;
 		int id = HIT_PAGE + items[i].page;
-		int bg = ( mPressed == id ) ? COLOR_PRESSED : COLOR_SURFACE;
-		screenCanvas().fillSmoothRoundRect( x, y, tw, th, 12, (uint16_t) bg );
-		if ( last ){
-			// アイコンと文字を横に並べて、中央に置く
-			int total = iconStatusSize + 10 + screenTextWidth( items[i].label, FONT_TEXT );
-			int left = x + ( tw - total ) / 2;
-			screenIcon( left, y + ( th - iconStatusSize ) / 2, items[i].icon, iconStatusSize, COLOR_TEXT, bg );
-			screenText( left + iconStatusSize + 10, y + th / 2 + 1, items[i].label, FONT_TEXT, COLOR_TEXT, lgfx::textdatum_t::middle_left );
-		}
-		else {
-			screenIcon( x + ( tw - iconStatusSize ) / 2, y + 12, items[i].icon, iconStatusSize, COLOR_TEXT, bg );
-			screenText( x + tw / 2, y + th - 18, items[i].label, FONT_TEXT, COLOR_TEXT, lgfx::textdatum_t::middle_center );
-		}
-		hitAdd( x, y, tw, th, id );
+		if ( i == 6 ) drawTile( gap, lastY, SCREEN_WIDTH - gap * 2, lastHeight, items[i].icon, items[i].label, id, true );
+		else drawTile( gap + ( i % 3 ) * ( w + gap ), gap + ( i / 3 ) * ( h + gap ), w, h, items[i].icon, items[i].label, id );
 	}
 }
 
@@ -683,57 +689,66 @@ static void drawDevice()
 	tableDraw( HEADER_HEIGHT, SCREEN_HEIGHT - 4 );
 }
 
-// Setup の1項目。行全体をタップできる
+// Setup: 設定の項目をタイルで並べる（Menu と同じ形）。タップすると、その項目だけを変更する
 //
-static void drawSetting( int y, int h, const char *label, const char *value, int id )
-{
-	int bg = ( mPressed == id ) ? COLOR_PRESSED : COLOR_SURFACE;
-	screenCanvas().fillSmoothRoundRect( 6, y, SCREEN_WIDTH - 12, h - 3, 8, (uint16_t) bg );
-	int middle = y + ( h - 3 ) / 2 + 1;
-	screenText( MARGIN + 4, middle, label, FONT_TEXT, COLOR_MUTED, lgfx::textdatum_t::middle_left );
-	screenText( SCREEN_WIDTH - MARGIN - 4, middle, value, FONT_TEXT, COLOR_TEXT, lgfx::textdatum_t::middle_right );
-	hitAdd( 6, y, SCREEN_WIDTH - 12, h, id );
-}
-
-// Setup: 設定の一覧。項目をタップすると、その項目だけを変更する
-//
+// ・3列で、上から順に詰める。最後の段は、残った数で横いっぱいに分ける。
+//   段の数（2～3）に合わせて、タイルの高さを変える。
+// ・いまの設定値は出さない（Device のページで見られる）。入・切を切り替えるだけの
+//   TCP は、タップした結果が分かるよう、いまの状態を文字に入れる。
 // ・どの項目も、変更はすぐに反映する（再起動しない）。
-// ・Restart は、設定ファイルを書き換えた後などに、手で再起動するためのもの。
 //
 static void drawSetup()
 {
-	static const char *formatName[4] = { "NMEA", "RAW", "RTCM", "CSV" };
-	char text[48];
 	bool tcp = ( strlen( mAgribusIp ) > 0 );		// 送信先が設定ファイルにある時だけ出す
 	bool ble = ( mBleEnable && mBleConnected );		// 接続している相手がいる時だけ出す
-	const int rows = 5 + ( tcp ? 1 : 0 ) + ( ble ? 1 : 0 );
-	const int h = ( SCREEN_HEIGHT - HEADER_HEIGHT - 2 ) / rows;
+	struct { const uint8_t *icon; const char *label; int id; } items[7];
+	int count = 0;
+	items[ count++ ] = { iconWifi, "Wi-Fi", HIT_SET_WIFI };
+	items[ count++ ] = { iconCorrections, "Corrections", HIT_SET_SOURCE };
+	items[ count++ ] = { iconFormat, "Log format", HIT_SET_FORMAT };
+	items[ count++ ] = { iconBrightness, "Brightness", HIT_SET_BRIGHTNESS };
+	items[ count++ ] = { iconRotate, "Rotate", HIT_SET_DISPLAY };
+	if ( tcp ) items[ count++ ] = { iconSend, mAgribusReady ? "TCP: On" : "TCP: Off", HIT_SET_TCP };
+	if ( ble ) items[ count++ ] = { iconBluetooth, "Bluetooth", HIT_SET_BLE };
+
+	const int gap = 8;
+	const int top = HEADER_HEIGHT + 2;
+	const int rows = ( count + 2 ) / 3;
+	const int h = ( SCREEN_HEIGHT - top - gap * rows ) / rows;
 
 	drawHeader( "Setup" );
-	int y = HEADER_HEIGHT;
-	drawSetting( y, h, "Wi-Fi", strlen( mRunInfo.wifiSsid ) ? mRunInfo.wifiSsid : "Off", HIT_SET_WIFI );
-	y += h;
-	struct stBaseSource *src = &mRunInfo.baseSrc;
-	if ( ! src->valid ) snprintf( text, sizeof(text), "None" );
-	else if ( src->type == BASE_TYPE_UART ) snprintf( text, sizeof(text), "UART" );
-	else snprintf( text, sizeof(text), "%.14s %.10s", src->address, src->mountPoint );
-	drawSetting( y, h, "Corrections", text, HIT_SET_SOURCE );
-	y += h;
-	int format = mRunInfo.saveFormat;
-	drawSetting( y, h, "Log format", formatName[ ( format >= 0 && format < 4 ) ? format : 0 ], HIT_SET_FORMAT );
-	y += h;
-	drawSetting( y, h, "Display", mRunInfo.lcdRotation ? "Rotated 180°" : "Normal", HIT_SET_DISPLAY );
-	y += h;
-	if ( tcp ){
-		snprintf( text, sizeof(text), "%s  %s", mAgribusIp, mAgribusReady ? "On" : "Off" );
-		drawSetting( y, h, "TCP send", text, HIT_SET_TCP );
-		y += h;
+	for( int row=0; row < rows; row++ ){
+		int first = row * 3;
+		int n = ( count - first < 3 ) ? count - first : 3;
+		int w = ( SCREEN_WIDTH - gap * ( n + 1 ) ) / n;
+		int y = top + row * ( h + gap );
+		for( int i=0; i < n; i++ ){
+			drawTile( gap + i * ( w + gap ), y, w, h, items[ first + i ].icon, items[ first + i ].label, items[ first + i ].id, n == 1 );
+		}
 	}
-	if ( ble ){
-		drawSetting( y, h, "Bluetooth", "Disconnect", HIT_SET_BLE );
-		y += h;
+}
+
+// Brightness: 画面の明るさ。Setup から開く
+//
+static const int mBrightness[] = { 15, 25, 50, 75, 100 };
+
+static void drawBrightness()
+{
+	char text[16];
+	const int n = sizeof(mBrightness) / sizeof(mBrightness[0]);
+	const int gap = 6;
+	const int w = ( SCREEN_WIDTH - MARGIN * 2 - gap * ( n - 1 ) ) / n;
+	const int h = 84;
+	const int by = SCREEN_HEIGHT - h - MARGIN;
+
+	drawHeader( "Brightness" );
+	snprintf( text, sizeof(text), "%d%%", mRunInfo.brightness );
+	screenText( SCREEN_WIDTH / 2, ( HEADER_HEIGHT + by ) / 2, text, FONT_VALUE, COLOR_TEXT, lgfx::textdatum_t::middle_center );
+
+	for( int i=0; i < n; i++ ){
+		snprintf( text, sizeof(text), "%d", mBrightness[i] );
+		drawButton( MARGIN + i * ( w + gap ), by, w, h, text, HIT_BRIGHTNESS + i, mBrightness[i] == mRunInfo.brightness );
 	}
-	drawSetting( y, h, "Restart", "", HIT_RESTART );
 }
 
 // 保存形式の一覧
@@ -769,21 +784,6 @@ static void onSetting( int id )
 	}
 }
 
-// 確認。実行するかどうかを尋ねる
-//
-static void drawConfirm()
-{
-	screenText( SCREEN_WIDTH / 2, 48, "Restart?", FONT_VALUE, COLOR_TEXT, lgfx::textdatum_t::middle_center );
-	screenText( SCREEN_WIDTH / 2, 96, "Positioning and logging stop", FONT_TEXT, COLOR_MUTED, lgfx::textdatum_t::middle_center );
-	screenText( SCREEN_WIDTH / 2, 120, "for a few seconds.", FONT_TEXT, COLOR_MUTED, lgfx::textdatum_t::middle_center );
-
-	const int buttonHeight = 56;
-	const int by = SCREEN_HEIGHT - buttonHeight - MARGIN;
-	const int bw = ( SCREEN_WIDTH - MARGIN * 3 ) / 2;
-	drawButton( MARGIN, by, bw, buttonHeight, "Cancel", HIT_CONFIRM_NO );
-	drawButton( MARGIN * 2 + bw, by, bw, buttonHeight, "OK", HIT_CONFIRM_YES, true );
-}
-
 // BLEのペアリング中。相手に入力してもらう番号を表示する
 //
 static void drawPairing( int passkey )
@@ -799,7 +799,7 @@ static void drawPairing( int passkey )
 
 static void onTap( int id )
 {
-	if ( id == HIT_BACK ) mPage = PAGE_MENU;
+	if ( id == HIT_BACK ) mPage = ( mPage == PAGE_BRIGHTNESS ) ? PAGE_SETUP : PAGE_MENU;
 	else if ( id >= HIT_PAGE && id < HIT_SAVE ) mPage = id - HIT_PAGE;
 	else if ( id == HIT_SAVE ) appSetSaving( ! mFileSaving );
 	else if ( id == HIT_SAVE_AT_BOOT ){
@@ -808,10 +808,9 @@ static void onTap( int id )
 	}
 	else if ( id >= HIT_RATE && id < HIT_SET_WIFI ) appSetSolutionRate( mRates[ id - HIT_RATE ] );
 	else if ( id >= HIT_SET_WIFI && id <= HIT_SET_BLE ) onSetting( id );
-	else if ( id == HIT_RESTART ) mConfirm = id;
+	else if ( id == HIT_SET_BRIGHTNESS ) mPage = PAGE_BRIGHTNESS;
 	else if ( id == HIT_SAT_VIEW ) mSatView = ! mSatView;
-	else if ( id == HIT_CONFIRM_NO ) mConfirm = HIT_NONE;
-	else if ( id == HIT_CONFIRM_YES ) ESP.restart();
+	else if ( id >= HIT_BRIGHTNESS ) appSetBrightness( mBrightness[ id - HIT_BRIGHTNESS ] );
 }
 
 // ---------------------------------------------------------------- 全体
@@ -840,7 +839,6 @@ static void draw( int passkey )
 	mNumHits = 0;
 
 	if ( passkey >= 0 ) drawPairing( passkey );
-	else if ( mConfirm != HIT_NONE ) drawConfirm();
 	else switch( mPage ){
 		case PAGE_STATUS: drawStatus(); break;
 		case PAGE_MENU: drawMenu(); break;
@@ -850,6 +848,7 @@ static void draw( int passkey )
 		case PAGE_DEVICE: drawDevice(); break;
 		case PAGE_SETUP: drawSetup(); break;
 		case PAGE_SATELLITES: drawSatellites(); break;
+		case PAGE_BRIGHTNESS: drawBrightness(); break;
 	}
 	screenFlush();
 }
@@ -877,7 +876,7 @@ void pagesLoop()
 	int pressed = HIT_NONE;
 	if ( touching && passkey < 0 ){
 		mLastTouchMillis = millis();
-		if ( mPage == PAGE_STATUS && mConfirm == HIT_NONE ){
+		if ( mPage == PAGE_STATUS ){
 			// Status はどこをタップしても Menu に移る
 			if ( released ){
 				mPage = PAGE_MENU;

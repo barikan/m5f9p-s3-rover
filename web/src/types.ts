@@ -59,6 +59,7 @@ export interface RunConfig {
   saveAtBoot: boolean;
   rate: number;
   rotation: number;
+  brightness: number;       // 画面の明るさ(%)。15〜100
   wifiList: string[];
   sourceList: string[];
 }

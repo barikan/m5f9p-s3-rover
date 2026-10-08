@@ -111,6 +111,9 @@ void setup() {
 
 	// 画面
 	uiBegin( mRunInfo.lcdRotation );
+	// 画面の明るさ。保存した値がない時は、M5Unified が起動時に設定する明るさ(127)と同じにする
+	if ( mRunInfo.brightness < BRIGHTNESS_MIN || mRunInfo.brightness > 100 ) mRunInfo.brightness = 50;
+	M5.Display.setBrightness( mRunInfo.brightness * 255 / 100 );
 	uiStatus( "M5F9P Rover", "Version %d.%d.%d\nStarting...", mVersionMajor, mVersionMinor, mVersionPatch );
 
 	// 起動時の処理で長く止まる事があるので、コア0のウォッチドッグは止めておく
@@ -212,6 +215,21 @@ void appSetRotation( int rotation )
 	if ( rotation == mRunInfo.lcdRotation ) return;
 	uiRotate();
 	mRunInfo.lcdRotation = rotation;
+	saveRunInfo( &mRunInfo );
+}
+
+// 画面の明るさを変える
+//
+// ・percent は 15～100。範囲の外は、端の値に丸める。
+// ・loopTaskから呼ぶ事（バックライトの制御が I2C のため）。
+//
+void appSetBrightness( int percent )
+{
+	if ( percent < BRIGHTNESS_MIN ) percent = BRIGHTNESS_MIN;
+	if ( percent > 100 ) percent = 100;
+	if ( percent == mRunInfo.brightness ) return;
+	M5.Display.setBrightness( percent * 255 / 100 );
+	mRunInfo.brightness = percent;
 	saveRunInfo( &mRunInfo );
 }
 

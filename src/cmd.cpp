@@ -55,6 +55,7 @@
 //               {"saveAtBoot":b} 起動時から保存する
 //               {"rate":n}       1秒あたりの測位回数
 //               {"rotation":n}   画面の向き 0:回転無 1:180度回転
+//               {"brightness":n} 画面の明るさ（%） 15～100
 //               {"tcpClient":b}  測位データをTCPサーバ（設定ファイルの client.ip）に送る
 //   map.key   設定ファイルの google.key を返す（地図の表示用）
 //   sats.get  衛星の配置と信号強度を返す（詳しくは sats.cpp）。問い合わせている間だけ、
@@ -302,6 +303,7 @@ static void cmdRunGet( JsonDocument &re )
 	re["saveAtBoot"] = (bool)mRunInfo.saving;
 	re["rate"] = mRunInfo.solutionRate;
 	re["rotation"] = mRunInfo.lcdRotation;
+	re["brightness"] = mRunInfo.brightness;
 
 	// 選択できるWifi接続先と基準局データ取得先
 	JsonArray wifiList = re["wifiList"].to<JsonArray>();
@@ -342,6 +344,7 @@ static void cmdRunSet( JsonDocument &cmd, JsonDocument &re )
 	if ( cmd["format"].is<int>() ) appSetSaveFormat( cmd["format"] );
 	if ( cmd["rate"].is<int>() ) appSetSolutionRate( cmd["rate"] );
 	if ( cmd["rotation"].is<int>() ) appSetRotation( cmd["rotation"] );
+	if ( cmd["brightness"].is<int>() ) appSetBrightness( cmd["brightness"] );
 	if ( cmd["tcpClient"].is<bool>() ) appSetTcpClient( cmd["tcpClient"].as<bool>() );
 	if ( cmd["saveAtBoot"].is<bool>() ){
 		mRunInfo.saving = cmd["saveAtBoot"].as<bool>() ? 1 : 0;

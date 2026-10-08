@@ -262,6 +262,7 @@ int saveRunInfo( struct stRunInfo *runInfo )
 
 	doc["setup"] = ( runInfo->setupRequest != 0 );
 	doc["rotation"] = runInfo->lcdRotation;
+	doc["brightness"] = runInfo->brightness;
 	doc["wifi"] = runInfo->wifiSsid;
 
 	struct stBaseSource *src = &runInfo->baseSrc;
@@ -348,6 +349,7 @@ int readRunInfo( struct stRunInfo *runInfo )
 
 	runInfo->setupRequest = doc["setup"] | false;
 	runInfo->lcdRotation = doc["rotation"] | 0;
+	runInfo->brightness = doc["brightness"] | 50;
 	strlcpy( runInfo->wifiSsid, doc["wifi"] | "", sizeof( runInfo->wifiSsid ) );
 
 	struct stBaseSource *src = &runInfo->baseSrc;

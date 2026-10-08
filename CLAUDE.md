@@ -150,6 +150,7 @@ mise run android-screenshot          # 端末の画面を screenshot.png に保�
 | `appSetBaseSource` | 補正元を切り替える。要求を置くだけで(`baseSrcRequest`)、切断と接続は `taskBaseRecv` が行う。`mBaseSrc` をほかのタスクから直接書き換えない |
 | `appSetSaveFormat` | 保存形式を切り替える。F9P の出力(RAW、RTCM)も合わせて切り替える(`gpsRawInit`)。保存中なら、止めて新しい形式で保存し直す |
 | `appSetRotation` | 画面を 180 度回す |
+| `appSetBrightness` | 画面の明るさを変える |
 | `appSetTcpClient` | 測位データの TCP 送信の入・切 |
 | `appSetSolutionRate`、`appSetSaving` | 測位レート、ログ保存 |
 
