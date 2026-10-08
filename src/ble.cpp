@@ -173,6 +173,22 @@ int bleBondCount()
 	return esp_ble_get_bond_device_num();
 }
 
+// 接続している相手の情報を得る
+//
+// 戻り値＝ 1:接続している
+//          0:接続していない（peer は書き換えない）
+//
+int bleGetPeer( struct stBlePeer *peer )
+{
+	if ( ! mBleConnected ) return 0;
+	snprintf( peer->address, sizeof( peer->address ), "%02X:%02X:%02X:%02X:%02X:%02X",
+			mPeerAddress[0], mPeerAddress[1], mPeerAddress[2], mPeerAddress[3], mPeerAddress[4], mPeerAddress[5] );
+	peer->mtu = mPeerMtu;
+	peer->encrypted = mAuthenticated;
+	peer->seconds = ( millis() - mConnectMillis ) / 1000;
+	return 1;
+}
+
 // 覚えているペアリングを全て消す
 //
 // ・接続中の相手は、次の接続からペアリングし直しになる。

@@ -291,6 +291,7 @@ void uiStatus( const char *title, const char *format, ... )
 // 一覧を表示し、項目を選択する
 //
 // ・行をタップして選ぶ。入りきらない時は、下の < > でページを送る。
+// ・上端の帯（題名）と、下の取消のボタンの、どちらでも選ばずに戻れる。
 //
 // title: 題名
 // getLabel: 項目の文字列を返す関数
@@ -301,7 +302,7 @@ void uiStatus( const char *title, const char *format, ... )
 //
 int uiSelectList( const char *title, int numItems, uiLabelFunc getLabel, const char *cancelText )
 {
-	enum { HIT_PREV = -2, HIT_NEXT = -3, HIT_CANCEL = -4, HIT_NONE = -5 };
+	enum { HIT_PREV = -2, HIT_NEXT = -3, HIT_CANCEL = -4, HIT_NONE = -5, HIT_HEADER = -6 };
 	const int numPages = ( numItems + LIST_ROWS - 1 ) / LIST_ROWS;
 	const int barY = TITLE_HEIGHT + LIST_ROWS * LIST_ROW_HEIGHT + 3;
 	const int barHeight = SCREEN_HEIGHT - barY - 5;
@@ -314,7 +315,7 @@ int uiSelectList( const char *title, int numItems, uiLabelFunc getLabel, const c
 		if ( dirty ){
 			dirty = false;
 			screenClear();
-			drawTitle( title );
+			screenHeader( title, pressed == HIT_HEADER );
 			if ( numPages > 1 ){
 				char text[16];
 				snprintf( text, sizeof(text), "%d / %d", page + 1, numPages );
@@ -355,12 +356,13 @@ int uiSelectList( const char *title, int numItems, uiLabelFunc getLabel, const c
 				int index = page * LIST_ROWS + ( ty - TITLE_HEIGHT ) / LIST_ROW_HEIGHT;
 				if ( index < numItems ) hit = index;
 			}
+			else hit = HIT_HEADER;
 		}
 		else released = false;
 
 		if ( released ){
 			if ( hit >= 0 ) return hit;
-			if ( hit == HIT_CANCEL ) return -1;
+			if ( hit == HIT_CANCEL || hit == HIT_HEADER ) return -1;
 			if ( hit == HIT_PREV ) page = ( page + numPages - 1 ) % numPages;
 			if ( hit == HIT_NEXT ) page = ( page + 1 ) % numPages;
 			pressed = HIT_NONE;

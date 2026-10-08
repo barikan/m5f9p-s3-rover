@@ -36,6 +36,7 @@ enum {
 	PAGE_SETUP,
 	PAGE_SATELLITES,
 	PAGE_BRIGHTNESS,		// Setup から開く
+	PAGE_BLUETOOTH,			// Setup から開く
 };
 
 // タップできる範囲の番号
@@ -51,15 +52,16 @@ enum {
 	HIT_SET_FORMAT,
 	HIT_SET_DISPLAY,
 	HIT_SET_TCP,
-	HIT_SET_BLE,			// BLEで接続している相手を切断する
+	HIT_SET_BLE,			// Bluetooth のページを開く
 	HIT_SET_BRIGHTNESS,		// 明るさのページを開く
 	HIT_SAT_VIEW,			// Satellites の表示の切り替え
+	HIT_BLE_DISCONNECT,		// BLEで接続している相手を切断する
 	HIT_BRIGHTNESS = 80,	// + 明るさの番号
 };
 
 #define DRAW_PERIOD 250			// 画面を描き直す間隔（ミリ秒）
 #define MENU_TIMEOUT 20000		// Menuで操作が無い時に、Statusに戻るまでの時間
-#define HEADER_HEIGHT 40
+#define HEADER_HEIGHT SCREEN_HEADER_HEIGHT
 #define MARGIN 12
 #define HIT_MAX 12
 
@@ -90,14 +92,11 @@ static int hitFind( int x, int y )
 	return HIT_NONE;
 }
 
-// ページ上端の帯。タップするとMenuに戻る
+// ページ上端の帯。タップすると前の画面（Menu。Setup から開いたページは Setup）に戻る
 //
 static void drawHeader( const char *title )
 {
-	int bg = ( mPressed == HIT_BACK ) ? COLOR_SURFACE : COLOR_BG;
-	screenCanvas().fillRect( 0, 0, SCREEN_WIDTH, HEADER_HEIGHT, (uint16_t) bg );
-	screenIcon( 4, ( HEADER_HEIGHT - iconBackSize ) / 2, iconBack, iconBackSize, COLOR_MUTED, bg );
-	screenText( 36, HEADER_HEIGHT / 2, title, FONT_TITLE, COLOR_TEXT, lgfx::textdatum_t::middle_left );
+	screenHeader( title, mPressed == HIT_BACK );
 	hitAdd( 0, 0, SCREEN_WIDTH, HEADER_HEIGHT, HIT_BACK );
 }
 
@@ -700,7 +699,6 @@ static void drawDevice()
 static void drawSetup()
 {
 	bool tcp = ( strlen( mAgribusIp ) > 0 );		// 送信先が設定ファイルにある時だけ出す
-	bool ble = ( mBleEnable && mBleConnected );		// 接続している相手がいる時だけ出す
 	struct { const uint8_t *icon; const char *label; int id; } items[7];
 	int count = 0;
 	items[ count++ ] = { iconWifi, "Wi-Fi", HIT_SET_WIFI };
@@ -709,7 +707,7 @@ static void drawSetup()
 	items[ count++ ] = { iconBrightness, "Brightness", HIT_SET_BRIGHTNESS };
 	items[ count++ ] = { iconRotate, "Rotate", HIT_SET_DISPLAY };
 	if ( tcp ) items[ count++ ] = { iconSend, mAgribusReady ? "TCP: On" : "TCP: Off", HIT_SET_TCP };
-	if ( ble ) items[ count++ ] = { iconBluetooth, "Bluetooth", HIT_SET_BLE };
+	items[ count++ ] = { iconBluetooth, "Bluetooth", HIT_SET_BLE };
 
 	const int gap = 8;
 	const int top = HEADER_HEIGHT + 2;
@@ -738,17 +736,53 @@ static void drawBrightness()
 	const int n = sizeof(mBrightness) / sizeof(mBrightness[0]);
 	const int gap = 6;
 	const int w = ( SCREEN_WIDTH - MARGIN * 2 - gap * ( n - 1 ) ) / n;
-	const int h = 84;
-	const int by = SCREEN_HEIGHT - h - MARGIN;
+	const int backHeight = 44;
+	const int backY = SCREEN_HEIGHT - backHeight - 8;
+	const int h = 64;
+	const int by = backY - 8 - h;
 
 	drawHeader( "Brightness" );
 	snprintf( text, sizeof(text), "%d%%", mRunInfo.brightness );
 	screenText( SCREEN_WIDTH / 2, ( HEADER_HEIGHT + by ) / 2, text, FONT_VALUE, COLOR_TEXT, lgfx::textdatum_t::middle_center );
+	drawButton( MARGIN, backY, SCREEN_WIDTH - MARGIN * 2, backHeight, "Back", HIT_BACK );
 
 	for( int i=0; i < n; i++ ){
 		snprintf( text, sizeof(text), "%d", mBrightness[i] );
 		drawButton( MARGIN + i * ( w + gap ), by, w, h, text, HIT_BRIGHTNESS + i, mBrightness[i] == mRunInfo.brightness );
 	}
+}
+
+// Bluetooth: 接続している相手の情報と、切断のボタン。Setup から開く
+//
+// ・Setup から開く画面は、上端の帯と、下の Back のどちらでも戻れるようにしている
+//   （一覧の画面 uiSelectList も同じ）。
+// ・切断しても、ペアリングの記憶は消さない。相手は、あとで接続し直せる。
+// ・相手の名前は、本体からは分からない（アドレスだけ）。
+//
+static void drawBluetooth()
+{
+	const int buttonHeight = 56;
+	const int by = SCREEN_HEIGHT - buttonHeight - MARGIN;
+	struct stBlePeer peer;
+	bool connected = ( mBleEnable && bleGetPeer( &peer ) );
+
+	drawHeader( "Bluetooth" );
+	tableBegin();
+	if ( ! mBleEnable ) tableAdd( "State", COLOR_TEXT, "Off" );
+	else if ( ! connected ) tableAdd( "State", COLOR_TEXT, "Waiting" );
+	else {
+		tableAdd( "State", COLOR_GREEN, "Connected" );
+		tableAdd( "Address", COLOR_TEXT, "%s", peer.address );
+		tableAdd( "Security", peer.encrypted ? COLOR_TEXT : COLOR_ORANGE, peer.encrypted ? ( mBlePairing ? "Paired" : "No pairing" ) : "Pairing..." );
+		if ( peer.seconds >= 3600 ) tableAdd( "Time", COLOR_TEXT, "%lu:%02lu:%02lu", peer.seconds / 3600, peer.seconds / 60 % 60, peer.seconds % 60 );
+		else tableAdd( "Time", COLOR_TEXT, "%lu:%02lu", peer.seconds / 60, peer.seconds % 60 );
+	}
+	if ( mBleEnable ) tableAdd( "Paired", COLOR_TEXT, "%d", bleBondCount() );
+	tableDraw( HEADER_HEIGHT, by - 6 );
+
+	const int bw = ( SCREEN_WIDTH - MARGIN * 3 ) / 2;
+	drawButton( MARGIN, by, bw, buttonHeight, "Back", HIT_BACK );
+	drawButton( MARGIN * 2 + bw, by, bw, buttonHeight, "Disconnect", HIT_BLE_DISCONNECT, false, connected );
 }
 
 // 保存形式の一覧
@@ -777,11 +811,6 @@ static void onSetting( int id )
 	}
 	else if ( id == HIT_SET_DISPLAY ) appSetRotation( ! mRunInfo.lcdRotation );
 	else if ( id == HIT_SET_TCP ) appSetTcpClient( ! mAgribusReady );
-	else if ( id == HIT_SET_BLE ){
-		// 0:Cancel 1:Disconnect
-		if ( uiAsk( "Bluetooth", "Cancel", "Disconnect", NULL,
-					"Disconnect the phone or PC connected via Bluetooth?\nIt can connect again later." ) == 1 ) bleDisconnect();
-	}
 }
 
 // BLEのペアリング中。相手に入力してもらう番号を表示する
@@ -799,7 +828,7 @@ static void drawPairing( int passkey )
 
 static void onTap( int id )
 {
-	if ( id == HIT_BACK ) mPage = ( mPage == PAGE_BRIGHTNESS ) ? PAGE_SETUP : PAGE_MENU;
+	if ( id == HIT_BACK ) mPage = ( mPage == PAGE_BRIGHTNESS || mPage == PAGE_BLUETOOTH ) ? PAGE_SETUP : PAGE_MENU;
 	else if ( id >= HIT_PAGE && id < HIT_SAVE ) mPage = id - HIT_PAGE;
 	else if ( id == HIT_SAVE ) appSetSaving( ! mFileSaving );
 	else if ( id == HIT_SAVE_AT_BOOT ){
@@ -807,7 +836,9 @@ static void onTap( int id )
 		saveRunInfo( &mRunInfo );
 	}
 	else if ( id >= HIT_RATE && id < HIT_SET_WIFI ) appSetSolutionRate( mRates[ id - HIT_RATE ] );
-	else if ( id >= HIT_SET_WIFI && id <= HIT_SET_BLE ) onSetting( id );
+	else if ( id == HIT_SET_BLE ) mPage = PAGE_BLUETOOTH;
+	else if ( id == HIT_BLE_DISCONNECT ) bleDisconnect();
+	else if ( id >= HIT_SET_WIFI && id <= HIT_SET_TCP ) onSetting( id );
 	else if ( id == HIT_SET_BRIGHTNESS ) mPage = PAGE_BRIGHTNESS;
 	else if ( id == HIT_SAT_VIEW ) mSatView = ! mSatView;
 	else if ( id >= HIT_BRIGHTNESS ) appSetBrightness( mBrightness[ id - HIT_BRIGHTNESS ] );
@@ -849,6 +880,7 @@ static void draw( int passkey )
 		case PAGE_SETUP: drawSetup(); break;
 		case PAGE_SATELLITES: drawSatellites(); break;
 		case PAGE_BRIGHTNESS: drawBrightness(); break;
+		case PAGE_BLUETOOTH: drawBluetooth(); break;
 	}
 	screenFlush();
 }

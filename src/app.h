@@ -303,6 +303,15 @@ extern int mBleNmeaRateNow;
 int bleStart();
 int blePasskey();
 int bleBondCount();
+
+// BLEで接続している相手
+struct stBlePeer {
+	char address[18];		// アドレス "AA:BB:CC:DD:EE:FF"
+	int mtu;
+	bool encrypted;			// 暗号化が済んでいる（ペアリングを使わない時は、いつも true）
+	unsigned long seconds;	// 接続してからの時間（秒）
+};
+int bleGetPeer( struct stBlePeer *peer );
 void bleDisconnect();
 int bleUnpairAll();
 void blePoll();

@@ -44,6 +44,8 @@ void screenInvalidate();
 void screenText( int x, int y, const char *text, int font, int color, lgfx::textdatum_t datum = lgfx::textdatum_t::top_left );
 int screenTextWidth( const char *text, int font );
 void screenIcon( int x, int y, const uint8_t *icon, int size, int color, int background );
+#define SCREEN_HEADER_HEIGHT 40
+void screenHeader( const char *title, bool pressed );
 
 // タップ
 bool screenTouch( int *x, int *y, bool *released );

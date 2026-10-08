@@ -145,6 +145,18 @@ void screenIcon( int x, int y, const uint8_t *icon, int size, int color, int bac
 								(uint16_t) color, (uint16_t) background );
 }
 
+// 画面上端の帯。左に「戻る」の印、その右に題名を描く。帯の全体が、戻るボタンになる
+//
+// pressed: 押されている間の表示にする
+//
+void screenHeader( const char *title, bool pressed )
+{
+	int bg = pressed ? COLOR_SURFACE : COLOR_BG;
+	mCanvas.fillRect( 0, 0, SCREEN_WIDTH, SCREEN_HEADER_HEIGHT, (uint16_t) bg );
+	screenIcon( 4, ( SCREEN_HEADER_HEIGHT - iconBackSize ) / 2, iconBack, iconBackSize, COLOR_MUTED, bg );
+	screenText( 36, SCREEN_HEADER_HEIGHT / 2, title, FONT_TITLE, COLOR_TEXT, lgfx::textdatum_t::middle_left );
+}
+
 // ---------------------------------------------------------------- タップ
 
 // 画面に触れているかどうかを読む

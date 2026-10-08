@@ -330,7 +330,7 @@ static int ntripSelect_caster( const char* server, int port, double lat, double 
 		retCode = -2;
 	}
 	while( nret > 0 ){
-		int idx = uiSelectList( "Mount point", mNumMountPoints, mountPointLabel, "Cancel" );
+		int idx = uiSelectList( "Mount point", mNumMountPoints, mountPointLabel, "Back" );
 		if ( idx < 0 ) break;
 
 		stMountPoint *mp = & mMountPoints[ idx ];
