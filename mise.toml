@@ -146,14 +146,20 @@ usage = '''
 arg "<csv>" help="本体の同時記録 imu_*.csv(log.get で取り出したもの)"
 flag "--outage <sec>" help="模擬の途切れの長さ(秒)。省略時は要約だけ"
 flag "--every <sec>" help="途切れを作る間隔(秒)" default="60"
+flag "--start <sec>" help="最初の途切れを作る時刻(秒)。省略時は --every と同じ"
 flag "-v --verbose" help="途切れの間の、測位ごとの誤差も表示する"
+flag "--no-accel" help="途切れの間、速さを変えない(加速度を使わない)"
+flag "--no-gyro" help="途切れの間、向きを変えない(ジャイロを使わない)"
 '''
 run = '''
 #!/usr/bin/env bash
 set -euo pipefail
 opts=(--every "${usage_every?}")
 if [ -n "${usage_outage:-}" ]; then opts+=(--outage "$usage_outage"); fi
+if [ -n "${usage_start:-}" ]; then opts+=(--start "$usage_start"); fi
 if [ "${usage_verbose:-false}" = "true" ]; then opts+=(-v); fi
+if [ "${usage_no_accel:-false}" = "true" ]; then opts+=(--no-accel); fi
+if [ "${usage_no_gyro:-false}" = "true" ]; then opts+=(--no-gyro); fi
 uv run --quiet python3 scripts/ins_replay.py "${opts[@]}" "${usage_csv?}"
 '''
 

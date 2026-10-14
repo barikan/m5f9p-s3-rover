@@ -27,6 +27,9 @@
 //
 // 座標系
 //   本体の軸（センサーの軸）のまま姿勢（四元数）を求め、水平な「レベル座標」に直す。
+//   姿勢は Mahony の相補フィルタで、走行中は加速度から車両の加速度（前後は GNSS の加減速、
+//   横は遠心力）を差し引いてから重力の向きに合わせる。定数は走行ログの再生
+//   （scripts/ins_replay.py）で決めた。再生スクリプトと同じ計算にしておく事。
 //   レベル座標の yaw はジャイロの積分で、真北とは関係ない。車体の前方向は、レベル座標の
 //   水平面の中の角度（mForward）で、走行中に GNSS の加減速と加速度の向きを比べて求める
 //   （自動校正。取り付けの向きは設定しなくてよい）。求まるまでは、進行方向は GNSS の
@@ -86,21 +89,29 @@
 
 // ---- 姿勢（Mahony の相補フィルタ）。重力に合わせる強さ
 #define INS_KP_STILL 2.0f				// 静止中
-#define INS_KP_MOVING 0.05f				// 走行中（加減速や遠心力に引かれないよう、ごく弱く）
+#define INS_KP_MOVING 0.05f				// 走行中（車両の加速度を差し引いた上で）。走行ログの再生で 0.5〜0.02 を比べて決めた
+#define INS_KP_BLIND 0.02f				// 走行中で、GNSS の加減速が分からない時（途切れの間）
+#define INS_GNSS_ACC_FRESH_MSEC 1500	// GNSS の加減速を使える時間
+#define INS_STILL_ACC_SMALL 0.05f		// 静止中でも、前方向の加速度がこれ（g）以上なら動き始めとみなす
+#define INS_ALIGN_SAMPLES 500			// 起動直後、この数のサンプルは重力に強く合わせる（初期の姿勢合わせ。5 秒）
 
 // ---- 前方向の校正
 #define INS_CAL_ACC_MIN 0.3f			// GNSS の加減速（m/s²）がこれ以上の区間を使う
 #define INS_CAL_YAWRATE_MAX 3.0f		// 区間の平均の角速度（deg/s）がこれ未満（旋回中は使わない）
 #define INS_CAL_WEIGHT_OK 5.0f			// 重み（加減速の合計 m/s²）がこれを超えたら校正済み
+#define INS_CAL_WEIGHT_MAX 50.0f		// 重みの上限。超えたら縮めて、古い結果（姿勢が合う前のもの）を忘れる
 #define INS_CAL_SAVE_MSEC 60000			// 校正の結果を run.json に書く最短の間隔
 #define INS_ACC_BIAS_ALPHA 0.05f		// 前方向の加速度のずれの更新の重み
+#define INS_ACC_BIAS_MAX 0.5f			// 前方向の加速度のずれの上限（m/s²）
+#define INS_ACC_RESIDUAL_MAX 1.5f		// これ以上の残差は外れ値として、ずれの更新に使わない
 
 // ---- 推測航法
 #define INS_HEADING_SPEED_MIN 1.0f		// GNSS の進行方向を使う最低の速さ（m/s）
 #define INS_GNSS_HACC_MAX 30.0f			// 使う測位の推定精度の上限（m）
 #define INS_G 9.80665f
 
-#define INS_LOG_BUFF_MAX 4096			// 記録のバッファ（2つ。PSRAM）
+#define INS_LOG_BUFF_MAX 32768			// 記録のバッファ（2つ。PSRAM）。100Hz で約 7.5KB/秒なので、
+										// SD の書き込みが 4 秒ほど止まっても捨てない
 #define INS_LOG_FLUSH_MSEC 1000			// 溜めた記録を書き出しに回す間隔
 
 struct stInsState mIns;
@@ -145,6 +156,8 @@ static int mEpochCount;
 
 // 前方向の校正
 static float mForwardSumX, mForwardSumY;
+static float mGnssAcc;					// 直前の測位の区間の加減速（m/s²）
+static unsigned long mGnssAccMillis;	// それを受け取った時刻（0 の時は無い）
 static unsigned long mCalSavedMillis;
 static float mCalSavedForward;
 
@@ -285,6 +298,16 @@ static void toLevel( float x, float y, float z, float *lx, float *ly, float *lz 
 	*lx = ( 1 - 2 * ( q2 * q2 + q3 * q3 ) ) * x + 2 * ( q1 * q2 - q0 * q3 ) * y + 2 * ( q1 * q3 + q0 * q2 ) * z;
 	*ly = 2 * ( q1 * q2 + q0 * q3 ) * x + ( 1 - 2 * ( q1 * q1 + q3 * q3 ) ) * y + 2 * ( q2 * q3 - q0 * q1 ) * z;
 	*lz = 2 * ( q1 * q3 - q0 * q2 ) * x + 2 * ( q2 * q3 + q0 * q1 ) * y + ( 1 - 2 * ( q1 * q1 + q2 * q2 ) ) * z;
+}
+
+// レベル座標のベクトルを、本体の軸に回す（toLevel の逆）
+//
+static void toBody( float x, float y, float z, float *bx, float *by, float *bz )
+{
+	float q0 = mQ[0], q1 = mQ[1], q2 = mQ[2], q3 = mQ[3];
+	*bx = ( 1 - 2 * ( q2 * q2 + q3 * q3 ) ) * x + 2 * ( q1 * q2 + q0 * q3 ) * y + 2 * ( q1 * q3 - q0 * q2 ) * z;
+	*by = 2 * ( q1 * q2 - q0 * q3 ) * x + ( 1 - 2 * ( q1 * q1 + q3 * q3 ) ) * y + 2 * ( q2 * q3 + q0 * q1 ) * z;
+	*bz = 2 * ( q1 * q3 + q0 * q2 ) * x + 2 * ( q2 * q3 - q0 * q1 ) * y + ( 1 - 2 * ( q1 * q1 + q2 * q2 ) ) * z;
 }
 
 // 四元数から roll, pitch, yaw（度）を求める
@@ -468,6 +491,13 @@ static void gnssUpdate( const struct stGpsData *g )
 	mEpochSumX = mEpochSumY = mEpochSumLong = mEpochSumYawRate = 0;
 	mEpochCount = 0;
 
+	if ( mGpsUsable && mPrevGpsUsable && ! testing ){
+		float dtGps = ( g->iTOW - mPrevGpsItow ) * 1E-3f;
+		if ( dtGps > 0.05f && dtGps < 3.0f ){
+			mGnssAcc = ( mGpsSpeed - mPrevGpsSpeed ) / dtGps;		// 姿勢の補正に使う（processSample）
+			mGnssAccMillis = millis() | 1;
+		}
+	}
 	if ( mGpsUsable && mPrevGpsUsable && n > 0 && ! testing ){
 		float dtGps = ( g->iTOW - mPrevGpsItow ) * 1E-3f;
 		if ( dtGps > 0.05f && dtGps < 3.0f && fabsf( meanYawRate ) < INS_CAL_YAWRATE_MAX ){
@@ -481,6 +511,12 @@ static void gnssUpdate( const struct stGpsData *g )
 				mForwardSumX += w * sign * meanX / mag;
 				mForwardSumY += w * sign * meanY / mag;
 				mIns.forwardWeight += w;
+				if ( mIns.forwardWeight > INS_CAL_WEIGHT_MAX ){
+					float k = INS_CAL_WEIGHT_MAX / mIns.forwardWeight;
+					mForwardSumX *= k;
+					mForwardSumY *= k;
+					mIns.forwardWeight = INS_CAL_WEIGHT_MAX;
+				}
 				mIns.forward = atan2f( mForwardSumY, mForwardSumX ) * RAD2DEG;
 				if ( mIns.forwardWeight >= INS_CAL_WEIGHT_OK ){
 					mIns.forwardValid = true;
@@ -491,7 +527,11 @@ static void gnssUpdate( const struct stGpsData *g )
 			// 前方向の加速度のずれ。IMU の加速度と GNSS の加減速の差
 			if ( mIns.forwardValid ){
 				float residual = meanLong * INS_G - gnssAcc;
-				mIns.accBias += INS_ACC_BIAS_ALPHA * ( residual - mIns.accBias );
+				if ( fabsf( residual ) < INS_ACC_RESIDUAL_MAX ){
+					mIns.accBias += INS_ACC_BIAS_ALPHA * ( residual - mIns.accBias );
+					if ( mIns.accBias > INS_ACC_BIAS_MAX ) mIns.accBias = INS_ACC_BIAS_MAX;
+					if ( mIns.accBias < -INS_ACC_BIAS_MAX ) mIns.accBias = -INS_ACC_BIAS_MAX;
+				}
 			}
 		}
 	}
@@ -572,31 +612,58 @@ void insCalibrationReset()
 //
 static void processSample( const float *acc, const float *gyro, unsigned long usec, float dt )
 {
+	mIns.samples++;
 	float accNorm = sqrtf( acc[0] * acc[0] + acc[1] * acc[1] + acc[2] * acc[2] );
 	stillUpdate( accNorm, gyro );
 	bool still = isStill();
 
-	// 姿勢
 	float g[3];
 	for( int i=0; i < 3; i++ ) g[i] = ( gyro[i] - mIns.gyroBias[i] ) * DEG2RAD;
-	attitudeUpdate( g[0], g[1], g[2], acc[0], acc[1], acc[2], dt, still ? INS_KP_STILL : INS_KP_MOVING );
-	attitudeEuler( &mIns.roll, &mIns.pitch, &mIns.yaw );
-	mIns.accNorm = accNorm;
-	mIns.still = still;
 
-	// レベル座標の加速度（重力を除く）と角速度
+	// いまの姿勢で、加速度をレベル座標（重力を除く）に直し、角速度も直す
 	float ax, ay, az, wx, wy, wz;
 	toLevel( acc[0], acc[1], acc[2], &ax, &ay, &az );
 	az -= 1.0f;
 	toLevel( g[0], g[1], g[2], &wx, &wy, &wz );
 	float yawRate = wz * RAD2DEG;
 
-	// 水平加速度を、レベル座標の yaw を除いた向き（車体に固定した向き）に直す
+	// 水平加速度を、レベル座標の yaw を除いた向き（車体に固定した向き）に直し、前方向の成分を出す
 	float yaw = mIns.yaw * DEG2RAD;
 	float bx = cosf( yaw ) * ax + sinf( yaw ) * ay;
 	float by = -sinf( yaw ) * ax + cosf( yaw ) * ay;
 	float fwd = mIns.forward * DEG2RAD;
 	float aLong = cosf( fwd ) * bx + sinf( fwd ) * by;
+
+	// 姿勢の補正に使う重力の向き。加速度から車両の加速度（前後は GNSS の加減速、横は遠心力）を
+	// 差し引く。差し引かないと、発進や旋回の加速度を重力の向きの変化と取り違えて姿勢が回り、
+	// 前方向の加速度の半分近くが消える（走行ログで確認）。
+	bool gnssFresh = ( mGnssAccMillis && millis() - mGnssAccMillis < INS_GNSS_ACC_FRESH_MSEC );
+	float kp, aFwd = 0, aLat = 0;
+	if ( mIns.samples <= INS_ALIGN_SAMPLES ) kp = INS_KP_STILL;		// 初期の姿勢合わせ
+	else if ( still ){
+		kp = INS_KP_STILL;
+		if ( mIns.forwardValid && fabsf( aLong ) >= INS_STILL_ACC_SMALL ) aFwd = aLong;	// 動き始めは前方向を信じない
+	}
+	else if ( ! mIns.forwardValid ) kp = INS_KP_BLIND;		// 車両の加速度の向きが分からないので、ジャイロに任せる
+	else if ( gnssFresh ){
+		kp = INS_KP_MOVING;
+		aFwd = mGnssAcc / INS_G;
+		aLat = mIns.speed * wz / INS_G;		// 遠心力（レベル座標の横方向）
+	}
+	else {
+		kp = INS_KP_BLIND;
+		aFwd = aLong;						// 前方向の成分は補正に使わない
+		aLat = mIns.speed * wz / INS_G;
+	}
+	float ang = yaw + fwd;
+	float ex = cosf( ang ) * aFwd - sinf( ang ) * aLat;
+	float ey = sinf( ang ) * aFwd + cosf( ang ) * aLat;
+	float cx, cy, cz;
+	toBody( ex, ey, 0, &cx, &cy, &cz );
+	attitudeUpdate( g[0], g[1], g[2], acc[0] - cx, acc[1] - cy, acc[2] - cz, dt, kp );
+	attitudeEuler( &mIns.roll, &mIns.pitch, &mIns.yaw );
+	mIns.accNorm = accNorm;
+	mIns.still = still;
 
 	mEpochSumX += bx;
 	mEpochSumY += by;
@@ -703,7 +770,6 @@ static void fifoPoll()
 		}
 		mLastSampleMicros = readMicros;
 		mSecondCount += numSamples;
-		mIns.samples += numSamples;
 	}
 }
 
@@ -727,7 +793,6 @@ static void registerPoll()
 	}
 	mLastSampleMicros = d.usec;
 	mSecondCount++;
-	mIns.samples++;
 	if ( dt > 0 ) processSample( d.accel.value, d.gyro.value, d.usec, dt );
 }
 
@@ -774,6 +839,7 @@ int insInit()
 	if ( mRunInfo.imuForwardWeight > 0 ){
 		mIns.forward = mRunInfo.imuForward;
 		mIns.forwardWeight = mRunInfo.imuForwardWeight;
+		if ( mIns.forwardWeight > INS_CAL_WEIGHT_MAX ) mIns.forwardWeight = INS_CAL_WEIGHT_MAX;
 		mIns.forwardValid = ( mIns.forwardWeight >= INS_CAL_WEIGHT_OK );
 		float f = mIns.forward * DEG2RAD;
 		mForwardSumX = mIns.forwardWeight * cosf( f );

@@ -32,11 +32,19 @@ INS_BIAS_BLOCKS = 2
 INS_BIAS_ALPHA = 0.1
 INS_GNSS_STILL_SPEED = 0.2
 INS_KP_STILL = 2.0
-INS_KP_MOVING = 0.05
+INS_KP_MOVING = 0.05              # 走行中（車両の加速度を差し引いた上で）。再生で 0.5〜0.02 を比べて決めた
+INS_KP_BLIND = 0.02               # 走行中で、GNSS の加減速が分からない時（途切れの間）
+INS_GNSS_ACC_FRESH = 1.5          # GNSS の加減速を使える時間（秒）
+INS_STILL_ACC_SMALL = 0.05        # 静止中でも、前方向の加速度がこれ（g）以上なら動き始めとみなす
+INS_ALIGN_SAMPLES = 500           # 起動直後、この数のサンプルは重力に強く合わせる（初期の姿勢合わせ。5 秒）
 INS_CAL_ACC_MIN = 0.3
 INS_CAL_YAWRATE_MAX = 3.0
 INS_CAL_WEIGHT_OK = 5.0
+INS_CAL_WEIGHT_MAX = 50.0         # 重みの上限。超えたら縮めて、古い結果（姿勢が合う前のもの）を忘れる
 INS_ACC_BIAS_ALPHA = 0.05
+INS_ACC_BIAS_MAX = 0.5            # 前方向の加速度のずれの上限（m/s²）。これを超える残差は外れ値として使わない
+INS_ACC_RESIDUAL_MAX = 1.5
+INS_SPEED_DEADBAND = 0.0          # 途切れの間、前方向の加速度（ずれを引いたもの）がこれ未満なら速さを変えない（m/s²）
 INS_HEADING_SPEED_MIN = 1.0
 INS_GNSS_HACC_MAX = 30.0
 
@@ -58,7 +66,9 @@ def distance(lat1, lon1, lat2, lon2):
 class Ins:
     """src/ins.cpp の推定部分。processSample() と gnss_update() を記録の順に呼ぶ。"""
 
-    def __init__(self):
+    def __init__(self, use_accel=True, use_gyro=True):
+        self.use_accel = use_accel      # 途切れの間、速さを前方向の加速度で増減する（False なら直前の速さのまま）
+        self.use_gyro = use_gyro        # 途切れの間、向きをジャイロで積分する（False なら直前の向きのまま）
         self.q = [1.0, 0.0, 0.0, 0.0]
         self.gyro_bias = [0.0, 0.0, 0.0]
         self.bias_valid = False
@@ -84,6 +94,8 @@ class Ins:
         self.forward_weight = 0.0
         self.forward_valid = False
         self.acc_bias = 0.0
+        self.gnss_acc = 0.0           # 直前の測位の区間の加減速（m/s²）
+        self.gnss_acc_t = None        # それを受け取った時刻
         # 推測航法
         self.synced = False
         self.lat0 = self.lon0 = 0.0
@@ -120,6 +132,14 @@ class Ins:
         ly = 2 * (q1 * q2 + q0 * q3) * x + (1 - 2 * (q1 * q1 + q3 * q3)) * y + 2 * (q2 * q3 - q0 * q1) * z
         lz = 2 * (q1 * q3 - q0 * q2) * x + 2 * (q2 * q3 + q0 * q1) * y + (1 - 2 * (q1 * q1 + q2 * q2)) * z
         return lx, ly, lz
+
+    def to_body(self, x, y, z):
+        """レベル座標のベクトルを本体の軸に回す（to_level の逆）。"""
+        q0, q1, q2, q3 = self.q
+        bx = (1 - 2 * (q2 * q2 + q3 * q3)) * x + 2 * (q1 * q2 + q0 * q3) * y + 2 * (q1 * q3 - q0 * q2) * z
+        by = 2 * (q1 * q2 - q0 * q3) * x + (1 - 2 * (q1 * q1 + q3 * q3)) * y + 2 * (q2 * q3 + q0 * q1) * z
+        bz = 2 * (q1 * q3 + q0 * q2) * x + 2 * (q2 * q3 - q0 * q1) * y + (1 - 2 * (q1 * q1 + q2 * q2)) * z
+        return bx, by, bz
 
     def euler(self):
         q0, q1, q2, q3 = self.q
@@ -176,12 +196,14 @@ class Ins:
     def dr_propagate(self, a_long, yaw_rate, dt, still):
         if not self.synced:
             return
-        if self.heading_valid:
+        if self.heading_valid and self.use_gyro:
             self.heading = (self.heading - yaw_rate * dt) % 360
         if still:
             self.speed = 0.0
-        elif self.forward_valid:
-            self.speed = max(0.0, self.speed + (a_long * G - self.acc_bias) * dt)
+        elif self.forward_valid and self.use_accel:
+            a = a_long * G - self.acc_bias
+            if abs(a) >= INS_SPEED_DEADBAND:
+                self.speed = max(0.0, self.speed + a * dt)
         if self.heading_valid and self.speed > 0:
             h = self.heading * DEG2RAD
             self.e += self.speed * math.sin(h) * dt
@@ -197,11 +219,8 @@ class Ins:
         if still:
             self.still_samples += 1
         g = [(gyro[i] - self.gyro_bias[i]) * DEG2RAD for i in range(3)]
-        self.attitude_update(g[0], g[1], g[2], acc[0], acc[1], acc[2], dt,
-                             INS_KP_STILL if still else INS_KP_MOVING)
-        self.euler()
-        self.still = still
 
+        # いまの姿勢で、加速度をレベル座標に直し、車体の前方向・横方向の成分を出す
         ax, ay, az = self.to_level(*acc)
         az -= 1.0
         wx, wy, wz = self.to_level(*g)
@@ -211,6 +230,34 @@ class Ins:
         by = -math.sin(yaw) * ax + math.cos(yaw) * ay
         fwd = self.forward * DEG2RAD
         a_long = math.cos(fwd) * bx + math.sin(fwd) * by
+
+        # 姿勢の補正に使う重力の向き。加速度から、車両の加速度（前後、横）を差し引く。
+        # 差し引かないと、発進や旋回の加速度を重力の向きの変化と取り違えて姿勢が回る。
+        gnss_fresh = (self.gnss_acc_t is not None and self.t - self.gnss_acc_t < INS_GNSS_ACC_FRESH)
+        a_fwd = a_lat = 0.0
+        if self.samples <= INS_ALIGN_SAMPLES:
+            kp = INS_KP_STILL           # 初期の姿勢合わせ（起動時は止まっている事が多い）
+        elif still:
+            kp = INS_KP_STILL
+            if self.forward_valid and abs(a_long) >= INS_STILL_ACC_SMALL:
+                a_fwd = a_long          # 動き始め（静止判定が遅れている）は、前方向を信じない
+        elif not self.forward_valid:
+            kp = INS_KP_BLIND           # 車両の加速度の向きが分からないので、ジャイロに任せる
+        elif gnss_fresh:
+            kp = INS_KP_MOVING
+            a_fwd = self.gnss_acc / G
+            a_lat = self.speed * wz / G     # 遠心力（レベル座標の横方向）
+        else:
+            kp = INS_KP_BLIND
+            a_fwd = a_long              # 前方向の成分は補正に使わない
+            a_lat = self.speed * wz / G
+        ang = yaw + fwd
+        ex = math.cos(ang) * a_fwd - math.sin(ang) * a_lat
+        ey = math.sin(ang) * a_fwd + math.cos(ang) * a_lat
+        cx, cy, cz = self.to_body(ex, ey, 0.0)
+        self.attitude_update(g[0], g[1], g[2], acc[0] - cx, acc[1] - cy, acc[2] - cz, dt, kp)
+        self.euler()
+        self.still = still
 
         ep = self.epoch
         ep[0] += bx
@@ -232,6 +279,11 @@ class Ins:
         mean_x, mean_y, mean_long, mean_yaw = [(v / n if n else 0.0) for v in self.epoch[:4]]
         self.epoch = [0.0, 0.0, 0.0, 0.0, 0]
 
+        if self.gps_usable and self.prev_usable and not outage:
+            dt_gps0 = (g["iTOW"] - self.prev_itow) * 1e-3
+            if 0.05 < dt_gps0 < 3.0:
+                self.gnss_acc = (self.gps_speed - self.prev_speed) / dt_gps0
+                self.gnss_acc_t = self.t
         if self.gps_usable and self.prev_usable and n > 0 and not outage:
             dt_gps = (g["iTOW"] - self.prev_itow) * 1e-3
             if 0.05 < dt_gps < 3.0 and abs(mean_yaw) < INS_CAL_YAWRATE_MAX:
@@ -243,12 +295,19 @@ class Ins:
                     self.fwd_sum[0] += w * sign * mean_x / mag
                     self.fwd_sum[1] += w * sign * mean_y / mag
                     self.forward_weight += w
+                    if self.forward_weight > INS_CAL_WEIGHT_MAX:
+                        k = INS_CAL_WEIGHT_MAX / self.forward_weight
+                        self.fwd_sum[0] *= k
+                        self.fwd_sum[1] *= k
+                        self.forward_weight = INS_CAL_WEIGHT_MAX
                     self.forward = math.atan2(self.fwd_sum[1], self.fwd_sum[0]) * RAD2DEG
                     if self.forward_weight >= INS_CAL_WEIGHT_OK:
                         self.forward_valid = True
                 if self.forward_valid:
                     residual = mean_long * G - gnss_acc
-                    self.acc_bias += INS_ACC_BIAS_ALPHA * (residual - self.acc_bias)
+                    if abs(residual) < INS_ACC_RESIDUAL_MAX:
+                        self.acc_bias += INS_ACC_BIAS_ALPHA * (residual - self.acc_bias)
+                        self.acc_bias = max(-INS_ACC_BIAS_MAX, min(INS_ACC_BIAS_MAX, self.acc_bias))
 
         if not outage and self.gps_usable:
             self.dr_sync(g)
@@ -284,21 +343,58 @@ def read_log(path):
     return rows
 
 
+LOST = {"samples": 0}     # 記録から抜けたサンプルの数（推定）
+RATE = {"hz": float(INS_ODR)}   # 記録から測ったサンプルの周波数（measure_rate）
+
+
+def measure_rate(rows):
+    """IMU の実際のサンプル周波数を、GNSS の時刻（iTOW）で測る。
+
+    本体は FIFO のサンプルに「読み出した時刻から 1/INS_ODR 秒ずつ逆算した」時刻を付けるので、
+    記録の micros からは本当の周期が分からない。GNSS の行の間のサンプル数を iTOW の差で割る。
+    BMI270 の内部クロックは数 % ずれる事がある。"""
+    n = 0
+    first = last = None
+    n_first = n_last = 0
+    for kind, r in rows:
+        if kind == "I":
+            n += 1
+        elif kind == "G":
+            if first is None:
+                first, n_first = r["iTOW"], n
+            last, n_last = r["iTOW"], n
+    if first is None or last is None or last - first < 10000 or n_last - n_first < 100:
+        return float(INS_ODR)
+    return (n_last - n_first) / ((last - first) * 1e-3)
+
+
 def sample_dt(prev_micros, micros):
+    """前のサンプルからの時間。通常は測った周期（1/RATE）。記録から抜けた区間（SD の書き込みが
+    追いつかなかった時）は、抜けた分の回転は分からないので、2 サンプル分までしか積分しない
+    （本体は FIFO で全部読む）。"""
+    period = 1.0 / RATE["hz"]
     if prev_micros is None:
-        return 1.0 / INS_ODR
-    dt = ((micros - prev_micros) & 0xFFFFFFFF) * 1e-6
-    return max(0.001, min(0.2, dt))
+        return period
+    d = (micros - prev_micros) & 0xFFFFFFFF
+    if d >= 0x80000000:
+        d -= 0x100000000          # 読み出しのまとまりの境で、少し前の時刻になる事がある
+    dt = d * 1e-6
+    if dt > 2.5 / INS_ODR:
+        LOST["samples"] += int(round(dt * RATE["hz"])) - 1
+        return 2.0 * period
+    return period
 
 
 # ---------------------------------------------------------------- 評価
 
-def run(rows, outage_sec=0.0, every_sec=60.0, start_sec=0.0, verbose=False):
+def run(rows, outage_sec=0.0, every_sec=60.0, start_sec=0.0, verbose=False, use_accel=True, use_gyro=True):
     """記録を再生する。outage_sec > 0 の時は、every_sec ごとに outage_sec の途切れを作る。
 
     戻り値＝ (ins, outages)  outages は途切れごとの {start, max, end, errors}
     """
-    ins = Ins()
+    ins = Ins(use_accel, use_gyro)
+    RATE["hz"] = measure_rate(rows)
+    LOST["samples"] = 0
     prev_micros = None
     outages = []
     current = None
@@ -352,6 +448,8 @@ def main():
     ap.add_argument("--every", type=float, default=60.0, help="途切れを作る間隔（秒）")
     ap.add_argument("--start", type=float, default=0.0, help="最初の途切れを作る時刻（秒）。0 は --every と同じ")
     ap.add_argument("-v", "--verbose", action="store_true", help="途切れの間の、測位ごとの誤差も表示する")
+    ap.add_argument("--no-accel", action="store_true", help="途切れの間、速さを変えない（加速度を使わない）")
+    ap.add_argument("--no-gyro", action="store_true", help="途切れの間、向きを変えない（ジャイロを使わない）")
     args = ap.parse_args()
 
     rows = read_log(args.log)
@@ -361,10 +459,12 @@ def main():
         print("IMU のサンプルがありません", file=sys.stderr)
         return 1
 
-    ins, outages = run(rows, args.outage, args.every, args.start, args.verbose)
+    ins, outages = run(rows, args.outage, args.every, args.start, args.verbose,
+                       not args.no_accel, not args.no_gyro)
 
     print(f"記録: {args.log.name}")
-    print(f"  IMU {num_i} サンプル（{ins.t:.0f} 秒、平均 {num_i / ins.t if ins.t else 0:.0f} Hz）、GNSS {num_g} 回")
+    print(f"  IMU {num_i} サンプル（{ins.t:.0f} 秒、GNSS の時刻で測った周波数 {RATE['hz']:.2f} Hz）、GNSS {num_g} 回")
+    print(f"  記録から抜けたサンプル {LOST['samples']}（{100 * LOST['samples'] / max(1, num_i + LOST['samples']):.1f} %。SD の書き込みが追いつかなかった分）")
     print(f"  静止の割合 {100 * ins.still_samples / max(1, ins.samples):.0f} %")
     print(f"  ジャイロのずれ {ins.gyro_bias[0]:.3f}, {ins.gyro_bias[1]:.3f}, {ins.gyro_bias[2]:.3f} deg/s")
     print(f"  姿勢の最後 roll {ins.roll:.1f} pitch {ins.pitch:.1f} yaw {ins.yaw:.1f} 度")
