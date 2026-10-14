@@ -7,3 +7,4 @@ lcd.png
 geoid.bin
 /geoid/
 imu_*.csv
+__pycache__/
