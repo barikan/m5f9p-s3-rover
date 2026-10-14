@@ -103,7 +103,7 @@ const accuracy = (m: number) => (m < 10 ? m.toFixed(3) : m < 100 ? m.toFixed(1) 
       <template v-if="s.pos.valid">
         <Item label="緯度" mono>{{ s.pos.lat.toFixed(9) }}°</Item>
         <Item label="経度" mono>{{ s.pos.lon.toFixed(9) }}°</Item>
-        <template v-if="s.pos.geoid !== undefined">
+        <template v-if="s.pos.geoid !== undefined && s.elevation !== false">
           <Item label="標高" mono>{{ (s.pos.height - s.pos.geoid).toFixed(3) }} m</Item>
           <Item label="ジオイド高" mono>{{ s.pos.geoid.toFixed(3) }} m<span class="text-muted-foreground font-sans">（{{ s.pos.geoidModel || 'F9P 内蔵' }}）</span></Item>
         </template>

@@ -51,6 +51,7 @@ enum {
 	HIT_SET_SOURCE,
 	HIT_SET_FORMAT,
 	HIT_SET_DISPLAY,
+	HIT_SET_ELEVATION,
 	HIT_SET_TCP,
 	HIT_SET_BLE,			// Bluetooth のページを開く
 	HIT_SET_BRIGHTNESS,		// 明るさのページを開く
@@ -248,7 +249,7 @@ static int drawBadge( int x, int y, int h, const char *text, int background, int
 //
 //   1段目  左に測位の状態と補正の方法（バッジ）、右に衛星数。その間に、BLEの接続中のアイコンと、ログの保存中の REC
 //   2～4   緯度、経度、高さ。高さは、ジオイドモデル(geoid.cpp)で求めた時は標高(Elev)、
-//          それ以外は楕円体高(Alt)
+//          それ以外と、Setup で標高の表示を切った時は楕円体高(Alt)
 //   5      推定精度（矢印のアイコンの後ろに、水平、垂直の順）
 //   6      本体の状態。CPU温度、CPU使用率、メモリ使用率、電圧、SDカードの空き
 //
@@ -310,7 +311,7 @@ static void drawStatus()
 	snprintf( text, sizeof(text), "%.9f°", mGpsData.lon );
 	drawRow( y, rowHeight, "Lon", valid ? text : "--", FONT_VALUE );
 	y += rowHeight;
-	bool elev = ( mGpsData.geoidModel != 0 );
+	bool elev = ( mGpsData.geoidModel != 0 && mRunInfo.elevation );
 	snprintf( text, sizeof(text), "%.3f m", elev ? mGpsData.height - mGpsData.geoidSep : mGpsData.height );
 	drawRow( y, rowHeight, elev ? "Elev" : "Alt", valid ? text : "--", FONT_VALUE );
 	y += rowHeight;
@@ -701,13 +702,15 @@ static void drawDevice()
 static void drawSetup()
 {
 	bool tcp = ( strlen( mAgribusIp ) > 0 );		// 送信先が設定ファイルにある時だけ出す
-	struct { const uint8_t *icon; const char *label; int id; } items[7];
+	bool geoid = ( geoidName()[0] != '\0' );		// ジオイドモデルがある時だけ出す
+	struct { const uint8_t *icon; const char *label; int id; } items[8];
 	int count = 0;
 	items[ count++ ] = { iconWifi, "Wi-Fi", HIT_SET_WIFI };
 	items[ count++ ] = { iconCorrections, "Corrections", HIT_SET_SOURCE };
 	items[ count++ ] = { iconFormat, "Log format", HIT_SET_FORMAT };
 	items[ count++ ] = { iconBrightness, "Brightness", HIT_SET_BRIGHTNESS };
 	items[ count++ ] = { iconRotate, "Rotate", HIT_SET_DISPLAY };
+	if ( geoid ) items[ count++ ] = { iconElevation, mRunInfo.elevation ? "Elev: On" : "Elev: Off", HIT_SET_ELEVATION };
 	if ( tcp ) items[ count++ ] = { iconSend, mAgribusReady ? "TCP: On" : "TCP: Off", HIT_SET_TCP };
 	items[ count++ ] = { iconBluetooth, "Bluetooth", HIT_SET_BLE };
 
@@ -812,6 +815,7 @@ static void onSetting( int id )
 		if ( appSetSaveFormat( format ) < 0 ) uiNotice( "Log format", "The receiver did not accept the setting." );
 	}
 	else if ( id == HIT_SET_DISPLAY ) appSetRotation( ! mRunInfo.lcdRotation );
+	else if ( id == HIT_SET_ELEVATION ) appSetElevation( ! mRunInfo.elevation );
 	else if ( id == HIT_SET_TCP ) appSetTcpClient( ! mAgribusReady );
 }
 

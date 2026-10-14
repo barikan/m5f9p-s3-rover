@@ -49,6 +49,7 @@ ICONS = [
     ("iconSend", "send", 32),
     ("iconBluetooth", "bluetooth", 32),
     ("iconBrightness", "sun", 32),
+    ("iconElevation", "mountain", 32),
     ("iconBack", "chevron-left", 28),
     # Status の最下段（ラベルの代わり）
     ("iconTemp", "thermometer", 20),

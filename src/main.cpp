@@ -109,6 +109,7 @@ void setup() {
 		memset( &mRunInfo, 0, sizeof( mRunInfo ) );
 		mRunInfo.saveFormat = mCsvFormat ? SAVE_CSV : SAVE_NMEA;
 		mRunInfo.solutionRate = 1;
+		mRunInfo.elevation = 1;
 		if ( mNumWifi == 1 ) strlcpy( mRunInfo.wifiSsid, mWifiList[0].ssid, sizeof( mRunInfo.wifiSsid ) );	// 1件だけなら、それを使う
 	}
 
@@ -287,6 +288,17 @@ void appSetTcpClient( bool on )
 {
 	tcpClientSet( on );
 	mRunInfo.agribusConnect = mAgribusReady ? 1 : 0;
+	saveRunInfo( &mRunInfo );
+}
+
+// 高さの表示を、標高にするか（ジオイドモデルで求められた時）、楕円体高にするかを切り替える
+//
+// ・表示（本体の画面、アプリ）だけで、NMEAの標高とジオイド高は変えない。
+//
+void appSetElevation( bool on )
+{
+	if ( on == ( mRunInfo.elevation != 0 ) ) return;
+	mRunInfo.elevation = on ? 1 : 0;
 	saveRunInfo( &mRunInfo );
 }
 

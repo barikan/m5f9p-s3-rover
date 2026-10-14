@@ -283,6 +283,7 @@ int saveRunInfo( struct stRunInfo *runInfo )
 	doc["saveAtBoot"] = ( runInfo->saving != 0 );
 	doc["rate"] = runInfo->solutionRate;
 	doc["tcpClient"] = ( runInfo->agribusConnect != 0 );
+	doc["elevation"] = ( runInfo->elevation != 0 );
 
 	String text;
 	serializeJsonPretty( doc, text );
@@ -339,6 +340,7 @@ int readRunInfo( struct stRunInfo *runInfo )
 	static char buff[1024];
 
 	memset( runInfo, 0, sizeof( *runInfo ) );
+	runInfo->elevation = 1;
 	int n = sdRead( mRunInfoPath, buff, sizeof( buff ) - 1 );
 	if ( n <= 0 ) return readLegacyRunInfo( runInfo );
 	buff[n] = '\0';
@@ -381,6 +383,7 @@ int readRunInfo( struct stRunInfo *runInfo )
 	runInfo->saving = ( doc["saveAtBoot"] | false ) ? 1 : 0;
 	runInfo->solutionRate = doc["rate"] | 1;
 	runInfo->agribusConnect = ( doc["tcpClient"] | false ) ? 1 : 0;
+	runInfo->elevation = ( doc["elevation"] | true ) ? 1 : 0;
 	if ( plainPassword ) saveRunInfo( runInfo );
 	return 0;
 }

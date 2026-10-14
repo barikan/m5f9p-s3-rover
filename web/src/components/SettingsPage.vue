@@ -2,7 +2,7 @@
 // 設定タブ。
 //
 //   ・Google MapsのAPIキー（この端末に保存）
-//   ・接続の設定（Wi-Fi、補正データの取得先、保存形式）。変更はすぐに反映される（再起動しない）
+//   ・接続の設定（Wi-Fi、補正データの取得先、保存形式、標高の表示）。変更はすぐに反映される（再起動しない）
 //   ・本体の設定（設定ファイルの内容）の編集は ConfigEditor.vue
 import { computed, reactive, ref, watch } from 'vue';
 import { Button } from '@/components/ui/button';
@@ -46,9 +46,9 @@ function saveKey() {
 // ---------------------------------------------------------------- 接続の設定
 
 const run = computed(() => state.runConfig);
-const values = reactive({ wifi: '', source: '', format: '0', saveAtBoot: false });
+const values = reactive({ wifi: '', source: '', format: '0', saveAtBoot: false, elevation: true });
 watch(run, c => {
-  if (c) Object.assign(values, { wifi: c.wifi, source: c.source, format: String(c.format), saveAtBoot: c.saveAtBoot });
+  if (c) Object.assign(values, { wifi: c.wifi, source: c.source, format: String(c.format), saveAtBoot: c.saveAtBoot, elevation: c.elevation ?? true });
 }, { immediate: true });
 
 const wifiOptions = computed<Option[]>(() => {
@@ -71,11 +71,16 @@ const formatOptions: Option[] = SAVE_FORMATS.map((f, i) => ({ value: String(i), 
 const runChanged = computed(() => {
   const c = run.value;
   return !!c && (values.wifi !== c.wifi || values.source !== c.source ||
-    Number(values.format) !== c.format || values.saveAtBoot !== c.saveAtBoot);
+    Number(values.format) !== c.format || values.saveAtBoot !== c.saveAtBoot ||
+    (c.elevation !== undefined && values.elevation !== c.elevation));
 });
 
 function applyRun() {
-  rover.applyRunConfig({ wifi: values.wifi, source: values.source, format: Number(values.format), saveAtBoot: values.saveAtBoot });
+  rover.applyRunConfig({
+    wifi: values.wifi, source: values.source, format: Number(values.format), saveAtBoot: values.saveAtBoot,
+    // 古いファームウェア（elevation を返さない）には送らない
+    ...(run.value?.elevation !== undefined ? { elevation: values.elevation } : {}),
+  });
 }
 
 // ---------------------------------------------------------------- 本体
@@ -130,6 +135,9 @@ async function restart() {
             <SelectField id="run-format" v-model="values.format" :options="formatOptions" />
           </div>
           <SwitchField v-model="values.saveAtBoot" label="起動時からログを保存する" />
+          <SwitchField
+            v-if="run.elevation !== undefined" v-model="values.elevation" label="標高を表示する"
+            help="本体の画面とアプリの高さを、標高（SD カードのジオイドモデルで求めた値）で表示します。切ると楕円体高を表示します。NMEA の出力は変わりません" />
           <Button size="sm" class="mt-4" :disabled="!runChanged" @click="applyRun">変更する</Button>
           <p class="text-muted-foreground mt-3 text-xs">Wi-Fi や補正データの接続先を追加・変更するには、「本体の設定を編集」を使います。</p>
         </template>

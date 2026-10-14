@@ -45,6 +45,7 @@ struct stRunInfo {
 	int saving;			// SDカード保存 0:保存していない　1:保存中
 	int solutionRate;	// 1秒あたりの位置更新レート 
 	int agribusConnect;	// TCPサーバ(AgriBus-NAVI等)への接続 0:接続しない 1:接続する
+	int elevation;		// 高さの表示 0:楕円体高 1:標高（ジオイドモデルで求められた時）。NMEAは変わらない
 };
 
 // ************************************************************
@@ -68,6 +69,7 @@ int appSetWifi( const char *ssid );
 void appSetBaseSource( const struct stBaseSource *src );
 int appSetSaveFormat( int format );
 void appSetTcpClient( bool on );
+void appSetElevation( bool on );
 void appBackground();
 void pagesOpenSetup();
 void pagesLoop();		// pages.cpp

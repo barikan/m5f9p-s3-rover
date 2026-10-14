@@ -15,6 +15,7 @@
 //               "pos" の高さは、"height" が楕円体高、"geoid" がジオイド高（m）。
 //               標高は height－geoid。ジオイド高をジオイドモデル(geoid.cpp)で求めた時は
 //               "geoidModel" にモデルの名前が入る。無い時は、F9P内蔵のジオイドの値
+//               "elevation" は標高を表示するかどうか（run.set の elevation）
 //   save      {"on":true/false}  ファイルへの保存を開始、停止する
 //   rate      {"hz":1-20}        1秒あたりの測位回数を変更する
 //   nmea      {"hz":0-5}         BLEでNMEAを送る回数（1秒あたり）を変更する。0:送らない
@@ -60,6 +61,8 @@
 //               {"rotation":n}   画面の向き 0:回転無 1:180度回転
 //               {"brightness":n} 画面の明るさ（%） 15～100
 //               {"tcpClient":b}  測位データをTCPサーバ（設定ファイルの client.ip）に送る
+//               {"elevation":b}  高さを標高で表示する（ジオイドモデルがある時）。false:楕円体高
+//                                表示（本体の画面、アプリ）だけで、NMEAは変わらない
 //   map.key   設定ファイルの google.key を返す（地図の表示用）
 //   sats.get  衛星の配置と信号強度を返す（詳しくは sats.cpp）。問い合わせている間だけ、
 //             F9Pに衛星のメッセージを出力させる
@@ -106,6 +109,7 @@ static void cmdStatus( JsonDocument &re )
 	pos["hAcc"] = serialized( String( mGpsData.hAcc, 3 ) );	// 推定精度 m
 	pos["vAcc"] = serialized( String( mGpsData.vAcc, 3 ) );
 	re["rate"] = mSolutionRate;
+	re["elevation"] = (bool)mRunInfo.elevation;				// 標高を表示する（表示の設定）
 
 	JsonObject base = re["base"].to<JsonObject>();
 	base["valid"] = mBaseSrc.valid;
@@ -309,6 +313,7 @@ static void cmdRunGet( JsonDocument &re )
 	re["rate"] = mRunInfo.solutionRate;
 	re["rotation"] = mRunInfo.lcdRotation;
 	re["brightness"] = mRunInfo.brightness;
+	re["elevation"] = (bool)mRunInfo.elevation;
 
 	// 選択できるWifi接続先と基準局データ取得先
 	JsonArray wifiList = re["wifiList"].to<JsonArray>();
@@ -351,6 +356,7 @@ static void cmdRunSet( JsonDocument &cmd, JsonDocument &re )
 	if ( cmd["rotation"].is<int>() ) appSetRotation( cmd["rotation"] );
 	if ( cmd["brightness"].is<int>() ) appSetBrightness( cmd["brightness"] );
 	if ( cmd["tcpClient"].is<bool>() ) appSetTcpClient( cmd["tcpClient"].as<bool>() );
+	if ( cmd["elevation"].is<bool>() ) appSetElevation( cmd["elevation"].as<bool>() );
 	if ( cmd["saveAtBoot"].is<bool>() ){
 		mRunInfo.saving = cmd["saveAtBoot"].as<bool>() ? 1 : 0;
 		saveRunInfo( &mRunInfo );

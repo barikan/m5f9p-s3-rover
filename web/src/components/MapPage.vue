@@ -27,6 +27,8 @@ watch(() => props.visible, on => map?.setVisible(!!on));
 const s = computed(() => state.status);
 const isToday = computed(() => state.trackDay === rover.today());
 const quality = computed(() => rover.qualityOf(s.value?.pos.quality ?? 0));
+// 標高を出すか（ジオイド高が届いていて、表示の設定が切られていない時）。出さない時は楕円体高
+const showElevation = computed(() => s.value?.pos.geoid !== undefined && s.value.elevation !== false);
 // state.deviceMapsKey が変わった時に評価し直す
 const hasKey = computed(() => (state.deviceMapsKey, !!mapsKey()));
 const canFollow = computed(() => !!view.value && !view.value.follow && !!s.value?.pos.valid && isToday.value);
@@ -71,8 +73,8 @@ async function deleteDay(day: string) {
       <template v-if="s.pos.valid">
         <div class="text-muted-foreground font-mono text-xs">{{ s.pos.lat.toFixed(8) }}, {{ s.pos.lon.toFixed(8) }}</div>
         <div class="text-muted-foreground text-xs">
-          {{ s.pos.geoid !== undefined ? '標高' : '楕円体高' }}
-          <span class="font-mono">{{ (s.pos.height - (s.pos.geoid ?? 0)).toFixed(3) }} m</span>
+          {{ showElevation ? '標高' : '楕円体高' }}
+          <span class="font-mono">{{ (s.pos.height - (showElevation ? s.pos.geoid ?? 0 : 0)).toFixed(3) }} m</span>
         </div>
       </template>
     </template>

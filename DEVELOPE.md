@@ -323,6 +323,7 @@ mise run cmd '{"cmd":"run.set","wifi":"home","source":"geortk.jp/tamtam"}'  # Wi
 - `geoidApply()` が `stGpsData` の `geoidSep` を書き換え、`geoidModel` を 1 にする。GGA は `geoidSep` から作るので(`src/nmea.cpp`)、出力先のすべてに同じ値が出る。
 - 状況(`status`)の `pos` には、`height`(楕円体高)、`geoid`(ジオイド高)、`geoidModel`(モデルの名前。F9P の値のときは入らない)が入る。
 - 起動時のシリアルログに `Geoid model: 名前 (格子の数 grid)` または `Geoid model: not found` と出る。
+- 表示の設定は `stRunInfo` の `elevation`(`m5f9p.run.json` の `elevation`、既定は `true`)。本体の Setup の `Elev` のタイル(ジオイドモデルがあるときだけ出る)と、`run.set` の `elevation`(アプリの設定タブ)が `appSetElevation()` を呼ぶ。切ると、本体の画面とアプリは楕円体高だけを出す。NMEA は変わらない。状況(`status`)の `elevation` でアプリに伝える。
 
 確かめるときは、`mise run cmd '{"cmd":"status"}'` の `pos.geoid` を、同じ緯度経度の `mise run geoid-make --check 緯度,経度` の値と比べる。
 

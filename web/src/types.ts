@@ -20,6 +20,7 @@ export interface Status {
     vAcc?: number;          // 推定精度（垂直）m
   };
   rate: number;             // 測位レート Hz
+  elevation?: boolean;      // 標高を表示する（表示の設定。run.set の elevation）。古いファームウェアには無い
   base: {
     valid: boolean;
     type: number;           // 4:UART（PHコネクタ）
@@ -62,12 +63,13 @@ export interface RunConfig {
   rate: number;
   rotation: number;
   brightness: number;       // 画面の明るさ(%)。15〜100
+  elevation?: boolean;      // 標高を表示する。false は楕円体高だけ。古いファームウェアには無い
   wifiList: string[];
   sourceList: string[];
 }
 
 /** 接続の設定のうち、画面から変えるもの（run.set）。本体はすぐに反映する（再起動しない） */
-export type RunValues = Pick<RunConfig, 'wifi' | 'source' | 'format' | 'saveAtBoot'>;
+export type RunValues = Pick<RunConfig, 'wifi' | 'source' | 'format' | 'saveAtBoot' | 'elevation'>;
 
 /**
  * 一覧の項目に付く、パスワードの扱い。本体はパスワードを返さない。
