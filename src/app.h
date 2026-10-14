@@ -106,6 +106,7 @@ extern int mBlePairing;
 extern char mGoogleKey[64];
 extern char mRtk2goUser[32];
 extern char mRtk2goPassword[32];
+extern int mGeoidEnable;
 
 #define PH_UART_NMEA 0
 #define PH_UART_CSV 1
@@ -221,6 +222,15 @@ int readRunInfo( struct stRunInfo *runInfo );
 
 int setNmeaData( struct stGpsData* pGpsData, char* buff, int buffSize );
 int setCsvData( struct stGpsData* pGpsData, char* buff, int buffSize );
+
+// ************************************************************
+//                        geoid.cpp
+// ************************************************************
+
+int geoidInit();
+const char *geoidName();
+void geoidPoll();
+void geoidApply( struct stGpsData *gpsData );
 
 // ************************************************************
 //                        cmd.cpp

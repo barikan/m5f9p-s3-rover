@@ -73,6 +73,13 @@ log:
   csv: false           # true にすると、NMEAの代わりにCSV（日付,時刻,緯度,経度,楕円体高,Fix）で保存する
   chunkSec: 0          # ファイルを分割して保存する場合の、1ファイルの秒数。0:分割しない
 
+# ジオイドモデル。SDカードの /m5f9p/geoid.bin（国土地理院のジオイドモデルから
+# mise run geoid-make で作る。READMEを参照）で、楕円体高から標高を求める。
+# NMEA(GGA)の標高とジオイド高、本体の画面(Elev)、アプリの標高が、この値になる。
+# ファイルが無い時と false の時は、F9P内蔵のジオイドの値になる。
+geoid:
+  enable: true
+
 # ３ピンJST-PHコネクタ（UART）
 jstph:
   baudrate: 115200

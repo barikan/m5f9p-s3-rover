@@ -123,6 +123,7 @@ mise run android-screenshot          # 端末の画面を screenshot.png に保�
 - **I2C と `M5.update()` は loopTask からだけ呼ぶ。** `M5.update()` を呼ぶのは `screenTouch()`(screen.cpp)だけ。D9C の読み出し(`d9cPoll()`、gps.cpp の I2C 関数)を他のタスクへ移さない。
 - **SD アクセスと液晶への描画は `spiLock()` / `spiUnlock()` で囲む**(storage.cpp、再帰ミューテックス)。測位中の画面は、液晶に送る `screenFlush()` の中だけでロックする(描画領域に描く間はロックしない)。
 - **UBX コマンドの Ack 待ち中は `mGpsCommandBusy` が立ち、`taskRover` はバッファを読まない。** コマンド送信は `ubxSendCommand()` を通す。
+- **`taskRover` から SD カードを読まない。** ジオイドモデル(`src/geoid.cpp`)は、loopTask の `geoidPoll()` が現在地のまわりの格子点を読んでおき、`taskRover` の `geoidApply()` はその中で補間するだけにしている。
 - `taskUartRead` は `mGpsUartReady` が立つまで `Serial1` を読まない。`Serial1.begin()` は `gpsSyncBaudrate()`(gps.cpp)が1回だけ行い、以後のボーレート変更は `updateBaudRate()` で行う。
 
 ### コマンドと BLE
@@ -193,6 +194,12 @@ SD カードの `/m5f9p/m5f9p.yaml`。読み書きは `config.cpp`、書式の�
 - 再起動が要る書き換え(`restart: true` の `config.put`、`file.put`)のあとは、再起動するまで `config.get` / `config.put` はエラーになる(本体が持っている一覧と `id` がずれるため)。
 - BLE はペアリングが必要(`ble.pairing`、既定は `true`)。仕組みと、確かめた挙動は `DEVELOPE.md` の「BLE のペアリング」にある。
 - 旧形式の INI は、YAML がないときだけ読んで変換する(`settings.cpp` の `readIniFile()`)。
+
+### 標高とジオイドモデル
+
+- 標高 = 楕円体高 − ジオイド高。ジオイド高は `stGpsData` の `geoidSep` で、SD カードの `/m5f9p/geoid.bin` があれば `geoidApply()` がモデルの値に置き換える(`geoidModel` が 1 になる)。なければ F9P の値のまま。GGA、本体の Status(`Elev` / `Alt`)、状況の `pos.geoid` は、どれも `geoidSep` から作る。高さの出力を足すときも、ここから取る。
+- **国土地理院のジオイドモデル(ISG ファイル、変換した `geoid.bin`)をリポジトリに入れない。** 承認なしに再配布できない。`mise run geoid-make` で利用者が作る。試験用のデータは、スクラッチ用のフォルダに合成して作る。
+- 格子の範囲や間隔をコードに決め打ちしない(`geoid.bin` のヘッダに従う)。ファイルの形を変えたら、`src/geoid.cpp` と `scripts/make_geoid.py` の両方を直す(`--check` は本体と同じ計算をする)。
 
 ## コードの書き方
 

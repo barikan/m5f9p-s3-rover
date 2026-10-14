@@ -277,6 +277,7 @@ static void taskRover(void* param)
 			}
 		
 			if ( gpsData.ubxDone ){
+				geoidApply( &gpsData );		// ジオイド高を、ジオイドモデルの値にする
 				memcpy( &mGpsData, &gpsData, sizeof( mGpsData ) );
 				distributeGpsData();
 			}

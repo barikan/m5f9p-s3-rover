@@ -2,3 +2,7 @@
 .vscode/
 screenshot.png
 lcd.png
+# 国土地理院のジオイドモデル（再配布できないので、リポジトリに入れない）
+*.isg
+geoid.bin
+/geoid/

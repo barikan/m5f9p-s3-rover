@@ -62,6 +62,7 @@ SD カードには次のファイルができる。
 | `/m5f9p/m5f9p.yaml` | 設定ファイル(自分で置く。アプリからも書き換えられる) |
 | `/m5f9p/m5f9p.run.json` | 起動時の設定(Wi-Fi、補正データの取得先、保存形式、測位レートなど)。本体が書く |
 | `/m5f9p/m5f9p.log` | 起動の記録 |
+| `/m5f9p/geoid.bin` | ジオイドモデル(自分で置く。なくてもよい。下の「標高とジオイドモデル」を参照) |
 | `/m5f9p/gpslog/YYYYMMDD/` | 測位ログ(`.log` / `.ubx` / `.rtcm3`) |
 
 ### 設定ファイル(YAML)
@@ -235,6 +236,7 @@ PORT=/dev/ttyACM1 mise run upload
 Status 以外のページは、上端の帯(`‹ 題名`)をタップすると Menu に戻る。
 
 - ログを保存している間は、上段のバッジと衛星数の間に、点滅する赤い丸と `REC` を出す。バッジの文字が長くて幅が足りないときは、丸だけになる。
+- 高さの行は、ジオイドモデルで求めたときは標高(`Elev`)、それ以外は楕円体高(`Alt`)。
 - `Acc` は、F9P が出す推定精度(水平 / 垂直、m)。10m 以上は小数を減らす。
 - 同じ値は、状況(`status` の `sys`)にも入れてあり、アプリの状況タブの「本体」に表示する(CPU 使用率と温度、メモリ使用率、電圧、SD カードの空き)。
 - 最下段は本体の状態で、ラベルの代わりにアイコンを付けている(`src/sysmon.cpp` が2秒ごとに測る)。アイコンの位置は固定で、値の桁数が変わっても動かない。左から順に次のとおり。
@@ -309,6 +311,20 @@ mise run cmd '{"cmd":"run.set","wifi":"home","source":"geortk.jp/tamtam"}'  # Wi
 ```
 
 コマンドの一覧と引数は `src/cmd.cpp` の先頭にある。`run.set` を使うと、画面に触らずに Wi-Fi や補正元を切り替えられる。
+
+### 標高とジオイドモデル
+
+標高 = 楕円体高 − ジオイド高。ジオイド高は、SD カードの `/m5f9p/geoid.bin` があればそこから求め(`src/geoid.cpp`)、なければ F9P の値(NAV-PVT の `height − hMSL`)を使う。用意の手順は README の「標高」にある。
+
+- `geoid.bin` は `scripts/make_geoid.py`(`mise run geoid-make`)が、国土地理院の ISG 形式のファイルから作る。ファイルの形は `src/geoid.cpp` の先頭にある。値は int32 の 0.1mm 単位で、元の値(小数4桁)をそのまま保つ。格子の範囲と間隔はファイルのヘッダに従う。
+- 格子は2つまで入る。1つ目がジオイド高、2つ目(省略可)が基準面補正パラメータで、それぞれを双一次補間して足す(国土地理院の説明書の方法で、統合したファイル `JPGEO2024+Hrefconv2024.isg` と同じ値になる)。2つ目があるときは、その値のない所(標高の原点が定められていない範囲。主に海域)ではモデルの値を使わない。0 として足すと、補正の要る離島の海岸で、補正(約 0.4〜0.7 m)の抜けた標高になるため。
+- **ISG ファイルと `geoid.bin` はリポジトリに入れない**(`.gitignore` に入れてある)。
+- SD カードを読むのは loopTask の `geoidPoll()` で、現在地のまわりの 4×4 点を持つ。`taskRover` の `geoidApply()` はその中で補間するだけで、SD カードに触らない。中央のマスから半マス以上外に出たときに読み直す。
+- `geoidApply()` が `stGpsData` の `geoidSep` を書き換え、`geoidModel` を 1 にする。GGA は `geoidSep` から作るので(`src/nmea.cpp`)、出力先のすべてに同じ値が出る。
+- 状況(`status`)の `pos` には、`height`(楕円体高)、`geoid`(ジオイド高)、`geoidModel`(モデルの名前。F9P の値のときは入らない)が入る。
+- 起動時のシリアルログに `Geoid model: 名前 (格子の数 grid)` または `Geoid model: not found` と出る。
+
+確かめるときは、`mise run cmd '{"cmd":"status"}'` の `pos.geoid` を、同じ緯度経度の `mise run geoid-make --check 緯度,経度` の値と比べる。
 
 ### BLE で接続する
 
@@ -578,6 +594,7 @@ src/
   nmea.cpp      NMEA と CSV の生成
   config.cpp    設定ファイル(YAML)の読み書き、JSON との変換
   settings.cpp  設定の変数、旧形式(INI)の読み込み(YAML への移行用)
+  geoid.cpp     ジオイドモデル(SD カードの geoid.bin)で、楕円体高から標高を求める
   sats.cpp      衛星の配置と信号強度(アプリの「衛星」タブ用)
   sysmon.cpp    本体の状態(CPU 温度、CPU 使用率、メモリ使用率、電圧、SD カードの空き)
   cmd.cpp       コマンドの受付(USB シリアル)と実行

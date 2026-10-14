@@ -247,7 +247,8 @@ static int drawBadge( int x, int y, int h, const char *text, int background, int
 // Status
 //
 //   1段目  左に測位の状態と補正の方法（バッジ）、右に衛星数。その間に、BLEの接続中のアイコンと、ログの保存中の REC
-//   2～4   緯度、経度、楕円体高
+//   2～4   緯度、経度、高さ。高さは、ジオイドモデル(geoid.cpp)で求めた時は標高(Elev)、
+//          それ以外は楕円体高(Alt)
 //   5      推定精度（矢印のアイコンの後ろに、水平、垂直の順）
 //   6      本体の状態。CPU温度、CPU使用率、メモリ使用率、電圧、SDカードの空き
 //
@@ -309,8 +310,9 @@ static void drawStatus()
 	snprintf( text, sizeof(text), "%.9f°", mGpsData.lon );
 	drawRow( y, rowHeight, "Lon", valid ? text : "--", FONT_VALUE );
 	y += rowHeight;
-	snprintf( text, sizeof(text), "%.3f m", mGpsData.height );
-	drawRow( y, rowHeight, "Alt", valid ? text : "--", FONT_VALUE );
+	bool elev = ( mGpsData.geoidModel != 0 );
+	snprintf( text, sizeof(text), "%.3f m", elev ? mGpsData.height - mGpsData.geoidSep : mGpsData.height );
+	drawRow( y, rowHeight, elev ? "Elev" : "Alt", valid ? text : "--", FONT_VALUE );
 	y += rowHeight;
 
 	// 推定精度（m）。左右の矢印の後ろに水平、上下の矢印の後ろに垂直。右から順に置く

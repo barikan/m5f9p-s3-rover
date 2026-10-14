@@ -201,6 +201,7 @@ void configToJson( JsonDocument &doc, bool secrets )
 	doc["client"]["port"] = mAgribusPort;
 	doc["log"]["csv"] = ( mCsvFormat != 0 );
 	doc["log"]["chunkSec"] = (int) mSaveEndSec;
+	doc["geoid"]["enable"] = ( mGeoidEnable != 0 );
 	doc["jstph"]["baudrate"] = mPhUartBaudrate;
 	doc["jstph"]["format"] = ( mPhUartFormat == PH_UART_CSV ) ? "csv" : "nmea";
 }
@@ -320,6 +321,8 @@ void configFromJson( JsonDocument &doc )
 
 	mCsvFormat = cfgBool( doc["log"]["csv"], mCsvFormat != 0 ) ? 1 : 0;
 	mSaveEndSec = cfgInt( doc["log"]["chunkSec"], (int) mSaveEndSec );
+
+	mGeoidEnable = cfgBool( doc["geoid"]["enable"], mGeoidEnable != 0 ) ? 1 : 0;
 
 	mPhUartBaudrate = cfgInt( doc["jstph"]["baudrate"], mPhUartBaudrate );
 	String format = cfgStr( doc["jstph"]["format"], mPhUartFormat == PH_UART_CSV ? "csv" : "nmea" );

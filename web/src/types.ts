@@ -13,6 +13,8 @@ export interface Status {
     lat: number;
     lon: number;
     height: number;         // 楕円体高 m
+    geoid?: number;         // ジオイド高 m。標高＝height－geoid。古いファームウェアには無い
+    geoidModel?: string;    // ジオイドモデルの名前。無い時は、F9P 内蔵のジオイド
     sats: number;
     hAcc?: number;          // 推定精度（水平）m。古いファームウェアには無い
     vAcc?: number;          // 推定精度（垂直）m
@@ -99,7 +101,7 @@ export type ConfigValue = string | number | boolean;
 export interface DeviceConfig {
   wifi?: WifiEntry[];
   sources?: SourceEntry[];
-  // receiver, ble, softap, google, server, client, log, jstph, rtk2go
+  // receiver, ble, softap, google, server, client, log, geoid, jstph, rtk2go
   [group: string]: Record<string, ConfigValue> | WifiEntry[] | SourceEntry[] | undefined;
 }
 

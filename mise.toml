@@ -111,6 +111,22 @@ uv run --quiet scripts/devcmd.py "$port" "{\"cmd\":\"lcd.tap\",\"x\":${usage_x?}
 description = "本体の画面のフォントとアイコン(src/lcd_assets.h)を作り直す"
 run = "uv run --quiet --with resvg-py --with pillow python3 scripts/make_lcd_assets.py"
 
+[tasks.geoid-make]
+description = "国土地理院のジオイドモデル(ISG形式)から、本体用のファイル(geoid.bin)を作る"
+usage = '''
+arg "[isg]..." help="ジオイドモデルのISGファイル。2つ目に基準面補正パラメータを指定できる"
+flag "-o --output <file>" help="出力先(--check の時は、調べるファイル)" default="geoid.bin"
+flag "--check <latlon>" help="出来たファイルから、その地点のジオイド高を求める。例: --check 36.104,140.085"
+'''
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+opts=(-o "${usage_output?}")
+if [ -n "${usage_check:-}" ]; then opts+=(--check "$usage_check"); fi
+eval "files=(${usage_isg:-})"
+uv run --quiet --with numpy python3 scripts/make_geoid.py "${opts[@]}" "${files[@]}"
+'''
+
 [tasks.cmd]
 description = "本体にコマンド(JSON)を送る。例: mise run cmd '{\"cmd\":\"status\"}'"
 usage = 'arg "<json>" help="コマンド。一覧は src/cmd.cpp の先頭にある"'

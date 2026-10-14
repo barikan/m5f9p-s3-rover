@@ -97,6 +97,9 @@ void setup() {
 	// 設定ファイル。パスワードの復号に使う鍵を先に用意する（無線を始める前に行う事）
 	secretInit();
 	int configResult = readConfig();
+
+	// ジオイドモデル。ヘッダを読むだけ
+	int geoidResult = geoidInit();
 	
 	// 実行パラメータ（Wifiの接続先、補正データの取得先、保存形式など）。
 	// 保存されていれば、それを使う。無い時（初回）は既定値で始め、Setup のページを開く。
@@ -121,6 +124,7 @@ void setup() {
 
 	dbgPrintf("SD card totalBytes=%llu\r\n", mSdTotalBytes);
 	if ( configResult < 0 ) dbgPrintf( "!! Config file %s\r\n", configResult == -1 ? "not found" : "error" );
+	if ( geoidResult == 0 ) dbgPrintf( "Geoid model: not found\r\n" );
 
 	// JST-PHコネクタ
 	Serial2.begin( mPhUartBaudrate, SERIAL_8N1, PIN_PH_RX, PIN_PH_TX );
@@ -326,6 +330,7 @@ void appBackground()
 {
 	d9cPoll();
 	satsPoll();
+	geoidPoll();
 	sysmonPoll();
 	cmdPollUsb();
 	screenShotPoll( Serial );

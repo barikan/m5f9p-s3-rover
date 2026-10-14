@@ -53,6 +53,9 @@ int mPhUartFormat = PH_UART_NMEA;	// 移動局データ送信フォーマット
 // Google MapsのAPIキー。スマートフォンのアプリが地図の表示に使う。
 char mGoogleKey[64];
 
+// SDカードにジオイドモデル(geoid.bin)がある時に、それで標高を求める時 1（geoid.cpp）
+int mGeoidEnable = 1;
+
 // rtk2go.comのマウントポイントを画面で選択した時に使うユーザ名とパスワード
 char mRtk2goUser[32];
 char mRtk2goPassword[32];

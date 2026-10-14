@@ -12,6 +12,9 @@
 //
 // コマンド一覧
 //   status    動作状況を返す
+//               "pos" の高さは、"height" が楕円体高、"geoid" がジオイド高（m）。
+//               標高は height－geoid。ジオイド高をジオイドモデル(geoid.cpp)で求めた時は
+//               "geoidModel" にモデルの名前が入る。無い時は、F9P内蔵のジオイドの値
 //   save      {"on":true/false}  ファイルへの保存を開始、停止する
 //   rate      {"hz":1-20}        1秒あたりの測位回数を変更する
 //   nmea      {"hz":0-5}         BLEでNMEAを送る回数（1秒あたり）を変更する。0:送らない
@@ -96,7 +99,9 @@ static void cmdStatus( JsonDocument &re )
 	pos["quality"] = mGpsData.quality;
 	pos["lat"] = serialized( String( mGpsData.lat, 9 ) );
 	pos["lon"] = serialized( String( mGpsData.lon, 9 ) );
-	pos["height"] = serialized( String( mGpsData.height, 3 ) );
+	pos["height"] = serialized( String( mGpsData.height, 3 ) );		// 楕円体高 m
+	pos["geoid"] = serialized( String( mGpsData.geoidSep, 4 ) );	// ジオイド高 m。標高＝height－geoid
+	if ( mGpsData.geoidModel ) pos["geoidModel"] = geoidName();	// ジオイドモデルの名前。無い時は、F9P内蔵のジオイド
 	pos["sats"] = mGpsData.numSatelites;
 	pos["hAcc"] = serialized( String( mGpsData.hAcc, 3 ) );	// 推定精度 m
 	pos["vAcc"] = serialized( String( mGpsData.vAcc, 3 ) );

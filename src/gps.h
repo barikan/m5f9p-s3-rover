@@ -30,7 +30,7 @@ struct stGpsData
 	double lat;
 	double lon;
 	double height;
-	double geoidSep; // geoid separation
+	double geoidSep; // geoid separation（ジオイド高 m。標高＝height－geoidSep）
 	double velocity;	// km/h
 	double direction;	// 0-360 deg
 	int quality;		// 0 = No fix, 1 = Autonomous GNSS fix, 
@@ -40,6 +40,7 @@ struct stGpsData
 	double dop;
 	double hAcc;		// 水平方向の推定精度 m
 	double vAcc;		// 垂直方向の推定精度 m
+	int geoidModel;		// geoidSep の出所 0:F9P内蔵のジオイド 1:ジオイドモデル（geoid.cpp）
 };
 
 #define UBX_BUFF_MAX 3000

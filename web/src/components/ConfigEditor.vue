@@ -109,6 +109,14 @@ const OTHER_GROUPS: { title: string; fields: PathField[] }[] = [
     ],
   },
   {
+    title: '標高', fields: [
+      {
+        path: ['geoid', 'enable'], label: 'ジオイドモデルで標高を求める', type: 'bool',
+        help: 'SD カードにジオイドモデル（geoid.bin）がある時に使います。切ると、F9P 内蔵のジオイドの値になります',
+      },
+    ],
+  },
+  {
     title: 'PH コネクタ（UART）', fields: [
       { path: ['jstph', 'baudrate'], label: 'ボーレート', type: 'number', restart: true },
       {
