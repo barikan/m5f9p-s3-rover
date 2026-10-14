@@ -61,8 +61,6 @@ const logsOpen = ref(false);
 
 const gigabytes = (megabytes: number) => (megabytes / 1000).toFixed(1);
 
-// 推定精度。大きい時は小数を減らす
-const accuracy = (m: number) => (m < 10 ? m.toFixed(3) : m < 100 ? m.toFixed(1) : String(Math.min(9999, Math.round(m))));
 </script>
 
 <template>
@@ -108,7 +106,7 @@ const accuracy = (m: number) => (m < 10 ? m.toFixed(3) : m < 100 ? m.toFixed(1) 
           <Item label="ジオイド高" mono>{{ s.pos.geoid.toFixed(3) }} m<span class="text-muted-foreground font-sans">（{{ s.pos.geoidModel || 'F9P 内蔵' }}）</span></Item>
         </template>
         <Item label="楕円体高" mono>{{ s.pos.height.toFixed(3) }} m</Item>
-        <Item v-if="s.pos.hAcc !== undefined && s.pos.vAcc !== undefined" label="精度" mono>{{ accuracy(s.pos.hAcc) }} / {{ accuracy(s.pos.vAcc) }} m</Item>
+        <Item v-if="s.pos.hAcc !== undefined && s.pos.vAcc !== undefined" label="精度" mono>{{ rover.accuracyText(s.pos.hAcc) }} / {{ rover.accuracyText(s.pos.vAcc) }} m</Item>
       </template>
       <div v-else>測位データがありません</div>
       <Item label="衛星数">{{ s.pos.sats }}</Item>

@@ -324,6 +324,36 @@ export async function saveFile(name: string, bytes: Uint8Array): Promise<string>
   return name;
 }
 
+// ---------------------------------------------------------------- 画面を消えなくする
+
+let wakeLock: WakeLockSentinel | null = null;
+let keepOn = false;
+
+async function requestWakeLock() {
+  if (!keepOn || wakeLock || !('wakeLock' in navigator) || document.visibilityState !== 'visible') return;
+  try {
+    wakeLock = await navigator.wakeLock.request('screen');
+    wakeLock.addEventListener('release', () => { wakeLock = null; });
+    if (!keepOn) { wakeLock.release(); wakeLock = null; }       // 待っている間に切られた
+  } catch (e) { /* 使えない環境では何もしない */ }
+}
+
+// Wake Lock は、画面が裏に回ると解除される。表に戻ったら取り直す
+if (!android) document.addEventListener('visibilitychange', () => { requestWakeLock(); });
+
+/**
+ * 画面が自動で消えないようにする（測位タブを開いている間）。
+ *   Android: MainActivity が FLAG_KEEP_SCREEN_ON を付ける
+ *   Windows、ブラウザ: Screen Wake Lock API
+ */
+export function keepScreenOn(on: boolean) {
+  if (on === keepOn) return;
+  keepOn = on;
+  if (android) android.keepScreenOn?.(on);       // 古いアプリ（窓口が無い）では何もしない
+  else if (on) requestWakeLock();
+  else if (wakeLock) { wakeLock.release(); wakeLock = null; }
+}
+
 /** 軌跡などのファイル。名前は "tracks/2026-10-06.csv" の形 */
 export const storage: Storage = android
   ? {

@@ -17,6 +17,26 @@ export const QUALITY: Record<number, { label: string; color: string }> = {
 };
 export const qualityOf = (q: number) => QUALITY[q] || QUALITY[0];
 
+/**
+ * 表示する高さ。ジオイド高が届いていて、表示の設定(elevation)が切られていなければ標高、
+ * それ以外は楕円体高（本体の画面の Elev / Alt と同じ決め方）
+ */
+export function heightOf(status: Status) {
+  const elevation = status.pos.geoid !== undefined && status.elevation !== false;
+  return { elevation, label: elevation ? '標高' : '楕円体高', value: status.pos.height - (elevation ? status.pos.geoid ?? 0 : 0) };
+}
+
+/** 推定精度(m)の表記。大きい時は小数を減らす（本体の画面と同じ） */
+export const accuracyText = (m: number) => (m < 10 ? m.toFixed(3) : m < 100 ? m.toFixed(1) : String(Math.min(9999, Math.round(m))));
+
+const COMPASS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+
+/** 方角（度。北が0、時計回り）を16方位にする */
+export const compassOf = (deg: number) => COMPASS[Math.round((((deg % 360) + 360) % 360) / 22.5) % 16];
+
+/** これより遅い時は、進行方向を出さない（止まっている間の F9P の進行方向は当てにならない） */
+export const HEADING_MIN_SPEED = 1;     // km/h
+
 /** いま使っている補正の方法。本体の画面（src/pages.cpp の correctionName）と同じ決め方 */
 export function correctionOf(status: Status | null, clasRate: number) {
   const base = status?.base;

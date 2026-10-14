@@ -476,6 +476,8 @@ web/
 - `typescript` は **5.x に固定している**(7.x では、Vue のコンパイラが部品の型を読めず「No fs option provided」でビルドに失敗する)。
 - 本体の状況やコマンドの項目を変えたら、`types.ts` を `src/cmd.cpp` に合わせる。Kotlin の `Bridge` や `windows/preload.js` を変えたら `env.d.ts` を合わせる。
 - `windows/`(Electron のメインプロセスと preload)は JavaScript のまま。ビルドなしで起動できるようにするため。
+- 測位タブ(`components/LivePage.vue`)は、本体の Status と同じ項目に速度、方角、IMU(姿勢、動き、推測航法)を加え、大きな文字で出す。見出しは本体の画面と同じ英語で、1行に見出しと値(右寄せ)を並べる(`components/LiveRow.vue`)。値の文字の大きさは、経度(14文字)がスマートフォンの縦画面に1行で入るよう、画面の幅で決める(上限あり)。開いている間は `host.keepScreenOn()` で画面を消さない。Android は Bridge の `keepScreenOn`(`FLAG_KEEP_SCREEN_ON`)、Windows とブラウザは Screen Wake Lock API。
+- 高さの表示(標高か楕円体高か)は `rover.ts` の `heightOf()`、推定精度の書式は `accuracyText()` にまとめてある。
 - 状況タブは、カードを幅に入るだけ横に並べ、折り返した行もページの幅いっぱいに広げる。
 - Select は値に空文字を使えない(Reka UI の制約)。「使わない」「なし」のような空の選択肢は、`components/SelectField.vue` が内部で別の値に置き換えている。
 - 確認のダイアログの実行ボタンに `AlertDialogAction` を使うと、押したときに「閉じた」が先に届いて、やめた扱いになった。普通のボタンで受けている(`components/DialogHost.vue`)。

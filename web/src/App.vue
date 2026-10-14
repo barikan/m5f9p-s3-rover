@@ -2,17 +2,19 @@
 // 全体の枠。上に本体名、測位の状態、補正の方法、切断。下にタブ
 // 本体に接続していない間は、タブを出さず、接続先の選択（状況タブの中にある）だけを表示する。（Origin UI の Tabs）。
 //
+//   測位タブ … 本体の画面の Status と同じ項目（と速度、方角）を大きな文字で。開いている間は画面を消さない
 //   状況タブ … 接続先の選択、測位・補正データ・本体の状況、ログ保存と測位レートの操作
 //   地図タブ … 現在地と軌跡
 //   衛星タブ … 衛星の配置と信号強度
 //   設定タブ … Google MapsのAPIキー、起動時の設定、本体の設定の編集
 import { ref, watch } from 'vue';
-import { Activity, Map, Satellite, Settings } from 'lucide-vue-next';
+import { Activity, LocateFixed, Map, Satellite, Settings } from 'lucide-vue-next';
 import { Button } from '@/components/ui/button';
 import { Toaster } from '@/components/ui/sonner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import * as rover from './rover';
 import { state } from './store';
+import LivePage from './components/LivePage.vue';
 import StatusPage from './components/StatusPage.vue';
 import MapPage from './components/MapPage.vue';
 import SatellitesPage from './components/SatellitesPage.vue';
@@ -42,6 +44,7 @@ const page = 'absolute inset-0 overflow-y-auto px-4 pt-1 pb-4 data-[state=inacti
       <Button v-if="state.conn !== 'disconnected'" variant="ghost" size="sm" @click="rover.disconnect()">切断</Button>
     </header>
     <main class="relative min-h-0 flex-1">
+      <TabsContent value="live" :class="page"><LivePage :visible="tab === 'live'" /></TabsContent>
       <TabsContent value="status" :class="page"><StatusPage /></TabsContent>
       <!-- 地図は作り直さないよう、隠れている間も残す -->
       <TabsContent value="map" force-mount class="absolute inset-0 overflow-hidden data-[state=inactive]:hidden">
@@ -52,6 +55,7 @@ const page = 'absolute inset-0 overflow-y-auto px-4 pt-1 pb-4 data-[state=inacti
     </main>
     <nav v-if="state.conn !== 'disconnected'" class="border-t px-4 pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
       <TabsList class="h-10 w-full" aria-label="画面の切り替え">
+        <TabsTrigger value="live"><LocateFixed />測位</TabsTrigger>
         <TabsTrigger value="status"><Activity />状況</TabsTrigger>
         <TabsTrigger value="map"><Map />地図</TabsTrigger>
         <TabsTrigger value="sats"><Satellite />衛星</TabsTrigger>

@@ -1,0 +1,108 @@
+<script setup lang="ts">
+// 測位タブ。本体の画面の Status（src/pages.cpp の drawStatus）と同じ項目を、大きな文字で出す。
+// 屋外で端末を表示器として見る時用。速度、方角、IMU（姿勢、動き、推測航法）は、本体の画面には無く、ここだけに出す。
+// 見出しは本体の画面と同じく英語。1行に見出しと値を並べ、値は右寄せ。
+//
+// 表示している間は、画面が自動で消えないようにする（host.keepScreenOn）。
+import { computed, onUnmounted, watch } from 'vue';
+import { Battery, Cpu, HardDrive, MemoryStick, MoveHorizontal, MoveVertical, Navigation2, Satellite, Thermometer, Zap } from 'lucide-vue-next';
+import * as host from '../host';
+import * as rover from '../rover';
+import { state } from '../store';
+import LiveRow from './LiveRow.vue';
+import StateBadge from './StateBadge.vue';
+
+const props = defineProps<{ visible: boolean }>();
+
+const s = computed(() => state.status);
+const valid = computed(() => !!s.value?.pos.valid);
+const height = computed(() => (s.value ? rover.heightOf(s.value) : null));
+const speed = computed(() => s.value?.pos.speed);
+const heading = computed(() => {
+  const p = s.value?.pos;
+  return p?.heading !== undefined && (p.speed ?? 0) >= rover.HEADING_MIN_SPEED ? p.heading : undefined;
+});
+const imu = computed(() => s.value?.imu);
+// 推測航法の向きと速さ（IMU の推測航法が動いている時）。速度、方角のすぐ下に並べる
+const dr = computed(() => {
+  const i = imu.value;
+  return i?.heading !== undefined && i.speed !== undefined ? { heading: i.heading, speed: i.speed } : null;
+});
+
+watch(() => props.visible && state.conn === 'connected', on => host.keepScreenOn(on), { immediate: true });
+onUnmounted(() => host.keepScreenOn(false));
+
+const unit = 'text-muted-foreground text-[0.6em]';
+const degrees = (deg: number) => `${Math.round(deg) % 360}°`;
+</script>
+
+<template>
+  <div v-if="s" class="mx-auto flex min-h-full max-w-3xl flex-col gap-1.5 py-1">
+    <!-- 上段: 測位の状態と補正の方法、ログの保存中の REC、衛星数 -->
+    <div class="flex items-center gap-2">
+      <StateBadge kind="fix" class="px-3 py-1 text-base" />
+      <StateBadge kind="correction" class="px-3 py-1 text-base" />
+      <div v-if="s.save.on" class="flex items-center gap-1.5 text-sm font-semibold text-red-600">
+        <span class="size-3 animate-pulse rounded-full bg-red-600" />REC
+      </div>
+      <div class="flex-1" />
+      <Satellite class="text-muted-foreground size-6" />
+      <span class="font-mono text-3xl font-semibold tabular-nums">{{ valid ? s.pos.sats : '--' }}</span>
+    </div>
+
+    <LiveRow label="Lat">{{ valid ? `${s.pos.lat.toFixed(9)}°` : '--' }}</LiveRow>
+    <LiveRow label="Lon">{{ valid ? `${s.pos.lon.toFixed(9)}°` : '--' }}</LiveRow>
+    <LiveRow :label="height?.elevation ? 'Elev' : 'Alt'">
+      <template v-if="valid && height">{{ height.value.toFixed(3) }}<span :class="unit">m</span></template>
+      <template v-else>--</template>
+    </LiveRow>
+    <LiveRow v-if="s.pos.hAcc !== undefined && s.pos.vAcc !== undefined" label="Acc">
+      <template v-if="valid">
+        <MoveHorizontal class="text-muted-foreground size-[0.7em] shrink-0" />{{ rover.accuracyText(s.pos.hAcc) }}
+        <MoveVertical class="text-muted-foreground ml-2 size-[0.7em] shrink-0" />{{ rover.accuracyText(s.pos.vAcc) }}<span :class="unit">m</span>
+      </template>
+      <template v-else>--</template>
+    </LiveRow>
+
+    <!-- 速度と方角（古いファームウェアには無い） -->
+    <template v-if="speed !== undefined">
+      <LiveRow label="Speed">
+        <template v-if="valid">{{ speed.toFixed(1) }}<span :class="unit">km/h</span></template>
+        <template v-else>--</template>
+      </LiveRow>
+      <LiveRow v-if="dr" label="DR speed">{{ (dr.speed * 3.6).toFixed(1) }}<span :class="unit">km/h</span></LiveRow>
+      <LiveRow label="Heading">
+        <template v-if="valid && heading !== undefined">
+          <Navigation2 class="size-[0.7em] shrink-0 fill-current" :style="{ rotate: `${heading}deg` }" />{{ degrees(heading) }}<span :class="unit">{{ rover.compassOf(heading) }}</span>
+        </template>
+        <template v-else>--</template>
+      </LiveRow>
+      <LiveRow v-if="dr" label="DR heading">
+        <Navigation2 class="size-[0.7em] shrink-0 fill-current" :style="{ rotate: `${dr.heading}deg` }" />{{ dr.heading.toFixed(1) }}°<span :class="unit">{{ rover.compassOf(dr.heading) }}</span>
+      </LiveRow>
+    </template>
+
+    <!-- IMU（設定の imu.enable が入っている時だけ届く） -->
+    <template v-if="imu">
+      <div class="text-muted-foreground mt-2 border-t pt-2 text-sm">IMU</div>
+      <LiveRow label="Roll" small>{{ imu.roll.toFixed(1) }}°</LiveRow>
+      <LiveRow label="Pitch" small>{{ imu.pitch.toFixed(1) }}°</LiveRow>
+      <LiveRow label="Yaw" small>{{ imu.yaw.toFixed(1) }}°</LiveRow>
+      <LiveRow label="Motion" small>{{ imu.still ? 'Still' : 'Moving' }}</LiveRow>
+      <LiveRow label="Forward cal" small>{{ imu.forwardOk ? 'OK' : `${(imu.forwardWeight ?? 0).toFixed(1)} / 5` }}</LiveRow>
+      <LiveRow v-if="imu.test" label="DR test" small>
+        {{ imu.test.remain }}<span :class="unit">s</span> {{ imu.test.err.toFixed(2) }}<span :class="unit">m (max {{ imu.test.errMax.toFixed(2) }})</span>
+      </LiveRow>
+    </template>
+
+    <!-- 最下段: 本体の状態（本体の画面と同じ並び） -->
+    <div v-if="s.sys" class="text-muted-foreground mt-auto flex flex-wrap items-center justify-end gap-x-4 gap-y-1 border-t pt-3 text-sm">
+      <span class="flex items-center gap-1"><Thermometer class="size-4" />{{ s.sys.temp }}°</span>
+      <span class="flex items-center gap-1"><Cpu class="size-4" />{{ s.sys.cpu }}%</span>
+      <span class="flex items-center gap-1"><MemoryStick class="size-4" />{{ s.sys.mem }}%</span>
+      <span class="flex items-center gap-1"><component :is="s.sys.battery ? Battery : Zap" class="size-4" />{{ s.sys.volt.toFixed(1) }}V</span>
+      <span v-if="s.sys.sdFreeMB >= 0" class="flex items-center gap-1"><HardDrive class="size-4" />{{ Math.round(s.sys.sdFreeMB / 1000) }}G</span>
+    </div>
+  </div>
+  <p v-else class="text-sm">本体からの状況を待っています…</p>
+</template>

@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.view.WindowManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -158,6 +159,13 @@ class MainActivity : ComponentActivity(), BleClient.Listener {
 
         @JavascriptInterface
         fun storageRemove(name: String) = Rover.storageRemove(name)
+
+        /** 画面が自動で消えないようにする（測位タブを開いている間） */
+        @JavascriptInterface
+        fun keepScreenOn(on: Boolean) = runOnUiThread {
+            if (on) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
     }
 
     companion object {

@@ -18,6 +18,8 @@ export interface Status {
     sats: number;
     hAcc?: number;          // 推定精度（水平）m。古いファームウェアには無い
     vAcc?: number;          // 推定精度（垂直）m
+    speed?: number;         // 速度 km/h。古いファームウェアには無い
+    heading?: number;       // 進行方向（度。北が0、時計回り）。止まっている間は当てにならない
   };
   rate: number;             // 測位レート Hz
   elevation?: boolean;      // 標高を表示する（表示の設定。run.set の elevation）。古いファームウェアには無い

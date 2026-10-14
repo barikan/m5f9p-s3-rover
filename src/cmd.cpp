@@ -16,6 +16,7 @@
 //               標高は height－geoid。ジオイド高をジオイドモデル(geoid.cpp)で求めた時は
 //               "geoidModel" にモデルの名前が入る。無い時は、F9P内蔵のジオイドの値
 //               "elevation" は標高を表示するかどうか（run.set の elevation）
+//               "speed" は速度（km/h）、"heading" は進行方向（度。北が0、時計回り）
 //               "imu" は内蔵IMUの姿勢、静止判定、推測航法（ins.cpp）。設定（imu.enable）で
 //               有効な時だけ入る
 //   dr.test   {"sec":n}  n 秒間、推測航法を測位に合わせずに走らせ、測位との差をシリアルと
@@ -113,6 +114,8 @@ static void cmdStatus( JsonDocument &re )
 	pos["sats"] = mGpsData.numSatelites;
 	pos["hAcc"] = serialized( String( mGpsData.hAcc, 3 ) );	// 推定精度 m
 	pos["vAcc"] = serialized( String( mGpsData.vAcc, 3 ) );
+	pos["speed"] = serialized( String( mGpsData.velocity, 2 ) );		// 速度 km/h
+	pos["heading"] = serialized( String( mGpsData.direction, 1 ) );	// 進行方向（度。北が0、時計回り）。止まっている間は当てにならない
 	re["rate"] = mSolutionRate;
 	re["elevation"] = (bool)mRunInfo.elevation;				// 標高を表示する（表示の設定）
 

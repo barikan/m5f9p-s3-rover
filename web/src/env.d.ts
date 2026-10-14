@@ -17,6 +17,7 @@ interface AndroidBridge {
   storageAppend(name: string, text: string): void;
   storageList(): string;                  // JSON string[]
   storageRemove(name: string): void;
+  keepScreenOn(on: boolean): void;       // 画面が自動で消えないようにする
 }
 
 /** Windowsアプリ(windows/preload.js)が渡す窓口 */
