@@ -57,8 +57,13 @@ export interface Status {
     yaw: number;            // ジャイロの積分だけの相対値。起動時 0
     still: boolean;         // 静止している
     hz: number;             // 1秒あたりのサンプル数
-    gapMs: number;          // サンプルの最大間隔（直前10秒）ms
+    gapMs: number;          // 読み出しの最大間隔（直前10秒）ms
     log: boolean;           // IMUとGNSSの同時記録を書いている
+    forwardOk?: boolean;    // 車体の前方向の校正が済んでいる
+    forwardWeight?: number; // 校正の進み（5 以上で済み）
+    heading?: number;       // 推測航法の向き（北から時計回り、度）
+    speed?: number;         // 推測航法の速さ（m/s）
+    test?: { remain: number; err: number; errMax: number };   // 模擬の途切れ（dr.test）の間だけ
   };
   secretError?: boolean;    // 設定ファイルに、復号できないパスワードがある
   iniRemains?: boolean;     // 旧形式の設定ファイル(m5f9p.ini)がSDカードに残っている

@@ -120,7 +120,7 @@ const OTHER_GROUPS: { title: string; fields: PathField[] }[] = [
     title: 'IMU（実験的）', fields: [
       {
         path: ['imu', 'enable'], label: '内蔵 IMU を使う', type: 'bool', restart: true,
-        help: 'いまは姿勢と静止の判定を測るだけで、座標は変えません',
+        help: 'いまは姿勢、静止の判定、推測航法の試算を行うだけで、座標は変えません',
       },
       {
         path: ['imu', 'log'], label: 'IMU と GNSS を同時記録する', type: 'bool',

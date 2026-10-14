@@ -46,6 +46,9 @@ struct stRunInfo {
 	int solutionRate;	// 1秒あたりの位置更新レート 
 	int agribusConnect;	// TCPサーバ(AgriBus-NAVI等)への接続 0:接続しない 1:接続する
 	int elevation;		// 高さの表示 0:楕円体高 1:標高（ジオイドモデルで求められた時）。NMEAは変わらない
+	float imuForward;	// IMUの校正の結果（ins.cpp）。車体の前方向（レベル座標の角度、度）
+	float imuForwardWeight;	// 前方向の校正の重み。0 の時は校正していない
+	float imuGyroBias[3];	// ジャイロのずれ（deg/s）
 };
 
 // ************************************************************
@@ -189,6 +192,7 @@ int trackCount();
 int roverStartUartTask();
 int roverStartTasks();
 void d9cPoll();
+void roverGetGpsData( struct stGpsData *gpsData );
 
 // ************************************************************
 //                        storage.cpp
@@ -240,10 +244,11 @@ void geoidApply( struct stGpsData *gpsData );
 //                        ins.cpp
 // ************************************************************
 
-// IMU の状態（loopTask が更新する）
+// IMU と推測航法の状態（loopTask が更新する）
 struct stInsState {
 	bool ok;			// IMU が使える
 	int type;			// M5Unified の imu_t（6:BMI270）
+	bool fifo;			// FIFO で読んでいる
 	float roll;			// 姿勢（度）。本体の軸のまま（取り付けの向きは考えていない）
 	float pitch;
 	float yaw;			// ジャイロの積分だけの相対値。起動時 0
@@ -252,9 +257,19 @@ struct stInsState {
 	float gyroBias[3];	// ジャイロのずれ（deg/s）
 	float accNorm;		// 加速度の大きさ（g）
 	int sampleHz;		// 直前1秒のサンプル数
-	int gapMaxMs;		// 直前10秒の、サンプルの最大間隔（ミリ秒）。loopTask の遅れで伸びる
+	int gapMaxMs;		// 直前10秒の、読み出しの最大間隔（ミリ秒）。FIFO の時は取りこぼしではない
 	int i2cUsecMax;		// 読み出しにかかった時間の最大（マイクロ秒）
 	uint32_t samples;	// 通算のサンプル数
+	int overflowCount;	// FIFO があふれて捨てた回数
+	float forward;		// 車体の前方向（レベル座標の角度、度）
+	float forwardWeight;	// 前方向の校正の重み（加減速の合計 m/s²）
+	bool forwardValid;	// 前方向の校正が済んでいる
+	float accBias;		// 前方向の加速度のずれ（m/s²）
+	float heading;		// 推測航法の向き（北から時計回り、度）
+	float speed;		// 推測航法の速さ（m/s）
+	float drSec;		// 最後に測位に合わせてからの秒数
+	double lat;			// 推測航法の位置
+	double lon;
 };
 extern struct stInsState mIns;
 extern int mInsLogDropCount;
@@ -263,6 +278,9 @@ int insInit();
 void insPoll();
 bool insLogTake( char **buff, int *numBytes );
 void insLogRelease( char *buff );
+void insTestStart( int sec );
+int insTestStatus( float *err, float *errMax );
+void insCalibrationReset();
 
 // ************************************************************
 //                        cmd.cpp

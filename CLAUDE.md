@@ -24,6 +24,8 @@ mise run monitor        # 対話式のシリアルモニタ
 mise run usb-attach     # WSL2: USB を WSL に接続する
 mise run cmd '{"cmd":"status"}'   # 本体にコマンドを送る(一覧は src/cmd.cpp の先頭)
 mise run config-get / config-put  # 本体の SD カードの設定ファイル(YAML)を読み書きする
+mise run log-get <名前> [保存先]   # 本体の SD カードのログファイルを USB で取り出す(名前は log.list)
+mise run ins-replay <imu_*.csv>   # IMU と GNSS の同時記録を PC で再生し、推測航法の誤差を評価する
 ```
 
 - テストとリンタはない。確認手段はビルドと実機。

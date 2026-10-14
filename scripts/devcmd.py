@@ -7,10 +7,14 @@
   devcmd.py PORT '{"cmd":"status"}'     コマンドを送る
   devcmd.py PORT config-get [FILE]      設定ファイル(YAML)を取り出す（FILE省略時は標準出力）
   devcmd.py PORT config-put FILE        設定ファイル(YAML)を書き込む
+  devcmd.py PORT log-get NAME [FILE]    SDカードのログファイルを取り出す（NAMEは log.list の name。
+                                        FILE省略時は、同じ名前で現在のフォルダに書く）
 
 コマンドの一覧は src/cmd.cpp の先頭にある。
 """
+import base64
 import json
+import os
 import sys
 import time
 
@@ -63,6 +67,25 @@ def main():
         print(json.dumps(reply, ensure_ascii=False))
         if not reply.get("ok"):
             sys.exit(1)
+    elif action == "log-get":
+        if len(sys.argv) < 4:
+            sys.exit("ログファイルの名前（log.list の name）を指定してください")
+        name = sys.argv[3]
+        out = sys.argv[4] if len(sys.argv) > 4 else os.path.basename(name)
+        offset = 0
+        with open(out, "wb") as f:
+            while True:
+                reply = request(port, {"cmd": "log.get", "name": name, "offset": offset}, timeout=20.0)
+                if not reply.get("ok"):
+                    sys.exit(f"エラー: {reply.get('error')}")
+                data = base64.b64decode(reply.get("data", ""))
+                f.write(data)
+                offset += len(data)
+                size = reply.get("size", 0)
+                sys.stderr.write(f"\r{offset} / {size} バイト")
+                if len(data) == 0 or offset >= size:
+                    break
+        sys.stderr.write(f"\n{out} に書きました\n")
     else:
         reply = request(port, json.loads(action))
         print(json.dumps(reply, ensure_ascii=False, indent=2))

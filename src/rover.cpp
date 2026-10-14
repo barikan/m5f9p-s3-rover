@@ -13,6 +13,16 @@ volatile int mUartWriteIndex;
 int mUartReadIndex;
 
 struct stGpsData mGpsData;	// 取得された位置データ
+static portMUX_TYPE mGpsDataMux = portMUX_INITIALIZER_UNLOCKED;
+
+// 測位データの写しを取る（ほかのタスクから mGpsData 全体を読む時に使う）
+//
+void roverGetGpsData( struct stGpsData *gpsData )
+{
+	portENTER_CRITICAL( &mGpsDataMux );
+	memcpy( gpsData, &mGpsData, sizeof( *gpsData ) );
+	portEXIT_CRITICAL( &mGpsDataMux );
+}
 int mSolutionRate;			// 1秒あたりの測位回数
 
 static struct stUbxStatus mUbxStatus;
@@ -278,7 +288,9 @@ static void taskRover(void* param)
 		
 			if ( gpsData.ubxDone ){
 				geoidApply( &gpsData );		// ジオイド高を、ジオイドモデルの値にする
+				portENTER_CRITICAL( &mGpsDataMux );
 				memcpy( &mGpsData, &gpsData, sizeof( mGpsData ) );
+				portEXIT_CRITICAL( &mGpsDataMux );
 				distributeGpsData();
 			}
 		}

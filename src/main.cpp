@@ -101,8 +101,6 @@ void setup() {
 	// ジオイドモデル。ヘッダを読むだけ
 	int geoidResult = geoidInit();
 
-	// 内蔵IMU（設定で有効な時だけ）
-	int insResult = insInit();
 
 	// 実行パラメータ（Wifiの接続先、補正データの取得先、保存形式など）。
 	// 保存されていれば、それを使う。無い時（初回）は既定値で始め、Setup のページを開く。
@@ -115,6 +113,9 @@ void setup() {
 		mRunInfo.elevation = 1;
 		if ( mNumWifi == 1 ) strlcpy( mRunInfo.wifiSsid, mWifiList[0].ssid, sizeof( mRunInfo.wifiSsid ) );	// 1件だけなら、それを使う
 	}
+
+	// 内蔵IMU（設定で有効な時だけ。校正の結果を run.json から使うので、その後に）
+	int insResult = insInit();
 
 	// 画面
 	uiBegin( mRunInfo.lcdRotation );
@@ -338,10 +339,12 @@ static void dbgStatus()
 		(int)WiFi.status(), (int)WiFi.RSSI(), (int)mBleConnected, mBleNotifyCount,
 		(unsigned)heap_caps_get_free_size( MALLOC_CAP_INTERNAL ) );
 	if ( mIns.ok ){
-		dbgPrintf( "IMU hz=%d gap=%dms i2c=%dus still=%d bias=%.2f,%.2f,%.2f rpy=%.1f,%.1f,%.1f acc=%.3f logdrop=%d\r\n",
-			mIns.sampleHz, mIns.gapMaxMs, mIns.i2cUsecMax, (int)mIns.still,
+		dbgPrintf( "IMU hz=%d gap=%dms i2c=%dus ovf=%d still=%d bias=%.2f,%.2f,%.2f rpy=%.1f,%.1f,%.1f acc=%.3f fwd=%.1f(w=%.1f%s) abias=%.2f dr(hdg=%.1f spd=%.2f) logdrop=%d\r\n",
+			mIns.sampleHz, mIns.gapMaxMs, mIns.i2cUsecMax, mIns.overflowCount, (int)mIns.still,
 			mIns.gyroBias[0], mIns.gyroBias[1], mIns.gyroBias[2],
-			mIns.roll, mIns.pitch, mIns.yaw, mIns.accNorm, mInsLogDropCount );
+			mIns.roll, mIns.pitch, mIns.yaw, mIns.accNorm,
+			mIns.forward, mIns.forwardWeight, mIns.forwardValid ? " ok" : "", mIns.accBias,
+			mIns.heading, mIns.speed, mInsLogDropCount );
 		mIns.i2cUsecMax = 0;
 	}
 }

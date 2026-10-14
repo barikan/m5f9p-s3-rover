@@ -80,9 +80,10 @@ log:
 geoid:
   enable: true
 
-# 内蔵IMU（加速度・ジャイロ）。実験的な機能で、いまは姿勢と静止の判定を測るだけ
-# （座標は変えない）。enable の変更には再起動が要る。
+# 内蔵IMU（加速度・ジャイロ）。実験的な機能で、いまは姿勢、静止の判定、推測航法の
+# 試算（dr.test）を行うだけで、座標は変えない。enable の変更には再起動が要る。
 # log を true にすると、ログの保存中に、IMUとGNSSの同時記録（imu_*.csv）も同じフォルダに書く
+# （PCの mise run ins-replay で評価する）
 imu:
   enable: false
   log: false

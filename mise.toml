@@ -127,6 +127,36 @@ eval "files=(${usage_isg:-})"
 uv run --quiet --with numpy python3 scripts/make_geoid.py "${opts[@]}" "${files[@]}"
 '''
 
+[tasks.log-get]
+description = "本体のSDカードからログファイルを取り出す(名前は mise run cmd '{\"cmd\":\"log.list\"}' で分かる)"
+usage = '''
+arg "<name>" help="ログファイルの名前。例: 20261014/imu_20261014_105729.csv"
+arg "[file]" help="保存先。省略時は同じ名前で現在のフォルダに書く"
+'''
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+port=$(scripts/find-port.sh)
+uv run --quiet scripts/devcmd.py "$port" log-get "${usage_name?}" ${usage_file:+"$usage_file"}
+'''
+
+[tasks.ins-replay]
+description = "IMUとGNSSの同時記録(imu_*.csv)をPCで再生し、推測航法の誤差を評価する"
+usage = '''
+arg "<csv>" help="本体の同時記録 imu_*.csv(log.get で取り出したもの)"
+flag "--outage <sec>" help="模擬の途切れの長さ(秒)。省略時は要約だけ"
+flag "--every <sec>" help="途切れを作る間隔(秒)" default="60"
+flag "-v --verbose" help="途切れの間の、測位ごとの誤差も表示する"
+'''
+run = '''
+#!/usr/bin/env bash
+set -euo pipefail
+opts=(--every "${usage_every?}")
+if [ -n "${usage_outage:-}" ]; then opts+=(--outage "$usage_outage"); fi
+if [ "${usage_verbose:-false}" = "true" ]; then opts+=(-v); fi
+uv run --quiet python3 scripts/ins_replay.py "${opts[@]}" "${usage_csv?}"
+'''
+
 [tasks.cmd]
 description = "本体にコマンド(JSON)を送る。例: mise run cmd '{\"cmd\":\"status\"}'"
 usage = 'arg "<json>" help="コマンド。一覧は src/cmd.cpp の先頭にある"'

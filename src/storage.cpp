@@ -285,6 +285,15 @@ int saveRunInfo( struct stRunInfo *runInfo )
 	doc["tcpClient"] = ( runInfo->agribusConnect != 0 );
 	doc["elevation"] = ( runInfo->elevation != 0 );
 
+	// IMU の校正の結果（ins.cpp）
+	if ( runInfo->imuForwardWeight > 0 ){
+		JsonObject imu = doc["imu"].to<JsonObject>();
+		imu["forward"] = serialized( String( runInfo->imuForward, 1 ) );
+		imu["forwardWeight"] = serialized( String( runInfo->imuForwardWeight, 1 ) );
+		JsonArray bias = imu["gyroBias"].to<JsonArray>();
+		for( int i=0; i < 3; i++ ) bias.add( serialized( String( runInfo->imuGyroBias[i], 3 ) ) );
+	}
+
 	String text;
 	serializeJsonPretty( doc, text );
 	return sdSave( mRunInfoPath, (char*) text.c_str(), text.length(), FILE_WRITE ) == (int) text.length() ? 0 : -1;
@@ -384,6 +393,9 @@ int readRunInfo( struct stRunInfo *runInfo )
 	runInfo->solutionRate = doc["rate"] | 1;
 	runInfo->agribusConnect = ( doc["tcpClient"] | false ) ? 1 : 0;
 	runInfo->elevation = ( doc["elevation"] | true ) ? 1 : 0;
+	runInfo->imuForward = doc["imu"]["forward"] | 0.0f;
+	runInfo->imuForwardWeight = doc["imu"]["forwardWeight"] | 0.0f;
+	for( int i=0; i < 3; i++ ) runInfo->imuGyroBias[i] = doc["imu"]["gyroBias"][i] | 0.0f;
 	if ( plainPassword ) saveRunInfo( runInfo );
 	return 0;
 }
