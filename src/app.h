@@ -202,6 +202,7 @@ int roverStartUartTask();
 int roverStartTasks();
 void d9cPoll();
 void roverGetGpsData( struct stGpsData *gpsData );
+void roverGetGpsDataRaw( struct stGpsData *gpsData );
 
 // ************************************************************
 //                        storage.cpp

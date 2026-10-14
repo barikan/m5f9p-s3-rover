@@ -17,7 +17,9 @@
 //     （insPoll）は loopTask からだけ行う。
 //   ・SD カードには触らない。記録は、文字にしてバッファに溜めるだけで、書き込みは
 //     taskSdSave（storage.cpp）が insLogTake() で取り出して行う。
-//   ・測位データは roverGetGpsData()（rover.cpp）で写しを取る。
+//   ・測位データは roverGetGpsDataRaw()（rover.cpp）で写しを取る。insApply で置き換える前の
+//     値（F9P の値そのまま）で、校正、合わせ直し、記録に使う。置き換えた後の値を使うと、
+//     なめらかにした位置や推測の位置を測位として扱ってしまう。
 //
 // IMU の読み出し
 //   BMI270 の FIFO を自前で読む（ヘッダつき、加速度＋ジャイロ、100Hz）。M5Unified の
@@ -52,7 +54,8 @@
 // 記録（imu.log: true で、ログの保存中に書く。PC の scripts/ins_replay.py で再生する）
 //   ログと同じフォルダの imu_YYYYMMDD_HHMMSS.csv。1行が1つの出来事で、先頭の列が種類。
 //     I,micros,ax,ay,az,gx,gy,gz,mx,my,mz          IMU（1サンプルごと）
-//     G,micros,iTOW,lat,lon,height,quality,hAcc,velN,velE,velD,sAcc,headMot,headAcc  GNSS（測位ごと）
+//     G,micros,iTOW,lat,lon,height,quality,hAcc,velN,velE,velD,sAcc,headMot,headAcc  GNSS（測位ごと。
+//                                                  なめらか化・補間で置き換える前の、F9P の値）
 //     T,micros,drSec,err,lat,lon,heading,speed     模擬の途切れの間の、推測の位置と誤差（測位ごと）
 //   micros は本体の micros() で、IMU と GNSS の時刻を揃えるのに使う（70分で一周する）。
 //   FIFO で読んだサンプルの micros は、読み出した時刻から周期で逆算した値。
@@ -953,7 +956,7 @@ void insPoll()
 
 	// 新しい測位
 	struct stGpsData g;
-	roverGetGpsData( &g );
+	roverGetGpsDataRaw( &g );
 	if ( g.ubxDone && g.micros != mLogGpsMicros ){
 		mLogGpsMicros = g.micros;
 		gnssUpdate( &g );

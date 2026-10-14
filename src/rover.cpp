@@ -14,6 +14,7 @@ int mUartReadIndex;
 
 struct stGpsData mGpsData;	// 取得された位置データ
 static portMUX_TYPE mGpsDataMux = portMUX_INITIALIZER_UNLOCKED;
+static struct stGpsData mGpsDataRaw;	// IMU で置き換える前（insApply の前）の測位データ
 
 // 測位データの写しを取る（ほかのタスクから mGpsData 全体を読む時に使う）
 //
@@ -21,6 +22,16 @@ void roverGetGpsData( struct stGpsData *gpsData )
 {
 	portENTER_CRITICAL( &mGpsDataMux );
 	memcpy( gpsData, &mGpsData, sizeof( *gpsData ) );
+	portEXIT_CRITICAL( &mGpsDataMux );
+}
+
+// 置き換える前の測位データ（F9P の値そのまま。ジオイド高だけはモデルの値）の写しを取る。
+// IMU の校正、推測航法の合わせ直し、同時記録（ins.cpp）に使う
+//
+void roverGetGpsDataRaw( struct stGpsData *gpsData )
+{
+	portENTER_CRITICAL( &mGpsDataMux );
+	memcpy( gpsData, &mGpsDataRaw, sizeof( *gpsData ) );
 	portEXIT_CRITICAL( &mGpsDataMux );
 }
 int mSolutionRate;			// 1秒あたりの測位回数
@@ -288,7 +299,10 @@ static void taskRover(void* param)
 		
 			if ( gpsData.ubxDone ){
 				geoidApply( &gpsData );		// ジオイド高を、ジオイドモデルの値にする
-				insApply( &gpsData );		// 測位が無い間は、推測航法の位置にする（設定で有効な時）
+				portENTER_CRITICAL( &mGpsDataMux );
+				memcpy( &mGpsDataRaw, &gpsData, sizeof( mGpsDataRaw ) );	// 置き換える前の値
+				portEXIT_CRITICAL( &mGpsDataMux );
+				insApply( &gpsData );		// なめらか化と、測位が無い間の推測航法の位置（設定で有効な時）
 				portENTER_CRITICAL( &mGpsDataMux );
 				memcpy( &mGpsData, &gpsData, sizeof( mGpsData ) );
 				portEXIT_CRITICAL( &mGpsDataMux );
