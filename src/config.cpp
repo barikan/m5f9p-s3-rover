@@ -204,6 +204,9 @@ void configToJson( JsonDocument &doc, bool secrets )
 	doc["geoid"]["enable"] = ( mGeoidEnable != 0 );
 	doc["imu"]["enable"] = ( mImuEnable != 0 );
 	doc["imu"]["log"] = ( mImuLog != 0 );
+	doc["imu"]["dr"]["enable"] = ( mImuDrEnable != 0 );
+	doc["imu"]["dr"]["maxSec"] = mImuDrMaxSec;
+	doc["imu"]["dr"]["degrade"] = serialized( String( mImuDrDegrade, 1 ) );
 	doc["jstph"]["baudrate"] = mPhUartBaudrate;
 	doc["jstph"]["format"] = ( mPhUartFormat == PH_UART_CSV ) ? "csv" : "nmea";
 }
@@ -242,6 +245,18 @@ int configRestoreSecrets( JsonDocument &config )
 				if ( id < 0 || id + 1 >= mNumBaseSrc ) return -1;	// 0番目はUART
 				s["password"] = mBaseSrcList[ id + 1 ].password;
 			}
+			else if ( mRunInfo.baseSrc.valid && mRunInfo.baseSrc.type == BASE_TYPE_TCP
+					&& strcmp( cfgStr( s["address"] ).c_str(), mRunInfo.baseSrc.address ) == 0
+					&& strcmp( cfgStr( s["mount"] ).c_str(), mRunInfo.baseSrc.mountPoint ) == 0 ){
+				// 一覧に無くても、起動時の取得先（m5f9p.run.json）と同じなら、そのパスワードと
+				// 書かれていない項目を使う。設定ファイルを失った時に、取得先を戻せるようにするため
+				struct stBaseSource *b = &mRunInfo.baseSrc;
+				s["password"] = b->password;
+				if ( ! s["user"].is<const char*>() ) s["user"] = b->user;
+				if ( ! s["port"].is<int>() ) s["port"] = b->port;
+				if ( ! s["gga"].is<int>() ) s["gga"] = b->ggaPeriod;
+				if ( ! s["protocol"].is<const char*>() ) s["protocol"] = ( b->protocol == PROTO_NONE ) ? "none" : "ntrip";
+			}
 			else s["password"] = "";
 		}
 		s.remove( "id" );
@@ -254,6 +269,26 @@ int configRestoreSecrets( JsonDocument &config )
 		r.remove( "hasPassword" );
 	}
 	return 0;
+}
+
+// 設定（JSON）に、別の設定（JSON）の内容を重ねる
+//
+// ・オブジェクトは中の項目ごとに重ね、一覧（配列）と値は置き換える。
+// ・config.put で、書かれていない項目を現在の設定のままにして保存するために使う。
+//   （以前は渡された部分だけを設定ファイルに書いていたので、部分的な config.put で
+//   ほかの項目が消えた）
+//
+void configMerge( JsonVariant dst, JsonVariantConst src )
+{
+	if ( ! src.is<JsonObjectConst>() || ! dst.is<JsonObject>() ){
+		dst.set( src );
+		return;
+	}
+	for( JsonPairConst kv : src.as<JsonObjectConst>() ){
+		JsonVariant d = dst[ kv.key() ];
+		if ( kv.value().is<JsonObjectConst>() && d.is<JsonObject>() ) configMerge( d, kv.value() );
+		else dst[ kv.key() ] = kv.value();
+	}
 }
 
 // JSONの内容を設定に反映する
@@ -328,6 +363,10 @@ void configFromJson( JsonDocument &doc )
 
 	mImuEnable = cfgBool( doc["imu"]["enable"], mImuEnable != 0 ) ? 1 : 0;
 	mImuLog = cfgBool( doc["imu"]["log"], mImuLog != 0 ) ? 1 : 0;
+	mImuDrEnable = cfgBool( doc["imu"]["dr"]["enable"], mImuDrEnable != 0 ) ? 1 : 0;
+	mImuDrMaxSec = constrain( cfgInt( doc["imu"]["dr"]["maxSec"], mImuDrMaxSec ), 1, 600 );
+	mImuDrDegrade = doc["imu"]["dr"]["degrade"].is<float>() ? doc["imu"]["dr"]["degrade"].as<float>() : mImuDrDegrade;
+	if ( mImuDrDegrade < 0 ) mImuDrDegrade = 0;
 
 	mPhUartBaudrate = cfgInt( doc["jstph"]["baudrate"], mPhUartBaudrate );
 	String format = cfgStr( doc["jstph"]["format"], mPhUartFormat == PH_UART_CSV ? "csv" : "nmea" );

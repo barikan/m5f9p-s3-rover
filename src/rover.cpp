@@ -288,6 +288,7 @@ static void taskRover(void* param)
 		
 			if ( gpsData.ubxDone ){
 				geoidApply( &gpsData );		// ジオイド高を、ジオイドモデルの値にする
+				insApply( &gpsData );		// 測位が無い間は、推測航法の位置にする（設定で有効な時）
 				portENTER_CRITICAL( &mGpsDataMux );
 				memcpy( &mGpsData, &gpsData, sizeof( mGpsData ) );
 				portEXIT_CRITICAL( &mGpsDataMux );

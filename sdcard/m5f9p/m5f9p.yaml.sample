@@ -80,13 +80,21 @@ log:
 geoid:
   enable: true
 
-# 内蔵IMU（加速度・ジャイロ）。実験的な機能で、いまは姿勢、静止の判定、推測航法の
-# 試算（dr.test）を行うだけで、座標は変えない。enable の変更には再起動が要る。
+# 内蔵IMU（加速度・ジャイロ）。実験的な機能。enable の変更には再起動が要る。
+# 本体を車体に固定して使う。車体の前方向は走行中に自動で校正する（加減速を数回で済む）。
 # log を true にすると、ログの保存中に、IMUとGNSSの同時記録（imu_*.csv）も同じフォルダに書く
 # （PCの mise run ins-replay で評価する）
+# dr: 測位が途切れた間を推測航法で補間する（quality 6 で出力。NMEA、ログ、画面、アプリの全部）
+#   maxSec   補間する時間の上限（秒）。走行の試験では 10 秒で誤差の中央値 2.4m、20 秒で 11m
+#   degrade  0 より大きいと、測位があっても推定精度（m）がこれより悪い間は推測航法の位置を出す
+#            （RTK から単独測位に落ちた時など。上限は maxSec）
 imu:
   enable: false
   log: false
+  dr:
+    enable: false
+    maxSec: 10
+    degrade: 0
 
 # ３ピンJST-PHコネクタ（UART）
 jstph:

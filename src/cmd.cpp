@@ -18,10 +18,13 @@
 //               "elevation" は標高を表示するかどうか（run.set の elevation）
 //               "speed" は速度（km/h）、"heading" は進行方向（度。北が0、時計回り）
 //               "imu" は内蔵IMUの姿勢、静止判定、推測航法（ins.cpp）。設定（imu.enable）で
-//               有効な時だけ入る
+//               有効な時だけ入る。"pos" の quality が 6 の時は、測位が無い間を推測航法で
+//               補間した位置（設定 imu.dr.enable）
 //   dr.test   {"sec":n}  n 秒間、推測航法を測位に合わせずに走らせ、測位との差をシリアルと
 //                        同時記録（imu.log）に出す（模擬の途切れ）。0 で止める。詳しくは ins.cpp
 //   imu.reset 車体の前方向の校正をやり直す（本体の取り付けを変えた時）
+//   gps.coldstart  F9P に衛星の情報を消して測位をやり直させる（確認用。USBのみ）。30秒ほど測位が
+//                  無くなるので、推測航法の補間（quality 6）と上限での打ち切りを机の上で確かめられる
 //   save      {"on":true/false}  ファイルへの保存を開始、停止する
 //   rate      {"hz":1-20}        1秒あたりの測位回数を変更する
 //   nmea      {"hz":0-5}         BLEでNMEAを送る回数（1秒あたり）を変更する。0:送らない
@@ -30,6 +33,7 @@
 //               一覧（wifi, sources）の項目には、password の代わりに、一覧の中の番号 id と、
 //               設定済みかどうかの hasPassword が入る
 //   config.put  {"config":{...}}  設定を書き換える。設定ファイルのコメントは消える
+//               書かれていない項目は現在の設定のまま（一覧 wifi, sources は、書けば全体が置き換わる）
 //               再起動しなくても反映できる時は、すぐに反映する。いま使っているWifiや
 //               補正データの取得先の内容が変わった時は、つなぎ直す。
 //               再起動が要る項目（config.cpp の configNeedsRestart）が変わった時は、
@@ -174,6 +178,8 @@ static void cmdStatus( JsonDocument &re )
 		imu["forwardWeight"] = serialized( String( mIns.forwardWeight, 1 ) );	// 校正の進み（5 以上で済み）
 		imu["heading"] = serialized( String( mIns.heading, 1 ) );	// 推測航法の向き（北から時計回り、度）
 		imu["speed"] = serialized( String( mIns.speed, 2 ) );	// 推測航法の速さ（m/s）
+		imu["dr"] = ( mImuDrEnable != 0 );						// 測位が無い間、推測の位置を出力する（設定）
+		imu["drSec"] = serialized( String( mIns.drSec, 1 ) );	// 最後に測位に合わせてからの秒数
 		float err, errMax;
 		int remain = insTestStatus( &err, &errMax );
 		if ( remain > 0 ){										// 模擬の途切れ（dr.test）の間だけ
@@ -210,6 +216,7 @@ void cmdRestartIfRequested()
 
 void configToJson( JsonDocument &doc, bool secrets );
 int configRestoreSecrets( JsonDocument &config );
+void configMerge( JsonVariant dst, JsonVariantConst src );
 int configSave( JsonVariantConst config );
 bool configNeedsRestart( JsonVariantConst config );
 void configApply( JsonDocument &config );
@@ -255,9 +262,14 @@ static void cmdConfigPut( JsonDocument &cmd, JsonDocument &re )
 	if ( ! cmd["config"].is<JsonObject>() ) { re["error"] = "no config"; return; }
 
 	// パスワードが書かれていない項目に、本体が持っているものを補う
+	JsonDocument given;
+	given.set( cmd["config"] );
+	if ( configRestoreSecrets( given ) < 0 ) { re["error"] = "bad id"; return; }
+
+	// 書かれていない項目は現在の設定のままにする（渡された部分だけをファイルにしない）
 	JsonDocument config;
-	config.set( cmd["config"] );
-	if ( configRestoreSecrets( config ) < 0 ) { re["error"] = "bad id"; return; }
+	configToJson( config, true );
+	configMerge( config.as<JsonVariant>(), given.as<JsonVariantConst>() );
 
 	int nret = configSave( config.as<JsonVariantConst>() );
 	if ( nret == -1 ) re["error"] = "no config";
@@ -482,6 +494,17 @@ void cmdExecute( char *line, String &reply, int channel )
 		else {
 			insTestStart( cmd["sec"] | 10 );
 			re["ok"] = true;
+		}
+	}
+	else if ( strcmp( name, "gps.coldstart" ) == 0 ){
+		if ( channel != CMD_USB ) re["error"] = "usb only";
+		else {
+			// UBX-CFG-RST navBbrMask=0xFFFF（全部消す）resetMode=0x02（GNSSだけのソフトウェアリセット。
+			// UARTの設定は保たれる）。この指示には Ack が返らない
+			byte payload[4] = { 0xFF, 0xFF, 0x02, 0x00 };
+			int n = ubxSetCommand( 0x06, 0x04, 4, payload );
+			if ( n > 0 ) ubxSendCommand( n, 300 );
+			re["ok"] = ( n > 0 );
 		}
 	}
 	else if ( strcmp( name, "imu.reset" ) == 0 ){

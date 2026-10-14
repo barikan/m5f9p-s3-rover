@@ -172,7 +172,7 @@ static const char *fixName( int quality, int *color )
 		case 5: *color = COLOR_ORANGE; return "Float";
 		case 2: *color = COLOR_GRAY; return "DGPS";
 		case 1: *color = COLOR_GRAY; return "Single";
-		case 6: *color = COLOR_GRAY; return "Estimated";
+		case 6: *color = COLOR_GRAY; return "DR";		// 推測航法（ins.cpp）
 	}
 	*color = COLOR_RED;
 	return "No fix";

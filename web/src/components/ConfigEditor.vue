@@ -33,7 +33,7 @@ interface ListDef {
 
 /** その他の項目。path は設定の中の位置（[グループ, 項目]） */
 interface PathField extends Field {
-  path: [string, string];
+  path: [string, string] | [string, string, string];   // 設定の中の場所。3つの時は、節の中の節（imu.dr.enable など）
   restart?: boolean;    // 変えると、本体の再起動が要る
 }
 
@@ -126,6 +126,15 @@ const OTHER_GROUPS: { title: string; fields: PathField[] }[] = [
         path: ['imu', 'log'], label: 'IMU と GNSS を同時記録する', type: 'bool',
         help: 'ログの保存中に、同じフォルダへ imu_*.csv も書きます（評価用）',
       },
+      {
+        path: ['imu', 'dr', 'enable'], label: '測位が途切れた間を推測航法で補間する', type: 'bool',
+        help: '本体を車体に固定して使います。補間した位置は DR（quality 6）として NMEA、ログ、地図に出ます',
+      },
+      { path: ['imu', 'dr', 'maxSec'], label: '補間する時間の上限（秒）', type: 'number', help: '走行の試験では 10 秒で誤差の中央値 2.4 m、20 秒で 11 m' },
+      {
+        path: ['imu', 'dr', 'degrade'], label: '劣化した測位も補間する精度（m）', type: 'number',
+        help: '0 なら測位が無い時だけ。例えば 2 にすると、推定精度が 2 m より悪い間（RTK から単独測位に落ちた時など）も推測航法の位置を出します',
+      },
     ],
   },
   {
@@ -159,11 +168,23 @@ const entriesOf = (list: ListDef) => editing[list.key] as Entry[];
 const groupOf = (name: string) => editing[name] as Record<string, ConfigValue> | undefined;
 const dirty = ref(false);
 
-const getPath = ([group, key]: PathField['path']) => groupOf(group)?.[key];
+// 項目の入れ物（節、または節の中の節）。create の時は無ければ作る
+function holderOf(path: PathField['path'], create: boolean) {
+  const root = editing as Record<string, unknown>;
+  if (create) root[path[0]] ??= {};
+  let holder = root[path[0]] as Record<string, unknown> | undefined;
+  if (path.length === 3 && holder) {
+    if (create) holder[path[1]] ??= {};
+    holder = holder[path[1]] as Record<string, unknown> | undefined;
+  }
+  return holder as Record<string, ConfigValue> | undefined;
+}
+const keyOf = (path: PathField['path']) => path[path.length - 1];
 
-function setPath([group, key]: PathField['path'], value: ConfigValue) {
-  editing[group] ??= {};
-  groupOf(group)![key] = value;
+const getPath = (path: PathField['path']) => holderOf(path, false)?.[keyOf(path)];
+
+function setPath(path: PathField['path'], value: ConfigValue) {
+  holderOf(path, true)![keyOf(path)] = value;
   dirty.value = true;
 }
 

@@ -13,7 +13,7 @@ export const QUALITY: Record<number, { label: string; color: string }> = {
   2: { label: 'DGPS', color: '#546E7A' },
   4: { label: 'Fix', color: '#2E7D32' },
   5: { label: 'Float', color: '#EF6C00' },
-  6: { label: 'Estimated', color: '#546E7A' },
+  6: { label: 'DR', color: '#6A1B9A' },        // 推測航法（測位が途切れた間の補間。本体の src/ins.cpp）
 };
 export const qualityOf = (q: number) => QUALITY[q] || QUALITY[0];
 

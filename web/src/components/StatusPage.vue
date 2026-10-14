@@ -132,6 +132,7 @@ const gigabytes = (megabytes: number) => (megabytes / 1000).toFixed(1);
       <Item label="姿勢" mono>{{ s.imu.roll.toFixed(1) }} / {{ s.imu.pitch.toFixed(1) }} / {{ s.imu.yaw.toFixed(1) }}°<span class="text-muted-foreground font-sans">（roll / pitch / yaw）</span></Item>
       <Item label="動き">{{ s.imu.still ? '静止' : '移動中' }}</Item>
       <Item v-if="s.imu.heading !== undefined && s.imu.speed !== undefined" label="推測航法" mono>{{ s.imu.heading.toFixed(1) }}° {{ s.imu.speed.toFixed(1) }} m/s<span class="text-muted-foreground font-sans">（前方向の校正 {{ s.imu.forwardOk ? '済み' : `${(s.imu.forwardWeight ?? 0).toFixed(1)} / 5` }}）</span></Item>
+      <Item v-if="s.imu.dr !== undefined" label="補間">{{ s.imu.dr ? (s.pos.quality === 6 ? `補間中（${(s.imu.drSec ?? 0).toFixed(0)} 秒）` : '有効') : '無効' }}</Item>
       <Item v-if="s.imu.test" label="模擬の途切れ" mono>残り {{ s.imu.test.remain }} 秒　誤差 {{ s.imu.test.err.toFixed(2) }} m（最大 {{ s.imu.test.errMax.toFixed(2) }} m）</Item>
       <Item label="サンプル">{{ s.imu.hz }} Hz<span class="text-muted-foreground">（最大間隔 {{ s.imu.gapMs }} ms）</span></Item>
       <Item v-if="s.imu.log" label="記録">IMU と GNSS を同時記録中</Item>

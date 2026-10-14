@@ -9,7 +9,7 @@ export interface Status {
   uptime: number;           // 秒
   pos: {
     valid: boolean;
-    quality: number;        // NMEAのquality。4:Fix 5:Float
+    quality: number;        // NMEAのquality。4:Fix 5:Float 6:DR（推測航法で補間した位置）
     lat: number;
     lon: number;
     height: number;         // 楕円体高 m
@@ -65,6 +65,8 @@ export interface Status {
     forwardWeight?: number; // 校正の進み（5 以上で済み）
     heading?: number;       // 推測航法の向き（北から時計回り、度）
     speed?: number;         // 推測航法の速さ（m/s）
+    dr?: boolean;           // 測位が無い間、推測の位置を出力する（設定 imu.dr.enable）。pos.quality が 6 の時がそれ
+    drSec?: number;         // 最後に測位に合わせてからの秒数
     test?: { remain: number; err: number; errMax: number };   // 模擬の途切れ（dr.test）の間だけ
   };
   secretError?: boolean;    // 設定ファイルに、復号できないパスワードがある

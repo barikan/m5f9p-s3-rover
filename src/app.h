@@ -114,6 +114,9 @@ extern char mRtk2goPassword[32];
 extern int mGeoidEnable;
 extern int mImuEnable;
 extern int mImuLog;
+extern int mImuDrEnable;
+extern int mImuDrMaxSec;
+extern float mImuDrDegrade;
 
 #define PH_UART_NMEA 0
 #define PH_UART_CSV 1
@@ -258,7 +261,8 @@ struct stInsState {
 	float accNorm;		// 加速度の大きさ（g）
 	int sampleHz;		// 直前1秒のサンプル数
 	int gapMaxMs;		// 直前10秒の、読み出しの最大間隔（ミリ秒）。FIFO の時は取りこぼしではない
-	int i2cUsecMax;		// 読み出しにかかった時間の最大（マイクロ秒）
+	int i2cUsecMax;		// 1回の読み出しと計算にかかった時間の最大（マイクロ秒）。SD の書き込み（同じコアの
+						// taskSdSave）と重なると、待たされた分だけ長く出る。IMU そのものの負荷は 3ms 程度
 	uint32_t samples;	// 通算のサンプル数
 	int overflowCount;	// FIFO があふれて捨てた回数
 	float forward;		// 車体の前方向（レベル座標の角度、度）
@@ -278,6 +282,7 @@ int insInit();
 void insPoll();
 bool insLogTake( char **buff, int *numBytes );
 void insLogRelease( char *buff );
+void insApply( struct stGpsData *gpsData );
 void insTestStart( int sec );
 int insTestStatus( float *err, float *errMax );
 void insCalibrationReset();

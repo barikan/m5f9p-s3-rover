@@ -60,6 +60,12 @@ int mGeoidEnable = 1;
 int mImuEnable = 0;
 // IMUとGNSSの同時記録をSDカードに書く時 1（ログの保存中だけ書く）
 int mImuLog = 0;
+// 測位が無い間、推測航法の位置を出力する時 1（quality 6）。既定は無効
+int mImuDrEnable = 0;
+// 推測航法で補間する時間の上限（秒）。走行ログの再生では 10 秒で誤差の中央値 2.4m
+int mImuDrMaxSec = 10;
+// 0 より大きい時、測位があっても推定精度（m）がこれより悪ければ推測航法の位置を出す
+float mImuDrDegrade = 0;
 
 // rtk2go.comのマウントポイントを画面で選択した時に使うユーザ名とパスワード
 char mRtk2goUser[32];

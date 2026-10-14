@@ -6,9 +6,11 @@
 // ジャイロのずれ（バイアス）、車体の前方向を求め、2次元の推測航法（DR）を走らせる。
 // 測位が途切れた間の補間と、座標のなめらか化に使う計画（imu_plan.md）の第2段階まで。
 //
-// いまは座標を変えない。推測航法は「影」で常に走らせ、測位があるたびに測位の値に
-// 合わせ直す。模擬の途切れ（dr.test）の間は合わせ直さず、推測と測位の差（誤差）を
-// 出す。これで、トンネルを走らなくても誤差の増え方を測れる。
+// 推測航法は「影」で常に走らせ、測位があるたびに測位の値に合わせ直す。設定
+// （imu.dr.enable）で有効なら、測位が無い間（上限 imu.dr.maxSec まで）は推測の位置を
+// 出力に使う（insApply。quality=6 "Estimated/Dead reckoning"）。模擬の途切れ（dr.test）の
+// 間は合わせ直さず、推測と測位の差（誤差）を出す。これで、トンネルを走らなくても
+// 誤差の増え方を測れる。
 //
 // 守る事
 //   ・IMU は内部 I2C に載っている（タッチパネル、電源 IC、D9C と共用）。読み出し
@@ -108,6 +110,8 @@
 // ---- 推測航法
 #define INS_HEADING_SPEED_MIN 1.0f		// GNSS の進行方向を使う最低の速さ（m/s）
 #define INS_GNSS_HACC_MAX 30.0f			// 使う測位の推定精度の上限（m）
+#define INS_DR_ACC_GROWTH 0.3f			// 出力する推測の位置の推定精度を、1秒あたりこれだけ（m）増やす
+										// （走行ログの再生で、10秒の途切れの誤差の中央値が約 2.4m）
 #define INS_G 9.80665f
 
 #define INS_LOG_BUFF_MAX 32768			// 記録のバッファ（2つ。PSRAM）。100Hz で約 7.5KB/秒なので、
@@ -163,11 +167,27 @@ static float mCalSavedForward;
 
 // 推測航法
 static bool mDrSynced;					// 一度は測位に合わせた
+static float mDrSyncHAcc, mDrSyncVAcc;	// 合わせた時の測位の推定精度
 static double mDrLat0, mDrLon0;			// 最後に合わせた位置
 static double mDrE, mDrN;				// そこからの東・北（m）
 static float mDrHeight;
 static bool mHeadingValid;
 static unsigned long mDrSyncMillis;		// 最後に合わせた時刻
+
+// taskRover に渡す推測の位置（loopTask が書き、taskRover が読む）
+struct stDrSnapshot {
+	bool valid;
+	double lat;
+	double lon;
+	float height;
+	float heading;
+	float speed;
+	float hAcc;
+	float vAcc;
+	unsigned long syncMillis;
+};
+static struct stDrSnapshot mDrSnapshot;
+static portMUX_TYPE mDrMux = portMUX_INITIALIZER_UNLOCKED;
 
 // 模擬の途切れ
 static unsigned long mTestEndMillis;	// 0 の時は試験していない
@@ -416,6 +436,8 @@ static void drSync( const struct stGpsData *g )
 	mDrLon0 = g->lon;
 	mDrE = mDrN = 0;
 	mDrHeight = g->height;
+	mDrSyncHAcc = g->hAcc;
+	mDrSyncVAcc = g->vAcc;
 	mIns.speed = mGpsSpeed;
 	if ( mGpsSpeed >= INS_HEADING_SPEED_MIN ){
 		mIns.heading = g->direction;
@@ -479,7 +501,10 @@ static void gnssUpdate( const struct stGpsData *g )
 	mGps = *g;
 	mGpsReceived = true;
 	mGpsSpeed = sqrtf( g->velN * g->velN + g->velE * g->velE );
-	mGpsUsable = ( g->quality > 0 && g->hAcc < INS_GNSS_HACC_MAX );
+	// 劣化した測位でも推測を出す設定（imu.dr.degrade）の時は、その精度より良い測位にだけ合わせる
+	float hAccMax = ( mImuDrEnable && mImuDrDegrade > 0 ) ? mImuDrDegrade : INS_GNSS_HACC_MAX;
+	// F9P 自身の quality 6（fixType 1。測位が無い間、最後の位置を保持して返す）は測位ではない
+	mGpsUsable = ( g->quality > 0 && g->quality != 6 && g->hAcc < hAccMax );
 	bool testing = ( mTestEndMillis != 0 );
 
 	// 前の測位からの区間の、IMU の平均
@@ -921,7 +946,63 @@ void insPoll()
 	}
 
 	mIns.drSec = mDrSynced ? ( millis() - mDrSyncMillis ) * 1E-3f : 0;
-	if ( mDrSynced ) drPosition( &mIns.lat, &mIns.lon );
+	if ( mDrSynced ){
+		drPosition( &mIns.lat, &mIns.lon );
+		struct stDrSnapshot snap;
+		snap.valid = true;
+		snap.lat = mIns.lat;
+		snap.lon = mIns.lon;
+		snap.height = mDrHeight;
+		snap.heading = mIns.heading;
+		snap.speed = mIns.speed;
+		snap.hAcc = mDrSyncHAcc;
+		snap.vAcc = mDrSyncVAcc;
+		snap.syncMillis = mDrSyncMillis;
+		portENTER_CRITICAL( &mDrMux );
+		mDrSnapshot = snap;
+		portEXIT_CRITICAL( &mDrMux );
+	}
 
 	logFlushIfDue();
+}
+
+// 測位が無い間、推測の位置を測位データに入れる。taskRover から呼ぶ（geoidApply の後）
+//
+// ・設定（imu.dr.enable）で有効で、測位が無い（quality 0）時に、最後に測位に合わせてから
+//   imu.dr.maxSec 秒までは、推測の緯度・経度・高さ・速さ・向きに置き換え、quality を 6
+//   （Estimated/Dead reckoning）にする。推定精度は、合わせた時の値に時間に応じて足す。
+// ・imu.dr.degrade が 0 より大きい時は、測位があっても推定精度がそれより悪ければ置き換える
+//   （RTK から単独測位に落ちた時など）。
+// ・模擬の途切れ（dr.test）の間は、測位があるので置き換えない。
+// ・置き換えた後の値は、NMEA、SD のログ、TCP、BLE、本体の画面、移動履歴のすべてに出る。
+//
+void insApply( struct stGpsData *g )
+{
+	if ( ! mIns.ok || ! mImuDrEnable ) return;
+
+	bool absent = ( g->quality == 0 || g->quality == 6 );	// 6 は F9P 自身の「位置の保持」（上の gnssUpdate を参照）
+	bool degraded = ( mImuDrDegrade > 0 && ! absent && g->hAcc > mImuDrDegrade );
+	if ( ! absent && ! degraded ) return;
+
+	struct stDrSnapshot snap;
+	portENTER_CRITICAL( &mDrMux );
+	snap = mDrSnapshot;
+	portEXIT_CRITICAL( &mDrMux );
+	if ( ! snap.valid ) return;
+
+	float sec = ( millis() - snap.syncMillis ) * 1E-3f;
+	if ( sec < 0 || sec > mImuDrMaxSec ){
+		if ( g->quality == 6 ) g->quality = 0;		// F9P の「位置の保持」も、上限を過ぎたら測位なしにする
+		return;
+	}
+
+	g->lat = snap.lat;
+	g->lon = snap.lon;
+	g->height = snap.height;
+	g->velocity = snap.speed * 3.6;
+	g->direction = snap.heading;
+	g->hAcc = snap.hAcc + INS_DR_ACC_GROWTH * sec;
+	g->vAcc = snap.vAcc + INS_DR_ACC_GROWTH * sec;
+	g->quality = 6;
+	g->highPrecisionDone = false;
 }
