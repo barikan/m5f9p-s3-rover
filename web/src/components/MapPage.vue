@@ -68,7 +68,13 @@ async function deleteDay(day: string) {
     </template>
     <template v-if="s && isToday">
       <div class="font-semibold" :style="{ color: quality.color }">{{ quality.label }}</div>
-      <div v-if="s.pos.valid" class="text-muted-foreground font-mono text-xs">{{ s.pos.lat.toFixed(8) }}, {{ s.pos.lon.toFixed(8) }}</div>
+      <template v-if="s.pos.valid">
+        <div class="text-muted-foreground font-mono text-xs">{{ s.pos.lat.toFixed(8) }}, {{ s.pos.lon.toFixed(8) }}</div>
+        <div class="text-muted-foreground text-xs">
+          {{ s.pos.geoid !== undefined ? '標高' : '楕円体高' }}
+          <span class="font-mono">{{ (s.pos.height - (s.pos.geoid ?? 0)).toFixed(3) }} m</span>
+        </div>
+      </template>
     </template>
     <div v-else-if="isToday">本体に接続していません</div>
     <div class="text-muted-foreground text-xs">{{ isToday ? '今日' : state.trackDay }}の軌跡 {{ state.trackCount }} 点{{ state.syncing ? '（本体から取得中）' : '' }}</div>
