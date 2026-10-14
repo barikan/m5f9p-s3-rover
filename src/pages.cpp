@@ -57,6 +57,7 @@ enum {
 	HIT_SET_BRIGHTNESS,		// 明るさのページを開く
 	HIT_SAT_VIEW,			// Satellites の表示の切り替え
 	HIT_BLE_DISCONNECT,		// BLEで接続している相手を切断する
+	HIT_BRIGHTNESS_AUTO,	// 明るさの自動の入・切
 	HIT_BRIGHTNESS = 80,	// + 明るさの番号
 };
 
@@ -733,6 +734,9 @@ static void drawSetup()
 
 // Brightness: 画面の明るさ。Setup から開く
 //
+// ・照度センサーが使える時は、下段に Auto のボタンを出す。自動の時は、いまの明るさと
+//   周囲の明るさ(lux)を出し、数字のボタンはどれも選択中にしない（押すと自動が切れる）。
+//
 static const int mBrightness[] = { 15, 25, 50, 75, 100 };
 
 static void drawBrightness()
@@ -746,14 +750,27 @@ static void drawBrightness()
 	const int h = 64;
 	const int by = backY - 8 - h;
 
+	bool sensor = lightAvailable();
+	bool autoOn = ( sensor && mRunInfo.brightnessAuto );
+
 	drawHeader( "Brightness" );
-	snprintf( text, sizeof(text), "%d%%", mRunInfo.brightness );
-	screenText( SCREEN_WIDTH / 2, ( HEADER_HEIGHT + by ) / 2, text, FONT_VALUE, COLOR_TEXT, lgfx::textdatum_t::middle_center );
-	drawButton( MARGIN, backY, SCREEN_WIDTH - MARGIN * 2, backHeight, "Back", HIT_BACK );
+	int cy = ( HEADER_HEIGHT + by ) / 2;
+	snprintf( text, sizeof(text), "%d%%", mBrightnessNow );
+	screenText( SCREEN_WIDTH / 2, sensor ? cy - 12 : cy, text, FONT_VALUE, COLOR_TEXT, lgfx::textdatum_t::middle_center );
+	if ( sensor ){
+		snprintf( text, sizeof(text), "%s%d lx", autoOn ? "Auto  " : "", (int) roundf( mLightLux < 0 ? 0 : mLightLux ) );
+		screenText( SCREEN_WIDTH / 2, cy + 20, text, FONT_TEXT, COLOR_MUTED, lgfx::textdatum_t::middle_center );
+	}
+	if ( sensor ){
+		const int bw = ( SCREEN_WIDTH - MARGIN * 3 ) / 2;
+		drawButton( MARGIN, backY, bw, backHeight, "Back", HIT_BACK );
+		drawButton( MARGIN * 2 + bw, backY, bw, backHeight, "Auto", HIT_BRIGHTNESS_AUTO, autoOn );
+	}
+	else drawButton( MARGIN, backY, SCREEN_WIDTH - MARGIN * 2, backHeight, "Back", HIT_BACK );
 
 	for( int i=0; i < n; i++ ){
 		snprintf( text, sizeof(text), "%d", mBrightness[i] );
-		drawButton( MARGIN + i * ( w + gap ), by, w, h, text, HIT_BRIGHTNESS + i, mBrightness[i] == mRunInfo.brightness );
+		drawButton( MARGIN + i * ( w + gap ), by, w, h, text, HIT_BRIGHTNESS + i, ! autoOn && mBrightness[i] == mRunInfo.brightness );
 	}
 }
 
@@ -847,6 +864,7 @@ static void onTap( int id )
 	else if ( id >= HIT_SET_WIFI && id <= HIT_SET_TCP ) onSetting( id );
 	else if ( id == HIT_SET_BRIGHTNESS ) mPage = PAGE_BRIGHTNESS;
 	else if ( id == HIT_SAT_VIEW ) mSatView = ! mSatView;
+	else if ( id == HIT_BRIGHTNESS_AUTO ) appSetBrightnessAuto( ! mRunInfo.brightnessAuto );
 	else if ( id >= HIT_BRIGHTNESS ) appSetBrightness( mBrightness[ id - HIT_BRIGHTNESS ] );
 }
 

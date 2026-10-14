@@ -49,6 +49,8 @@ export interface Status {
     volt: number;           // 電圧（V）
     battery: boolean;       // true:バッテリーの電圧 false:USB・外部電源の電圧
     sdFreeMB: number;       // SDカードの空き。-1:分からない
+    lux?: number;           // 周囲の明るさ（lux。照度センサー）。古いファームウェア、センサーが使えない時は無い
+    brightness?: number;    // いまの画面の明るさ（%）
   };
   heap: number;
   bleNmea: number;
@@ -85,6 +87,7 @@ export interface RunConfig {
   rate: number;
   rotation: number;
   brightness: number;       // 画面の明るさ(%)。15〜100
+  brightnessAuto?: boolean; // 画面の明るさを周囲の明るさに合わせて自動で変える
   elevation?: boolean;      // 標高を表示する。false は楕円体高だけ。古いファームウェアには無い
   wifiList: string[];
   sourceList: string[];

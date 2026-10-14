@@ -102,7 +102,7 @@ mise run android-screenshot          # 端末の画面を screenshot.png に保�
 - **ピンは M-BUS の位置で読み替えている**(`src/config.h`)。F9P UART は RX=G9 / TX=G7、PH コネクタは TX=G6 / RX=G10、F9P イネーブルは G13。
 - G13 は内蔵スピーカーの I2S_DOUT と共用なので、`M5.begin()` でスピーカーとマイクを無効にしている。
 - 内蔵 IMU(BMI270、内部 I2C の 0x69)は G13 とは無関係。`M5.begin()` では始めず、設定ファイルの `imu.enable` が true のときだけ `insInit()`(`src/ins.cpp`)が始める。実験的な機能で、既定は無効。読み出し(`insPoll()`)は loopTask からだけ行い、SD への記録は `taskSdSave` が `insLogTake()` で取り出して書く。推測航法の位置は `insApply()`(`taskRover`、`geoidApply()` の次)が測位の無い間だけ quality 6 で書き込む(`imu.dr.enable`)。推定の計算は `scripts/ins_replay.py` と同じにしておく(定数を変えたら両方)。設計の全体は `imu_plan.md`、評価の結果は DEVELOPE.md。
-- NEO-D9C(0x41)と F9P(0x42)は CoreS3 の**内部 I2C バス**に載る。タッチパネルや電源 IC と共用。
+- NEO-D9C(0x41)と F9P(0x42)は CoreS3 の**内部 I2C バス**に載る。タッチパネルや電源 IC と共用。照度センサー LTR-553(0x23、`src/light.cpp`)も同じバスで、loopTask の `lightPoll()` からだけ読む。
 - LCD と SD カードは SPI バスを共用する(MISO の G35 は LCD の D/C と兼用)。
 - M5Unified は `Serial` を初期化しない。`setup()` 冒頭の `Serial.begin()` を消すとデバッグ出力も USB の NMEA 出力も出なくなる。
 

@@ -195,6 +195,9 @@ void setup() {
 
 	sysmonBegin();
 
+	// 照度センサー（画面の明るさの自動調整）
+	if ( ! lightBegin() ) mRunInfo.brightnessAuto = 0;
+
 	// 初期化終了
 	dbgPrintf("Heap Size = %d\r\n", esp_get_free_heap_size());
 	dbgPrintf("setup() exit  %lu msec\r\n", millis());
@@ -238,9 +241,24 @@ void appSetBrightness( int percent )
 {
 	if ( percent < BRIGHTNESS_MIN ) percent = BRIGHTNESS_MIN;
 	if ( percent > 100 ) percent = 100;
-	if ( percent == mRunInfo.brightness ) return;
-	M5.Display.setBrightness( percent * 255 / 100 );
+	if ( percent == mRunInfo.brightness && ! mRunInfo.brightnessAuto ) return;
+	lightSetBrightness( percent );
 	mRunInfo.brightness = percent;
+	mRunInfo.brightnessAuto = 0;		// 手で選んだら、自動はやめる
+	saveRunInfo( &mRunInfo );
+}
+
+// 画面の明るさを、周囲の明るさに合わせて自動で変えるかどうかを切り替える
+//
+// ・照度センサーが使えない時は、何もしない。
+// ・自動を切った時は、手で選んであった明るさ（mRunInfo.brightness）に戻す。
+// ・loopTaskから呼ぶ事（バックライトの制御が I2C のため）。
+//
+void appSetBrightnessAuto( bool on )
+{
+	if ( ! lightAvailable() || on == ( mRunInfo.brightnessAuto != 0 ) ) return;
+	mRunInfo.brightnessAuto = on ? 1 : 0;
+	if ( ! on ) lightSetBrightness( mRunInfo.brightness );
 	saveRunInfo( &mRunInfo );
 }
 
@@ -331,12 +349,13 @@ static void dbgStatus()
 	static unsigned long msecLast = 0;
 	if ( mUsbOutMode == 1 || millis() - msecLast < 10000 ) return;
 	msecLast = millis();
-	dbgPrintf( "STAT quality=%d sats=%d rate=%d base(valid=%d type=%d ready=%d reconnecting=%d bytes=%d reconn=%d) rtcm(err=%d%% age=%lums) clas=%d saving=%d saved=%d qerr=%d wifi(st=%d rssi=%d) ble(conn=%d tx=%d) heap(int=%u)\r\n",
+	dbgPrintf( "STAT quality=%d sats=%d rate=%d base(valid=%d type=%d ready=%d reconnecting=%d bytes=%d reconn=%d) rtcm(err=%d%% age=%lums) clas=%d saving=%d saved=%d qerr=%d wifi(st=%d rssi=%d) ble(conn=%d tx=%d) light(lux=%d bright=%d) heap(int=%u)\r\n",
 		mGpsData.quality, mGpsData.numSatelites, mSolutionRate,
 		(int)mBaseSrc.valid, mBaseSrc.type, (int)mBaseRecvReady, (int)mBaseReconnecting, (int)mBaseRecvCount, (int)mBaseReconnectCount,
 		mRtcmCrcErrorPercent, millis() - mRtcmLastMillis,
 		mD9CAddress >= 0 ? mD9CRecvCount : -1, (int)mFileSaving, mFileSaved, mQueueFileErrorCount,
 		(int)WiFi.status(), (int)WiFi.RSSI(), (int)mBleConnected, mBleNotifyCount,
+		(int) mLightLux, mBrightnessNow,
 		(unsigned)heap_caps_get_free_size( MALLOC_CAP_INTERNAL ) );
 	if ( mIns.ok ){
 		dbgPrintf( "IMU hz=%d gap=%dms i2c=%dus ovf=%d still=%d bias=%.2f,%.2f,%.2f rpy=%.1f,%.1f,%.1f acc=%.3f fwd=%.1f(w=%.1f%s) abias=%.2f dr(hdg=%.1f spd=%.2f) logdrop=%d\r\n",
@@ -360,6 +379,7 @@ void appBackground()
 	satsPoll();
 	geoidPoll();
 	sysmonPoll();
+	lightPoll();
 	cmdPollUsb();
 	screenShotPoll( Serial );
 	blePoll();

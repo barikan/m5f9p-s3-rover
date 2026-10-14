@@ -174,6 +174,7 @@ const gigabytes = (megabytes: number) => (megabytes / 1000).toFixed(1);
         <Item label="CPU">{{ s.sys.cpu }} %　{{ s.sys.temp }} ℃</Item>
         <Item label="メモリ">{{ s.sys.mem }} %</Item>
         <Item :label="s.sys.battery ? 'バッテリー' : '電源'">{{ s.sys.volt.toFixed(2) }} V</Item>
+        <Item v-if="s.sys.lux !== undefined" label="周囲の明るさ">{{ s.sys.lux.toLocaleString() }} lx<span v-if="s.sys.brightness !== undefined" class="text-muted-foreground">（画面 {{ s.sys.brightness }} %）</span></Item>
       </template>
       <Item label="バージョン">{{ s.ver }}</Item>
       <Item label="稼働時間">{{ Math.floor(s.uptime / 60) }} 分 {{ s.uptime % 60 }} 秒</Item>

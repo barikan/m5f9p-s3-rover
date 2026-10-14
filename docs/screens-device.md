@@ -54,7 +54,7 @@ M5Stack CoreS3 の液晶(320×240、タッチ)に出る画面と、その移り�
 | ![Wi-Fi](images/device/setup-wifi.png) | **Wi-Fi** 設定ファイルに登録してある接続先の一覧。行をタップすると、その Wi-Fi につなぎ替えて Setup に戻ります。`Off` は Wi-Fi を使いません。1件も登録していないときは、その旨の案内が出ます。 |
 | ![Corrections](images/device/setup-corrections.png) | **Corrections** 補正データの取得先の一覧。`None`(使わない)、`UART (PH connector)`、設定ファイルに登録した取得先が並びます。Wi-Fi につながっているときは、最後に rtk2go.com のマウントポイントを選ぶ項目が加わります(一覧が1画面に収まらないときは、下の `<` `>` でページを送ります)。 |
 | ![Log format](images/device/setup-format.png) | **Log format** ログの保存形式。`NMEA`(設定によっては `CSV`)、`RAW (UBX)`、`RTCM` から選びます。保存中に変えると、新しい形式で保存し直します。 |
-| ![Brightness](images/device/setup-brightness.png) | **Brightness** 画面の明るさ。15 / 25 / 50 / 75 / 100 % から選びます。 |
+| ![Brightness](images/device/setup-brightness.png) | **Brightness** 画面の明るさ。15 / 25 / 50 / 75 / 100 % から選びます。<br>`Auto` を押すと、前面の照度センサーで測った周囲の明るさに合わせて、自動で変えます(数字のボタンを押すと自動は切れます)。いまの明るさの下に、周囲の明るさ(lx)が出ます。照度センサーが使えないときは `Auto` を出しません。 |
 | ![Bluetooth](images/device/setup-bluetooth.png) | **Bluetooth** 接続している相手の情報(アドレス、ペアリングの状態、接続してからの時間)と、ペアリングを覚えている数。`Disconnect` で相手を切断します(ペアリングは消えないので、相手はあとでつなぎ直せます)。接続していないときは `State` が `Waiting` になり、`Disconnect` は押せません。 |
 
 rtk2go.com の項目を選ぶと、現在地に近い順のマウントポイントの一覧(**Mount point**)が出ます。操作はほかの一覧と同じです。この画面の画像は載せていません。

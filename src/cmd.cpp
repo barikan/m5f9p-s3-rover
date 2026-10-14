@@ -70,7 +70,8 @@
 //               {"saveAtBoot":b} 起動時から保存する
 //               {"rate":n}       1秒あたりの測位回数
 //               {"rotation":n}   画面の向き 0:回転無 1:180度回転
-//               {"brightness":n} 画面の明るさ（%） 15～100
+//               {"brightness":n} 画面の明るさ（%） 15～100。自動は切れる
+//               {"brightnessAuto":b} 画面の明るさを、周囲の明るさ（照度センサー）に合わせて自動で変える
 //               {"tcpClient":b}  測位データをTCPサーバ（設定ファイルの client.ip）に送る
 //               {"elevation":b}  高さを標高で表示する（ジオイドモデルがある時）。false:楕円体高
 //                                表示（本体の画面、アプリ）だけで、NMEAは変わらない
@@ -163,6 +164,8 @@ static void cmdStatus( JsonDocument &re )
 	sys["volt"] = serialized( String( mSysmon.voltage, 2 ) );	// 電圧（V）
 	sys["battery"] = mSysmon.onBattery;							// true:バッテリーの電圧 false:USB・外部電源
 	sys["sdFreeMB"] = mSysmon.sdFreeMB;							// SDカードの空き。-1:分からない
+	if ( mLightLux >= 0 ) sys["lux"] = (int) roundf( mLightLux );	// 周囲の明るさ（lux）。照度センサーが使えない時は無い
+	sys["brightness"] = mBrightnessNow;							// いまの画面の明るさ（%）
 	re["heap"] = heap_caps_get_free_size( MALLOC_CAP_INTERNAL );
 	re["bleNmea"] = mBleNmeaRateNow;
 
@@ -361,6 +364,7 @@ static void cmdRunGet( JsonDocument &re )
 	re["rate"] = mRunInfo.solutionRate;
 	re["rotation"] = mRunInfo.lcdRotation;
 	re["brightness"] = mRunInfo.brightness;
+	re["brightnessAuto"] = (bool)mRunInfo.brightnessAuto;
 	re["elevation"] = (bool)mRunInfo.elevation;
 
 	// 選択できるWifi接続先と基準局データ取得先
@@ -403,6 +407,7 @@ static void cmdRunSet( JsonDocument &cmd, JsonDocument &re )
 	if ( cmd["rate"].is<int>() ) appSetSolutionRate( cmd["rate"] );
 	if ( cmd["rotation"].is<int>() ) appSetRotation( cmd["rotation"] );
 	if ( cmd["brightness"].is<int>() ) appSetBrightness( cmd["brightness"] );
+	if ( cmd["brightnessAuto"].is<bool>() ) appSetBrightnessAuto( cmd["brightnessAuto"].as<bool>() );
 	if ( cmd["tcpClient"].is<bool>() ) appSetTcpClient( cmd["tcpClient"].as<bool>() );
 	if ( cmd["elevation"].is<bool>() ) appSetElevation( cmd["elevation"].as<bool>() );
 	if ( cmd["saveAtBoot"].is<bool>() ){

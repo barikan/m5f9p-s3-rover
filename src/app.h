@@ -38,7 +38,8 @@ struct stRunInfo {
 	int setupRequest;	// 使っていない（以前のウィザード用。保存したファイルとの互換のために残している）
 						// 0の時は、保存されている実行パラメータで起動する。
 	int lcdRotation;	// 画面の向き 0:回転無 1:180度回転
-	int brightness;		// 画面の明るさ（%）。15～100
+	int brightness;		// 画面の明るさ（%）。15～100。自動の時は、自動を切った時に戻す明るさ
+	int brightnessAuto;	// 画面の明るさを、周囲の明るさに合わせて自動で変える（light.cpp）
 	char wifiSsid[33];	// 接続するWifiのSSID。""の時はWifiを使わない
 	struct stBaseSource baseSrc;	// 基準局データ取得先。valid=falseの時は接続しない
 	int saveFormat;		// データ保存形式　SAVE_NMEA,SAVE_RAW,SAVE_RTCM,SAVE_CSV
@@ -68,6 +69,7 @@ void appSetSaving( bool on );
 void appSetRotation( int rotation );
 #define BRIGHTNESS_MIN 15		// 画面の明るさの下限（%）
 void appSetBrightness( int percent );
+void appSetBrightnessAuto( bool on );
 int appSetWifi( const char *ssid );
 void appSetBaseSource( const struct stBaseSource *src );
 int appSetSaveFormat( int format );
@@ -314,6 +316,18 @@ extern struct stSysmon mSysmon;
 
 void sysmonBegin();
 void sysmonPoll();
+
+// ************************************************************
+//                        light.cpp
+// ************************************************************
+
+extern float mLightLux;
+extern int mBrightnessNow;
+
+bool lightBegin();
+bool lightAvailable();
+void lightPoll();
+void lightSetBrightness( int percent );
 
 // ************************************************************
 //                        sats.cpp
