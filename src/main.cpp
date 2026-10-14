@@ -71,7 +71,7 @@ void setup() {
 	auto cfg = M5.config();
 	cfg.internal_spk = false;	// G13(I2S_DOUT)をZED-F9Pのイネーブルに使うため
 	cfg.internal_mic = false;
-	cfg.internal_imu = false;
+	cfg.internal_imu = false;	// IMUは、設定ファイルを読んだ後に insInit()（ins.cpp）が設定に従って始める
 	M5.begin( cfg );
 
 	// 内部I2C(G12/G11)が使えないとCoreS3として認識されず、画面も表示されない。
@@ -100,7 +100,10 @@ void setup() {
 
 	// ジオイドモデル。ヘッダを読むだけ
 	int geoidResult = geoidInit();
-	
+
+	// 内蔵IMU（設定で有効な時だけ）
+	int insResult = insInit();
+
 	// 実行パラメータ（Wifiの接続先、補正データの取得先、保存形式など）。
 	// 保存されていれば、それを使う。無い時（初回）は既定値で始め、Setup のページを開く。
 	// どちらの時も質問はせず、すぐに測位を始める。変更は Setup のページから、動作中に行う。
@@ -126,6 +129,8 @@ void setup() {
 	dbgPrintf("SD card totalBytes=%llu\r\n", mSdTotalBytes);
 	if ( configResult < 0 ) dbgPrintf( "!! Config file %s\r\n", configResult == -1 ? "not found" : "error" );
 	if ( geoidResult == 0 ) dbgPrintf( "Geoid model: not found\r\n" );
+	if ( insResult == 0 ) dbgPrintf( "IMU: type=%d\r\n", mIns.type );
+	else if ( insResult == -2 ) dbgPrintf( "!! IMU not responding\r\n" );
 
 	// JST-PHコネクタ
 	Serial2.begin( mPhUartBaudrate, SERIAL_8N1, PIN_PH_RX, PIN_PH_TX );
@@ -332,6 +337,13 @@ static void dbgStatus()
 		mD9CAddress >= 0 ? mD9CRecvCount : -1, (int)mFileSaving, mFileSaved, mQueueFileErrorCount,
 		(int)WiFi.status(), (int)WiFi.RSSI(), (int)mBleConnected, mBleNotifyCount,
 		(unsigned)heap_caps_get_free_size( MALLOC_CAP_INTERNAL ) );
+	if ( mIns.ok ){
+		dbgPrintf( "IMU hz=%d gap=%dms i2c=%dus still=%d bias=%.2f,%.2f,%.2f rpy=%.1f,%.1f,%.1f acc=%.3f logdrop=%d\r\n",
+			mIns.sampleHz, mIns.gapMaxMs, mIns.i2cUsecMax, (int)mIns.still,
+			mIns.gyroBias[0], mIns.gyroBias[1], mIns.gyroBias[2],
+			mIns.roll, mIns.pitch, mIns.yaw, mIns.accNorm, mInsLogDropCount );
+		mIns.i2cUsecMax = 0;
+	}
 }
 
 // 画面以外の定期的な処理。loop() と、画面で選択を待っている間(ui.cpp)に呼ばれる
@@ -341,6 +353,7 @@ static void dbgStatus()
 void appBackground()
 {
 	d9cPoll();
+	insPoll();
 	satsPoll();
 	geoidPoll();
 	sysmonPoll();

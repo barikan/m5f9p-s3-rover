@@ -50,6 +50,16 @@ export interface Status {
   heap: number;
   bleNmea: number;
   track: number;
+  /** 内蔵IMU（本体側は src/ins.cpp）。設定で有効な時だけ入る。古いファームウェアには無い */
+  imu?: {
+    roll: number;           // 姿勢（度）。本体の軸のまま
+    pitch: number;
+    yaw: number;            // ジャイロの積分だけの相対値。起動時 0
+    still: boolean;         // 静止している
+    hz: number;             // 1秒あたりのサンプル数
+    gapMs: number;          // サンプルの最大間隔（直前10秒）ms
+    log: boolean;           // IMUとGNSSの同時記録を書いている
+  };
   secretError?: boolean;    // 設定ファイルに、復号できないパスワードがある
   iniRemains?: boolean;     // 旧形式の設定ファイル(m5f9p.ini)がSDカードに残っている
 }
@@ -103,7 +113,7 @@ export type ConfigValue = string | number | boolean;
 export interface DeviceConfig {
   wifi?: WifiEntry[];
   sources?: SourceEntry[];
-  // receiver, ble, softap, google, server, client, log, geoid, jstph, rtk2go
+  // receiver, ble, softap, google, server, client, log, geoid, imu, jstph, rtk2go
   [group: string]: Record<string, ConfigValue> | WifiEntry[] | SourceEntry[] | undefined;
 }
 

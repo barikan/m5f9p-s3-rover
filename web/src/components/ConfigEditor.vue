@@ -117,6 +117,18 @@ const OTHER_GROUPS: { title: string; fields: PathField[] }[] = [
     ],
   },
   {
+    title: 'IMU（実験的）', fields: [
+      {
+        path: ['imu', 'enable'], label: '内蔵 IMU を使う', type: 'bool', restart: true,
+        help: 'いまは姿勢と静止の判定を測るだけで、座標は変えません',
+      },
+      {
+        path: ['imu', 'log'], label: 'IMU と GNSS を同時記録する', type: 'bool',
+        help: 'ログの保存中に、同じフォルダへ imu_*.csv も書きます（評価用）',
+      },
+    ],
+  },
+  {
     title: 'PH コネクタ（UART）', fields: [
       { path: ['jstph', 'baudrate'], label: 'ボーレート', type: 'number', restart: true },
       {

@@ -109,6 +109,8 @@ extern char mGoogleKey[64];
 extern char mRtk2goUser[32];
 extern char mRtk2goPassword[32];
 extern int mGeoidEnable;
+extern int mImuEnable;
+extern int mImuLog;
 
 #define PH_UART_NMEA 0
 #define PH_UART_CSV 1
@@ -233,6 +235,34 @@ int geoidInit();
 const char *geoidName();
 void geoidPoll();
 void geoidApply( struct stGpsData *gpsData );
+
+// ************************************************************
+//                        ins.cpp
+// ************************************************************
+
+// IMU の状態（loopTask が更新する）
+struct stInsState {
+	bool ok;			// IMU が使える
+	int type;			// M5Unified の imu_t（6:BMI270）
+	float roll;			// 姿勢（度）。本体の軸のまま（取り付けの向きは考えていない）
+	float pitch;
+	float yaw;			// ジャイロの積分だけの相対値。起動時 0
+	bool still;			// 静止している
+	bool biasValid;		// gyroBias を一度は求めた
+	float gyroBias[3];	// ジャイロのずれ（deg/s）
+	float accNorm;		// 加速度の大きさ（g）
+	int sampleHz;		// 直前1秒のサンプル数
+	int gapMaxMs;		// 直前10秒の、サンプルの最大間隔（ミリ秒）。loopTask の遅れで伸びる
+	int i2cUsecMax;		// 読み出しにかかった時間の最大（マイクロ秒）
+	uint32_t samples;	// 通算のサンプル数
+};
+extern struct stInsState mIns;
+extern int mInsLogDropCount;
+
+int insInit();
+void insPoll();
+bool insLogTake( char **buff, int *numBytes );
+void insLogRelease( char *buff );
 
 // ************************************************************
 //                        cmd.cpp

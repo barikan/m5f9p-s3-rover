@@ -41,6 +41,11 @@ struct stGpsData
 	double hAcc;		// 水平方向の推定精度 m
 	double vAcc;		// 垂直方向の推定精度 m
 	int geoidModel;		// geoidSep の出所 0:F9P内蔵のジオイド 1:ジオイドモデル（geoid.cpp）
+	double velN;		// 速度 北・東・下（m/s）。IMUとの統合（ins.cpp）に使う
+	double velE;
+	double velD;
+	double sAcc;		// 速度の推定精度 m/s
+	double headAcc;		// 進行方向（direction）の推定精度 deg
 };
 
 #define UBX_BUFF_MAX 3000

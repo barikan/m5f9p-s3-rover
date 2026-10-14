@@ -519,6 +519,11 @@ int ubxDecodeNavPvt( struct stUbxStatus *ubxStatus, struct stGpsData *gpsData)
 		gpsData->vAcc = vAcc * 1E-3;	// m
 		gpsData->velocity = gSpeed * 3600.0 * 1E-6;	// km/h
 		gpsData->direction = headMot * 1E-5;	// degree
+		gpsData->velN = velN * 1E-3;	// m/s
+		gpsData->velE = velE * 1E-3;
+		gpsData->velD = velD * 1E-3;
+		gpsData->sAcc = sAcc * 1E-3;	// m/s
+		gpsData->headAcc = headAcc * 1E-5;	// degree
 
 		int q = 0;
 		int rtkFix = flags >> 6;

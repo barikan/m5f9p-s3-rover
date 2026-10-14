@@ -202,6 +202,8 @@ void configToJson( JsonDocument &doc, bool secrets )
 	doc["log"]["csv"] = ( mCsvFormat != 0 );
 	doc["log"]["chunkSec"] = (int) mSaveEndSec;
 	doc["geoid"]["enable"] = ( mGeoidEnable != 0 );
+	doc["imu"]["enable"] = ( mImuEnable != 0 );
+	doc["imu"]["log"] = ( mImuLog != 0 );
 	doc["jstph"]["baudrate"] = mPhUartBaudrate;
 	doc["jstph"]["format"] = ( mPhUartFormat == PH_UART_CSV ) ? "csv" : "nmea";
 }
@@ -324,6 +326,9 @@ void configFromJson( JsonDocument &doc )
 
 	mGeoidEnable = cfgBool( doc["geoid"]["enable"], mGeoidEnable != 0 ) ? 1 : 0;
 
+	mImuEnable = cfgBool( doc["imu"]["enable"], mImuEnable != 0 ) ? 1 : 0;
+	mImuLog = cfgBool( doc["imu"]["log"], mImuLog != 0 ) ? 1 : 0;
+
 	mPhUartBaudrate = cfgInt( doc["jstph"]["baudrate"], mPhUartBaudrate );
 	String format = cfgStr( doc["jstph"]["format"], mPhUartFormat == PH_UART_CSV ? "csv" : "nmea" );
 	format.toLowerCase();
@@ -332,8 +337,8 @@ void configFromJson( JsonDocument &doc )
 
 // 再起動しないと反映できない項目が、現在の設定から変わるか調べる
 //
-// ・起動時に1回だけ使う項目（BLEの開始、soft AP、TCPサーバのポート、PHコネクタのボーレート）
-//   と、受信機名（BLEとsoft APの名前）。項目を増やす時は、画面（ConfigEditor.vue）の
+// ・起動時に1回だけ使う項目（BLEの開始、soft AP、TCPサーバのポート、PHコネクタのボーレート、
+//   IMUの開始）と、受信機名（BLEとsoft APの名前）。項目を増やす時は、画面（ConfigEditor.vue）の
 //   注意書きも揃える。
 //
 // 戻り値＝ true:再起動が要る
@@ -354,6 +359,7 @@ bool configNeedsRestart( JsonVariantConst config )
 
 	if ( cfgInt( config["server"]["port"], mServerPort ) != mServerPort ) return true;
 	if ( cfgInt( config["jstph"]["baudrate"], mPhUartBaudrate ) != mPhUartBaudrate ) return true;
+	if ( cfgBool( config["imu"]["enable"], mImuEnable != 0 ) != ( mImuEnable != 0 ) ) return true;
 	return false;
 }
 

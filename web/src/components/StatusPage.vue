@@ -130,6 +130,13 @@ const accuracy = (m: number) => (m < 10 ? m.toFixed(3) : m < 100 ? m.toFixed(1) 
       <Item v-if="s.clas >= 0" label="CLAS">{{ state.clasRate }} バイト/秒</Item>
     </Section>
 
+    <Section v-if="s.imu" title="IMU">
+      <Item label="姿勢" mono>{{ s.imu.roll.toFixed(1) }} / {{ s.imu.pitch.toFixed(1) }} / {{ s.imu.yaw.toFixed(1) }}°<span class="text-muted-foreground font-sans">（roll / pitch / yaw）</span></Item>
+      <Item label="動き">{{ s.imu.still ? '静止' : '移動中' }}</Item>
+      <Item label="サンプル">{{ s.imu.hz }} Hz<span class="text-muted-foreground">（最大間隔 {{ s.imu.gapMs }} ms）</span></Item>
+      <Item v-if="s.imu.log" label="記録">IMU と GNSS を同時記録中</Item>
+    </Section>
+
     <Section title="操作">
       <div class="flex items-center gap-3">
         <div class="flex-1">

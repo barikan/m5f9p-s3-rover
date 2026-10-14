@@ -16,6 +16,7 @@
 //               標高は height－geoid。ジオイド高をジオイドモデル(geoid.cpp)で求めた時は
 //               "geoidModel" にモデルの名前が入る。無い時は、F9P内蔵のジオイドの値
 //               "elevation" は標高を表示するかどうか（run.set の elevation）
+//               "imu" は内蔵IMUの姿勢と静止判定（ins.cpp）。設定（imu.enable）で有効な時だけ入る
 //   save      {"on":true/false}  ファイルへの保存を開始、停止する
 //   rate      {"hz":1-20}        1秒あたりの測位回数を変更する
 //   nmea      {"hz":0-5}         BLEでNMEAを送る回数（1秒あたり）を変更する。0:送らない
@@ -151,6 +152,18 @@ static void cmdStatus( JsonDocument &re )
 	sys["sdFreeMB"] = mSysmon.sdFreeMB;							// SDカードの空き。-1:分からない
 	re["heap"] = heap_caps_get_free_size( MALLOC_CAP_INTERNAL );
 	re["bleNmea"] = mBleNmeaRateNow;
+
+	// IMU（ins.cpp）。設定で有効で、応答している時だけ
+	if ( mIns.ok ){
+		JsonObject imu = re["imu"].to<JsonObject>();
+		imu["roll"] = serialized( String( mIns.roll, 1 ) );		// 姿勢（度）。本体の軸のまま
+		imu["pitch"] = serialized( String( mIns.pitch, 1 ) );
+		imu["yaw"] = serialized( String( mIns.yaw, 1 ) );		// ジャイロの積分だけの相対値
+		imu["still"] = mIns.still;								// 静止している
+		imu["hz"] = mIns.sampleHz;								// 1秒あたりのサンプル数
+		imu["gapMs"] = mIns.gapMaxMs;							// サンプルの最大間隔（直前10秒）
+		imu["log"] = ( mImuLog && mFileSaving );				// 同時記録を書いている
+	}
 	re["track"] = trackCount();
 	if ( mSecretError ) re["secretError"] = true;	// 復号できないパスワードがある
 	if ( mIniRemains ) re["iniRemains"] = true;		// 旧形式の設定ファイルが残っている

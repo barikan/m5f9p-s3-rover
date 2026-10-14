@@ -487,6 +487,40 @@ static int sdSaveRaw( char *buffer, int numBytes )
 	return nret;
 }
 
+// IMUとGNSSの同時記録（ins.cpp）を、測位データのログと同じフォルダに保存する
+//
+// ・ファイル名は、測位データのログの "gps_r0_" を "imu_" に、拡張子を ".csv" にしたもの。
+//   ファイルが変わった時（最初と、分割した時）は、先頭に列の名前を書く。
+//
+static int sdSaveImuLog( char *buff, int numBytes )
+{
+	static char imuFileName[64];
+	char path[64];
+
+	if ( sdSetFilePath() < 0 ) return -1;
+
+	// パスの組み立て
+	const char *base = strrchr( mSaveFileName, '/' );
+	if ( ! base ) return -1;
+	int dirLen = base - mSaveFileName + 1;
+	base++;		// '/' の次
+	if ( strncmp( base, "gps_r0_", 7 ) == 0 ) base += 7;
+	int n = snprintf( path, sizeof( path ), "%.*simu_%s", dirLen, mSaveFileName, base );
+	char *ext = strrchr( path + dirLen, '.' );
+	if ( ext && ( ext - path ) + 5 < (int) sizeof( path ) ) strcpy( ext, ".csv" );
+	else if ( n + 4 < (int) sizeof( path ) ) strcat( path, ".csv" );
+
+	if ( strcmp( path, imuFileName ) != 0 ){
+		strlcpy( imuFileName, path, sizeof( imuFileName ) );
+		const char *header = "# I,micros,ax(g),ay,az,gx(dps),gy,gz,mx(uT),my,mz / G,micros,iTOW,lat,lon,height,quality,hAcc,velN,velE,velD,sAcc,headMot,headAcc\n";
+		sdSave( imuFileName, (char *) header, strlen( header ), FILE_APPEND );
+	}
+
+	int nret = sdSave( imuFileName, buff, numBytes, FILE_APPEND );
+	if ( nret != numBytes ) dbgPrintf( "imu log save error n=%d ret=%d\r\n", numBytes, nret );
+	return nret;
+}
+
 // SDカードにデータを保存するスレッド
 //
 // Core:0で実行した場合、10Hzで保存しようとすると、GPS受信機からの
@@ -496,6 +530,8 @@ static int sdSaveRaw( char *buffer, int numBytes )
 static void taskSdSave(void* param)
 {
 	struct stGpsData gpsData;
+	char *imuBuff;
+	int imuBytes;
 
 	while(1){
 		vTaskDelay(1);
@@ -506,7 +542,17 @@ static void taskSdSave(void* param)
 			sdSaveGpsData( &gpsData );
 			spiUnlock();
 		}
-		
+
+		// IMUの記録（ins.cpp が溜めたもの）
+		if ( insLogTake( &imuBuff, &imuBytes ) ){
+			if ( imuBytes > 0 ){
+				spiLock();
+				sdSaveImuLog( imuBuff, imuBytes );
+				spiUnlock();
+			}
+			insLogRelease( imuBuff );
+		}
+
 		// NMEA以外はUARTバッファの内容をそのまま保存
 		if ( mFileSaving && mSaveFormat != SAVE_NMEA && mSaveFormat != SAVE_CSV ){
 			int numBytes = mUartWriteIndex - mUartSaveIndex;

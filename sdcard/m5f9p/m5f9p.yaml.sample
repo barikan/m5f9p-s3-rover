@@ -80,6 +80,13 @@ log:
 geoid:
   enable: true
 
+# 内蔵IMU（加速度・ジャイロ）。実験的な機能で、いまは姿勢と静止の判定を測るだけ
+# （座標は変えない）。enable の変更には再起動が要る。
+# log を true にすると、ログの保存中に、IMUとGNSSの同時記録（imu_*.csv）も同じフォルダに書く
+imu:
+  enable: false
+  log: false
+
 # ３ピンJST-PHコネクタ（UART）
 jstph:
   baudrate: 115200

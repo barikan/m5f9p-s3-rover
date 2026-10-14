@@ -56,6 +56,11 @@ char mGoogleKey[64];
 // SDカードにジオイドモデル(geoid.bin)がある時に、それで標高を求める時 1（geoid.cpp）
 int mGeoidEnable = 1;
 
+// 内蔵IMUを使う時 1（ins.cpp）。実験的な機能なので既定は無効。変更には再起動が要る
+int mImuEnable = 0;
+// IMUとGNSSの同時記録をSDカードに書く時 1（ログの保存中だけ書く）
+int mImuLog = 0;
+
 // rtk2go.comのマウントポイントを画面で選択した時に使うユーザ名とパスワード
 char mRtk2goUser[32];
 char mRtk2goPassword[32];
