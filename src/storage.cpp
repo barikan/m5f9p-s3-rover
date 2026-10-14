@@ -439,9 +439,11 @@ static int sdSetFilePath()
 		}
 	}
 
-	// パスの設定
+	// パスの設定。GNSS の日時がまだ無い時（起動時から保存する設定で、測位の前）は、
+	// "gps_r0_00000_000000" のような名前にならないよう、日時が入るまで待つ（その間の分は保存しない）
 	if ( strlen( mSaveFileName ) == 0 ){
 		struct stGpsData *p = &mGpsData;
+		if ( ! p->ubxDone || p->year < 2020 ) return -2;
 		int nret = setFilePath( p->year, p->month, p->day, p->hour, p->minute, p->second, mSaveFormat );
 		if ( nret < 0 ) {
 			dbgPrintf( "setFilePath nret=%d\r\n", nret );
@@ -492,9 +494,10 @@ static int sdSaveGpsData( struct stGpsData *pGpsData )
 //
 static int sdSaveRaw( char *buffer, int numBytes )
 {
-	if ( sdSetFilePath() < 0 ) return -1;
+	int nret = sdSetFilePath();
+	if ( nret < 0 ) return nret;		// -2: GNSS の日時を待っている
 
-	int nret = sdSave( mSaveFileName, buffer, numBytes, FILE_APPEND );
+	nret = sdSave( mSaveFileName, buffer, numBytes, FILE_APPEND );
 	if ( nret == numBytes ) mFileSaved++;
 	else dbgPrintf("file save error n=%d ret=%d\r\n", numBytes, nret);
 
@@ -580,6 +583,7 @@ static void taskSdSave(void* param)
 				mUartSaveIndex += nret;
 				if ( mUartSaveIndex >= UART_BUFF_MAX ) mUartSaveIndex = 0;
 			}
+			else if ( nret == -2 ) mUartSaveIndex = mUartWriteIndex;	// 日時が入るまでの分は捨てる
 		}
 	}
 }
