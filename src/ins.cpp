@@ -112,6 +112,14 @@
 #define INS_GNSS_HACC_MAX 30.0f			// 使う測位の推定精度の上限（m）
 #define INS_DR_ACC_GROWTH 0.3f			// 出力する推測の位置の推定精度を、1秒あたりこれだけ（m）増やす
 										// （走行ログの再生で、10秒の途切れの誤差の中央値が約 2.4m）
+
+// ---- なめらか化（insApply のカルマンフィルタ）
+#define INS_SMOOTH_GROWTH_MOVING 0.3f	// 予測の位置の誤差（m）が1秒あたり増える量（走行中。推測航法の誤差と同じ）
+#define INS_SMOOTH_GROWTH_STILL 0.02f	// 同じく静止中（止まっているので、ほとんど増えない）
+#define INS_SMOOTH_GROWTH_HEIGHT 0.1f	// 高さ
+#define INS_SMOOTH_GATE 3.0f			// 観測と予測の差が、両方の誤差を合わせた標準偏差のこの倍を超えたら外れ値
+#define INS_SMOOTH_REJECT_MAX 3			// 外れ値がこの数続いたら、観測の方が正しいとみて予測を捨てる
+#define INS_SMOOTH_RESET_SEC 30.0f		// 測位がこれ以上途切れていたら、フィルタを始め直す
 #define INS_G 9.80665f
 
 #define INS_LOG_BUFF_MAX 32768			// 記録のバッファ（2つ。PSRAM）。100Hz で約 7.5KB/秒なので、
@@ -184,10 +192,20 @@ struct stDrSnapshot {
 	float speed;
 	float hAcc;
 	float vAcc;
+	bool still;
 	unsigned long syncMillis;
 };
 static struct stDrSnapshot mDrSnapshot;
 static portMUX_TYPE mDrMux = portMUX_INITIALIZER_UNLOCKED;
+
+// なめらか化した位置（taskRover の insApply が書き、loopTask の drSync が同じ測位の時に使う）
+struct stSmoothResult {
+	unsigned long micros;	// 測位の micros（stGpsData の micros）
+	double lat;
+	double lon;
+	float height;
+};
+static struct stSmoothResult mSmoothResult;
 
 // 模擬の途切れ
 static unsigned long mTestEndMillis;	// 0 の時は試験していない
@@ -434,8 +452,18 @@ static void drSync( const struct stGpsData *g )
 {
 	mDrLat0 = g->lat;
 	mDrLon0 = g->lon;
-	mDrE = mDrN = 0;
 	mDrHeight = g->height;
+	// なめらか化した位置があれば（insApply がこの測位で求めたもの）、そこから進める
+	struct stSmoothResult sm;
+	portENTER_CRITICAL( &mDrMux );
+	sm = mSmoothResult;
+	portEXIT_CRITICAL( &mDrMux );
+	if ( sm.micros == g->micros ){
+		mDrLat0 = sm.lat;
+		mDrLon0 = sm.lon;
+		mDrHeight = sm.height;
+	}
+	mDrE = mDrN = 0;
 	mDrSyncHAcc = g->hAcc;
 	mDrSyncVAcc = g->vAcc;
 	mIns.speed = mGpsSpeed;
@@ -957,6 +985,7 @@ void insPoll()
 		snap.speed = mIns.speed;
 		snap.hAcc = mDrSyncHAcc;
 		snap.vAcc = mDrSyncVAcc;
+		snap.still = mIns.still;
 		snap.syncMillis = mDrSyncMillis;
 		portENTER_CRITICAL( &mDrMux );
 		mDrSnapshot = snap;
@@ -964,6 +993,102 @@ void insPoll()
 	}
 
 	logFlushIfDue();
+}
+
+// ------------------------------------------------------------ なめらか化
+
+// 測位の位置をなめらかにし、外れ値を除く。taskRover（insApply）から、測位のあるたびに呼ぶ
+//
+// ・予測は推測航法の位置（snap。最後になめらかにした位置から IMU で進めたもの）、観測は
+//   GNSS の位置（誤差は hAcc）で、水平（1つの分散で東西・南北を代表）と高さの簡単な
+//   カルマンフィルタ。静止中は予測の誤差がほとんど増えないので、GNSS のばらつきが平均される。
+// ・観測が予測から大きく外れていたら（INS_SMOOTH_GATE）外れ値として使わず、予測を出す。
+//   続けて外れたら、観測の方が正しいとみてフィルタを観測に合わせ直す。
+// ・フィルタはいつも回し（Fixed の測位でも更新する。精度が良いので、すぐにその値になる）、
+//   出力を置き換えるかどうかだけを設定（imu.smooth）と quality で決める。
+//   none:置き換えない  float:Fixed 以外（Single、DGPS、Float）を置き換える  all:全部
+// ・なめらかにした位置は mSmoothResult に置き、loopTask の drSync がそこから推測を進める。
+//
+static void smoothApply( struct stGpsData *g, const struct stDrSnapshot *snap )
+{
+	static bool init = false;
+	static double lat, lon;			// なめらかにした位置
+	static float height;
+	static float var, varH;			// その分散（m²）。水平、高さ
+	static unsigned long lastMillis;
+	static int rejects;
+
+	if ( g->hAcc <= 0 ) return;
+	float r = g->hAcc * g->hAcc;		// 観測の分散
+	float rH = g->vAcc * g->vAcc;
+	unsigned long now = millis();
+	float dt = init ? ( now - lastMillis ) * 1E-3f : 0;
+
+	// 予測。推測航法が無い（まだ合わせていない、途切れが長かった）時は、始め直す
+	bool predicted = init && snap->valid && dt < INS_SMOOTH_RESET_SEC
+					&& ( now - snap->syncMillis ) * 1E-3f < INS_SMOOTH_RESET_SEC;
+	if ( ! predicted ){
+		lat = g->lat; lon = g->lon; height = g->height;
+		var = r; varH = rH;
+		init = true;
+		rejects = 0;
+	}
+	else {
+		double pLat = snap->lat, pLon = snap->lon;
+		float pHeight = snap->height;
+		float growth = ( snap->still ? INS_SMOOTH_GROWTH_STILL : INS_SMOOTH_GROWTH_MOVING ) * dt;
+		float pVar = var + growth * growth;
+		float gH = INS_SMOOTH_GROWTH_HEIGHT * dt;
+		float pVarH = varH + gH * gH;
+
+		// 観測と予測の差
+		double mLat, mLon;
+		metersPerDegree( pLat, &mLat, &mLon );
+		double de = ( g->lon - pLon ) * mLon;
+		double dn = ( g->lat - pLat ) * mLat;
+		float d2 = de * de + dn * dn;
+		float gate = INS_SMOOTH_GATE * INS_SMOOTH_GATE * ( pVar + r );
+		if ( d2 > gate && rejects < INS_SMOOTH_REJECT_MAX ){
+			// 外れ値。予測を出す
+			rejects++;
+			lat = pLat; lon = pLon; height = pHeight;
+			var = pVar; varH = pVarH;
+			mIns.smoothRejects++;
+		}
+		else {
+			if ( d2 > gate ){
+				// 続けて外れた。観測の方が正しい
+				pVar = r * 100; pVarH = rH * 100;
+			}
+			rejects = 0;
+			float k = pVar / ( pVar + r );
+			lat = pLat + k * ( g->lat - pLat );
+			lon = pLon + k * ( g->lon - pLon );
+			var = ( 1 - k ) * pVar;
+			float kH = pVarH / ( pVarH + rH );
+			height = pHeight + kH * ( g->height - pHeight );
+			varH = ( 1 - kH ) * pVarH;
+		}
+	}
+	lastMillis = now;
+
+	struct stSmoothResult sm;
+	sm.micros = g->micros;
+	sm.lat = lat; sm.lon = lon; sm.height = height;
+	portENTER_CRITICAL( &mDrMux );
+	mSmoothResult = sm;
+	portEXIT_CRITICAL( &mDrMux );
+
+	// 出力の置き換え
+	bool replace = ( mImuSmooth == INS_SMOOTH_ALL ) || ( mImuSmooth == INS_SMOOTH_FLOAT && g->quality != 4 );
+	if ( replace && predicted ){
+		g->lat = lat;
+		g->lon = lon;
+		g->height = height;
+		g->hAcc = sqrtf( var );
+		g->vAcc = sqrtf( varH );
+		g->smoothed = 1;
+	}
 }
 
 // 測位が無い間、推測の位置を測位データに入れる。taskRover から呼ぶ（geoidApply の後）
@@ -978,16 +1103,19 @@ void insPoll()
 //
 void insApply( struct stGpsData *g )
 {
-	if ( ! mIns.ok || ! mImuDrEnable ) return;
-
-	bool absent = ( g->quality == 0 || g->quality == 6 );	// 6 は F9P 自身の「位置の保持」（上の gnssUpdate を参照）
-	bool degraded = ( mImuDrDegrade > 0 && ! absent && g->hAcc > mImuDrDegrade );
-	if ( ! absent && ! degraded ) return;
+	if ( ! mIns.ok ) return;
 
 	struct stDrSnapshot snap;
 	portENTER_CRITICAL( &mDrMux );
 	snap = mDrSnapshot;
 	portEXIT_CRITICAL( &mDrMux );
+
+	bool absent = ( g->quality == 0 || g->quality == 6 );	// 6 は F9P 自身の「位置の保持」（上の gnssUpdate を参照）
+	if ( ! absent ) smoothApply( g, &snap );
+
+	if ( ! mImuDrEnable ) return;
+	bool degraded = ( mImuDrDegrade > 0 && ! absent && g->hAcc > mImuDrDegrade );
+	if ( ! absent && ! degraded ) return;
 	if ( ! snap.valid ) return;
 
 	float sec = ( millis() - snap.syncMillis ) * 1E-3f;

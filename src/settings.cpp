@@ -66,6 +66,8 @@ int mImuDrEnable = 0;
 int mImuDrMaxSec = 10;
 // 0 より大きい時、測位があっても推定精度（m）がこれより悪ければ推測航法の位置を出す
 float mImuDrDegrade = 0;
+// 座標のなめらか化（ins.cpp）0:しない 1:Fixed 以外 2:全部
+int mImuSmooth = INS_SMOOTH_FLOAT;
 
 // rtk2go.comのマウントポイントを画面で選択した時に使うユーザ名とパスワード
 char mRtk2goUser[32];

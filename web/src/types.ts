@@ -15,6 +15,7 @@ export interface Status {
     height: number;         // 楕円体高 m
     geoid?: number;         // ジオイド高 m。標高＝height－geoid。古いファームウェアには無い
     geoidModel?: string;    // ジオイドモデルの名前。無い時は、F9P 内蔵のジオイド
+    smoothed?: boolean;     // 座標を IMU のなめらか化で置き換えた（設定 imu.smooth）
     sats: number;
     hAcc?: number;          // 推定精度（水平）m。古いファームウェアには無い
     vAcc?: number;          // 推定精度（垂直）m
@@ -67,6 +68,8 @@ export interface Status {
     speed?: number;         // 推測航法の速さ（m/s）
     dr?: boolean;           // 測位が無い間、推測の位置を出力する（設定 imu.dr.enable）。pos.quality が 6 の時がそれ
     drSec?: number;         // 最後に測位に合わせてからの秒数
+    smooth?: 'none' | 'float' | 'all';   // なめらか化の設定
+    smoothRejects?: number; // なめらか化で外れ値として捨てた測位の数
     test?: { remain: number; err: number; errMax: number };   // 模擬の途切れ（dr.test）の間だけ
   };
   secretError?: boolean;    // 設定ファイルに、復号できないパスワードがある

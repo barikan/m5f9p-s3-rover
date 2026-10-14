@@ -135,6 +135,11 @@ const OTHER_GROUPS: { title: string; fields: PathField[] }[] = [
         path: ['imu', 'dr', 'degrade'], label: '劣化した測位も補間する精度（m）', type: 'number',
         help: '0 なら測位が無い時だけ。例えば 2 にすると、推定精度が 2 m より悪い間（RTK から単独測位に落ちた時など）も推測航法の位置を出します',
       },
+      {
+        path: ['imu', 'smooth'], label: '座標のなめらか化', type: 'select',
+        options: [{ value: 'float', label: 'Fix 以外' }, { value: 'all', label: '全部' }, { value: 'none', label: 'しない' }],
+        help: 'IMU で推測した位置と GNSS の位置を合わせて、静止中のばらつきと急な飛びを抑えます。Fix の座標はそのまま残すのが既定です',
+      },
     ],
   },
   {

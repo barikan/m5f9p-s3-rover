@@ -207,6 +207,7 @@ void configToJson( JsonDocument &doc, bool secrets )
 	doc["imu"]["dr"]["enable"] = ( mImuDrEnable != 0 );
 	doc["imu"]["dr"]["maxSec"] = mImuDrMaxSec;
 	doc["imu"]["dr"]["degrade"] = serialized( String( mImuDrDegrade, 1 ) );
+	doc["imu"]["smooth"] = ( mImuSmooth == INS_SMOOTH_ALL ) ? "all" : ( mImuSmooth == INS_SMOOTH_NONE ) ? "none" : "float";
 	doc["jstph"]["baudrate"] = mPhUartBaudrate;
 	doc["jstph"]["format"] = ( mPhUartFormat == PH_UART_CSV ) ? "csv" : "nmea";
 }
@@ -367,6 +368,9 @@ void configFromJson( JsonDocument &doc )
 	mImuDrMaxSec = constrain( cfgInt( doc["imu"]["dr"]["maxSec"], mImuDrMaxSec ), 1, 600 );
 	mImuDrDegrade = doc["imu"]["dr"]["degrade"].is<float>() ? doc["imu"]["dr"]["degrade"].as<float>() : mImuDrDegrade;
 	if ( mImuDrDegrade < 0 ) mImuDrDegrade = 0;
+	String smooth = cfgStr( doc["imu"]["smooth"], mImuSmooth == INS_SMOOTH_ALL ? "all" : mImuSmooth == INS_SMOOTH_NONE ? "none" : "float" );
+	smooth.toLowerCase();
+	mImuSmooth = ( smooth == "all" ) ? INS_SMOOTH_ALL : ( smooth == "none" || smooth == "false" || smooth == "0" ) ? INS_SMOOTH_NONE : INS_SMOOTH_FLOAT;
 
 	mPhUartBaudrate = cfgInt( doc["jstph"]["baudrate"], mPhUartBaudrate );
 	String format = cfgStr( doc["jstph"]["format"], mPhUartFormat == PH_UART_CSV ? "csv" : "nmea" );

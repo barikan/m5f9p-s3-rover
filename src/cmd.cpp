@@ -19,7 +19,8 @@
 //               "speed" は速度（km/h）、"heading" は進行方向（度。北が0、時計回り）
 //               "imu" は内蔵IMUの姿勢、静止判定、推測航法（ins.cpp）。設定（imu.enable）で
 //               有効な時だけ入る。"pos" の quality が 6 の時は、測位が無い間を推測航法で
-//               補間した位置（設定 imu.dr.enable）
+//               補間した位置（設定 imu.dr.enable）。"pos" の smoothed は、座標をなめらか化で
+//               置き換えた（設定 imu.smooth）
 //   dr.test   {"sec":n}  n 秒間、推測航法を測位に合わせずに走らせ、測位との差をシリアルと
 //                        同時記録（imu.log）に出す（模擬の途切れ）。0 で止める。詳しくは ins.cpp
 //   imu.reset 車体の前方向の校正をやり直す（本体の取り付けを変えた時）
@@ -115,6 +116,7 @@ static void cmdStatus( JsonDocument &re )
 	pos["height"] = serialized( String( mGpsData.height, 3 ) );		// 楕円体高 m
 	pos["geoid"] = serialized( String( mGpsData.geoidSep, 4 ) );	// ジオイド高 m。標高＝height－geoid
 	if ( mGpsData.geoidModel ) pos["geoidModel"] = geoidName();	// ジオイドモデルの名前。無い時は、F9P内蔵のジオイド
+	if ( mGpsData.smoothed ) pos["smoothed"] = true;			// 座標をなめらか化で置き換えた（ins.cpp）
 	pos["sats"] = mGpsData.numSatelites;
 	pos["hAcc"] = serialized( String( mGpsData.hAcc, 3 ) );	// 推定精度 m
 	pos["vAcc"] = serialized( String( mGpsData.vAcc, 3 ) );
@@ -180,6 +182,8 @@ static void cmdStatus( JsonDocument &re )
 		imu["speed"] = serialized( String( mIns.speed, 2 ) );	// 推測航法の速さ（m/s）
 		imu["dr"] = ( mImuDrEnable != 0 );						// 測位が無い間、推測の位置を出力する（設定）
 		imu["drSec"] = serialized( String( mIns.drSec, 1 ) );	// 最後に測位に合わせてからの秒数
+		imu["smooth"] = ( mImuSmooth == INS_SMOOTH_ALL ) ? "all" : ( mImuSmooth == INS_SMOOTH_NONE ) ? "none" : "float";	// なめらか化の設定
+		imu["smoothRejects"] = mIns.smoothRejects;				// なめらか化で外れ値として捨てた測位の数
 		float err, errMax;
 		int remain = insTestStatus( &err, &errMax );
 		if ( remain > 0 ){										// 模擬の途切れ（dr.test）の間だけ

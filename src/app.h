@@ -117,6 +117,10 @@ extern int mImuLog;
 extern int mImuDrEnable;
 extern int mImuDrMaxSec;
 extern float mImuDrDegrade;
+extern int mImuSmooth;
+#define INS_SMOOTH_NONE 0
+#define INS_SMOOTH_FLOAT 1
+#define INS_SMOOTH_ALL 2
 
 #define PH_UART_NMEA 0
 #define PH_UART_CSV 1
@@ -265,6 +269,7 @@ struct stInsState {
 						// taskSdSave）と重なると、待たされた分だけ長く出る。IMU そのものの負荷は 3ms 程度
 	uint32_t samples;	// 通算のサンプル数
 	int overflowCount;	// FIFO があふれて捨てた回数
+	int smoothRejects;	// なめらか化で外れ値として捨てた測位の数
 	float forward;		// 車体の前方向（レベル座標の角度、度）
 	float forwardWeight;	// 前方向の校正の重み（加減速の合計 m/s²）
 	bool forwardValid;	// 前方向の校正が済んでいる

@@ -46,6 +46,7 @@ struct stGpsData
 	double velD;
 	double sAcc;		// 速度の推定精度 m/s
 	double headAcc;		// 進行方向（direction）の推定精度 deg
+	int smoothed;		// 1:座標をなめらか化で置き換えた（ins.cpp）
 };
 
 #define UBX_BUFF_MAX 3000

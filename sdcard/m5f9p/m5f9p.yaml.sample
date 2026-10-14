@@ -88,6 +88,8 @@ geoid:
 #   maxSec   補間する時間の上限（秒）。走行の試験では 10 秒で誤差の中央値 2.4m、20 秒で 11m
 #   degrade  0 より大きいと、測位があっても推定精度（m）がこれより悪い間は推測航法の位置を出す
 #            （RTK から単独測位に落ちた時など。上限は maxSec）
+# smooth: 座標のなめらか化と外れ値の除去。IMU で推測した位置を予測、GNSS の位置を観測とする
+#   フィルタで、静止中のばらつきと急な飛びを抑える。float:Fixed 以外（既定） all:全部 none:しない
 imu:
   enable: false
   log: false
@@ -95,6 +97,7 @@ imu:
     enable: false
     maxSec: 10
     degrade: 0
+  smooth: float
 
 # ３ピンJST-PHコネクタ（UART）
 jstph:
