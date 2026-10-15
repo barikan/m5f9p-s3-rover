@@ -27,6 +27,34 @@ export function heightOf(status: Status) {
   return { elevation, label: elevation ? '標高' : '楕円体高', value: status.pos.height - (elevation ? status.pos.geoid ?? 0 : 0) };
 }
 
+/**
+ * 平面直角座標系の系（1〜19）の名前と、主な区域（平成十四年国土交通省告示第九号）。
+ * 系は自動では決めず、設定で選ぶ。換算は本体（src/jprcs.cpp）が行い、状況の xy で届く
+ */
+export const ZONES: { name: string; area: string }[] = [
+  { name: '-', area: '' },
+  { name: 'I', area: '長崎県、鹿児島県の西の島（甑島、奄美群島など）' },
+  { name: 'II', area: '福岡県、佐賀県、熊本県、大分県、宮崎県、鹿児島県' },
+  { name: 'III', area: '山口県、島根県、広島県' },
+  { name: 'IV', area: '香川県、愛媛県、徳島県、高知県' },
+  { name: 'V', area: '兵庫県、鳥取県、岡山県' },
+  { name: 'VI', area: '京都府、大阪府、福井県、滋賀県、三重県、奈良県、和歌山県' },
+  { name: 'VII', area: '石川県、富山県、岐阜県、愛知県' },
+  { name: 'VIII', area: '新潟県、長野県、山梨県、静岡県' },
+  { name: 'IX', area: '東京都、福島県、栃木県、茨城県、埼玉県、千葉県、群馬県、神奈川県' },
+  { name: 'X', area: '青森県、秋田県、山形県、岩手県、宮城県' },
+  { name: 'XI', area: '北海道の西部（小樽市、函館市、後志、渡島、檜山など）' },
+  { name: 'XII', area: '北海道の中央部（札幌市、旭川市など）' },
+  { name: 'XIII', area: '北海道の東部（北見市、帯広市、釧路市、十勝、根室など）' },
+  { name: 'XIV', area: '東京都の小笠原諸島（北緯28度以南、東経140度30分〜143度）' },
+  { name: 'XV', area: '沖縄県（東経126度〜130度。沖縄本島など）' },
+  { name: 'XVI', area: '沖縄県（東経126度以西。石垣島、宮古島など）' },
+  { name: 'XVII', area: '沖縄県（東経130度以東。大東諸島）' },
+  { name: 'XVIII', area: '東京都の沖ノ鳥島' },
+  { name: 'XIX', area: '東京都の南鳥島' },
+];
+export const zoneName = (zone: number) => ZONES[zone]?.name ?? '-';
+
 /** 推定精度(m)の表記。大きい時は小数を減らす（本体の画面と同じ） */
 export const accuracyText = (m: number) => (m < 10 ? m.toFixed(3) : m < 100 ? m.toFixed(1) : String(Math.min(9999, Math.round(m))));
 

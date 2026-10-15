@@ -75,6 +75,8 @@
 //               {"tcpClient":b}  測位データをTCPサーバ（設定ファイルの client.ip）に送る
 //               {"elevation":b}  高さを標高で表示する（ジオイドモデルがある時）。false:楕円体高
 //                                表示（本体の画面、アプリ）だけで、NMEAは変わらない
+//               {"zone":n}       平面直角座標系の系（1～19）
+//               {"coordXY":b}    座標を平面直角座標の X, Y で表示する（本体の画面、アプリの測位タブ）
 //   map.key   設定ファイルの google.key を返す（地図の表示用）
 //   sats.get  衛星の配置と信号強度を返す（詳しくは sats.cpp）。問い合わせている間だけ、
 //             F9Pに衛星のメッセージを出力させる
@@ -125,6 +127,16 @@ static void cmdStatus( JsonDocument &re )
 	pos["heading"] = serialized( String( mGpsData.direction, 1 ) );	// 進行方向（度。北が0、時計回り）。止まっている間は当てにならない
 	re["rate"] = mSolutionRate;
 	re["elevation"] = (bool)mRunInfo.elevation;				// 標高を表示する（表示の設定）
+
+	// 平面直角座標系（jprcs.cpp）。xy は系が決まっていて、測位データがある時だけ
+	re["zone"] = mRunInfo.zone;								// 系 1～19。0:選んでいない
+	re["coordXY"] = (bool)mRunInfo.coordXY;					// X, Y で表示する（表示の設定）
+	double x, y;
+	if ( mGpsData.ubxDone && jprcsToXY( mGpsData.lat, mGpsData.lon, mRunInfo.zone, &x, &y ) ){
+		JsonObject xy = re["xy"].to<JsonObject>();
+		xy["x"] = serialized( String( x, 3 ) );				// m。北が正
+		xy["y"] = serialized( String( y, 3 ) );				// m。東が正
+	}
 
 	JsonObject base = re["base"].to<JsonObject>();
 	base["valid"] = mBaseSrc.valid;
@@ -366,6 +378,8 @@ static void cmdRunGet( JsonDocument &re )
 	re["brightness"] = mRunInfo.brightness;
 	re["brightnessAuto"] = (bool)mRunInfo.brightnessAuto;
 	re["elevation"] = (bool)mRunInfo.elevation;
+	re["zone"] = mRunInfo.zone;
+	re["coordXY"] = (bool)mRunInfo.coordXY;
 
 	// 選択できるWifi接続先と基準局データ取得先
 	JsonArray wifiList = re["wifiList"].to<JsonArray>();
@@ -400,6 +414,10 @@ static void cmdRunSet( JsonDocument &cmd, JsonDocument &re )
 		int n = cmd["rate"];
 		if ( n < 1 || n > 20 ) { re["error"] = "bad rate"; return; }
 	}
+	if ( cmd["zone"].is<int>() ){
+		int n = cmd["zone"];
+		if ( n < 1 || n > JPRCS_ZONE_MAX ) { re["error"] = "bad zone"; return; }
+	}
 
 	if ( hasWifi ) appSetWifi( cmd["wifi"] );
 	if ( hasSource ) appSetBaseSource( &src );
@@ -410,6 +428,8 @@ static void cmdRunSet( JsonDocument &cmd, JsonDocument &re )
 	if ( cmd["brightnessAuto"].is<bool>() ) appSetBrightnessAuto( cmd["brightnessAuto"].as<bool>() );
 	if ( cmd["tcpClient"].is<bool>() ) appSetTcpClient( cmd["tcpClient"].as<bool>() );
 	if ( cmd["elevation"].is<bool>() ) appSetElevation( cmd["elevation"].as<bool>() );
+	if ( cmd["zone"].is<int>() ) appSetZone( cmd["zone"] );
+	if ( cmd["coordXY"].is<bool>() ) appSetCoordXY( cmd["coordXY"].as<bool>() );
 	if ( cmd["saveAtBoot"].is<bool>() ){
 		mRunInfo.saving = cmd["saveAtBoot"].as<bool>() ? 1 : 0;
 		saveRunInfo( &mRunInfo );

@@ -47,6 +47,8 @@ struct stRunInfo {
 	int solutionRate;	// 1秒あたりの位置更新レート 
 	int agribusConnect;	// TCPサーバ(AgriBus-NAVI等)への接続 0:接続しない 1:接続する
 	int elevation;		// 高さの表示 0:楕円体高 1:標高（ジオイドモデルで求められた時）。NMEAは変わらない
+	int zone;			// 平面直角座標系の系の番号 1～19。0:選んでいない（jprcs.cpp）
+	int coordXY;		// 本体の画面とアプリの測位タブで、緯度経度の代わりに X, Y を出す
 	float imuForward;	// IMUの校正の結果（ins.cpp）。車体の前方向（レベル座標の角度、度）
 	float imuForwardWeight;	// 前方向の校正の重み。0 の時は校正していない
 	float imuGyroBias[3];	// ジャイロのずれ（deg/s）
@@ -75,6 +77,8 @@ void appSetBaseSource( const struct stBaseSource *src );
 int appSetSaveFormat( int format );
 void appSetTcpClient( bool on );
 void appSetElevation( bool on );
+void appSetZone( int zone );
+void appSetCoordXY( bool on );
 void appBackground();
 void pagesOpenSetup();
 void pagesLoop();		// pages.cpp
@@ -317,6 +321,15 @@ extern struct stSysmon mSysmon;
 
 void sysmonBegin();
 void sysmonPoll();
+
+// ************************************************************
+//                        jprcs.cpp
+// ************************************************************
+
+#define JPRCS_ZONE_MAX 19
+
+const char *jprcsZoneName( int zone );
+bool jprcsToXY( double lat, double lon, int zone, double *x, double *y );
 
 // ************************************************************
 //                        light.cpp

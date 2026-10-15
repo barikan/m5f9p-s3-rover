@@ -46,9 +46,10 @@ function saveKey() {
 // ---------------------------------------------------------------- 接続の設定
 
 const run = computed(() => state.runConfig);
-const values = reactive({ wifi: '', source: '', format: '0', saveAtBoot: false, elevation: true });
+const values = reactive({ wifi: '', source: '', format: '0', saveAtBoot: false, elevation: true, zone: '0', coordXY: false });
 watch(run, c => {
-  if (c) Object.assign(values, { wifi: c.wifi, source: c.source, format: String(c.format), saveAtBoot: c.saveAtBoot, elevation: c.elevation ?? true });
+  if (c) Object.assign(values, { wifi: c.wifi, source: c.source, format: String(c.format), saveAtBoot: c.saveAtBoot, elevation: c.elevation ?? true,
+    zone: String(c.zone ?? 0), coordXY: c.coordXY ?? false });
 }, { immediate: true });
 
 const wifiOptions = computed<Option[]>(() => {
@@ -68,11 +69,17 @@ const sourceOptions = computed<Option[]>(() => {
   return options;
 });
 const formatOptions: Option[] = SAVE_FORMATS.map((f, i) => ({ value: String(i), label: f }));
+// 平面直角座標系。選んでいない(0)は、選び直すまでの表示だけ（本体には 1〜19 だけを送る）
+const zoneOptions = computed<Option[]>(() => [
+  ...(values.zone === '0' ? [{ value: '0', label: '選んでいない' }] : []),
+  ...rover.ZONES.slice(1).map((z, i) => ({ value: String(i + 1), label: `${z.name} 系（${z.area}）` })),
+]);
 const runChanged = computed(() => {
   const c = run.value;
   return !!c && (values.wifi !== c.wifi || values.source !== c.source ||
     Number(values.format) !== c.format || values.saveAtBoot !== c.saveAtBoot ||
-    (c.elevation !== undefined && values.elevation !== c.elevation));
+    (c.elevation !== undefined && values.elevation !== c.elevation) ||
+    (c.zone !== undefined && (Number(values.zone) !== c.zone || values.coordXY !== c.coordXY)));
 });
 
 function applyRun() {
@@ -80,6 +87,7 @@ function applyRun() {
     wifi: values.wifi, source: values.source, format: Number(values.format), saveAtBoot: values.saveAtBoot,
     // 古いファームウェア（elevation を返さない）には送らない
     ...(run.value?.elevation !== undefined ? { elevation: values.elevation } : {}),
+    ...(run.value?.zone !== undefined ? { coordXY: values.coordXY, ...(values.zone !== '0' ? { zone: Number(values.zone) } : {}) } : {}),
   });
 }
 
@@ -138,6 +146,15 @@ async function restart() {
           <SwitchField
             v-if="run.elevation !== undefined" v-model="values.elevation" label="標高を表示する"
             help="本体の画面とアプリの高さを、標高（SD カードのジオイドモデルで求めた値）で表示します。切ると楕円体高を表示します。NMEA の出力は変わりません" />
+          <template v-if="run.zone !== undefined">
+            <div class="mt-4 grid gap-2">
+              <Label for="run-zone">平面直角座標系</Label>
+              <SelectField id="run-zone" v-model="values.zone" :options="zoneOptions" />
+            </div>
+            <SwitchField
+              v-model="values.coordXY" label="座標を X, Y で表示する"
+              help="本体の画面と測位タブで、緯度・経度の代わりに平面直角座標の X、Y を表示します。系は自動では決まらないので、今いる場所の系を選んでください" />
+          </template>
           <Button size="sm" class="mt-4" :disabled="!runChanged" @click="applyRun">変更する</Button>
           <p class="text-muted-foreground mt-3 text-xs">Wi-Fi や補正データの接続先を追加・変更するには、「本体の設定を編集」を使います。</p>
         </template>

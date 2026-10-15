@@ -326,6 +326,26 @@ void appSetElevation( bool on )
 	saveRunInfo( &mRunInfo );
 }
 
+// 平面直角座標系の系を変える（jprcs.cpp）。zone は 1～19
+//
+// ・系は場所（都道府県など）で決まるが、自動では決めない。本体の画面かアプリの設定で選ぶ。
+//
+void appSetZone( int zone )
+{
+	if ( zone < 1 || zone > JPRCS_ZONE_MAX || zone == mRunInfo.zone ) return;
+	mRunInfo.zone = zone;
+	saveRunInfo( &mRunInfo );
+}
+
+// 座標の表示を、緯度経度にするか、平面直角座標の X, Y にするかを切り替える
+//
+void appSetCoordXY( bool on )
+{
+	if ( on == ( mRunInfo.coordXY != 0 ) ) return;
+	mRunInfo.coordXY = on ? 1 : 0;
+	saveRunInfo( &mRunInfo );
+}
+
 // 1秒あたりの測位回数を変更する
 //
 // 戻り値＝ 0:正常終了

@@ -50,8 +50,21 @@ const degrees = (deg: number) => `${Math.round(deg) % 360}°`;
       <span class="font-mono text-3xl font-semibold tabular-nums">{{ valid ? s.pos.sats : '--' }}</span>
     </div>
 
-    <LiveRow label="Lat">{{ valid ? `${s.pos.lat.toFixed(9)}°` : '--' }}</LiveRow>
-    <LiveRow label="Lon">{{ valid ? `${s.pos.lon.toFixed(9)}°` : '--' }}</LiveRow>
+    <!-- 座標。X/Y の表示にしていて、系を選んでいる時は平面直角座標（本体と同じ） -->
+    <template v-if="s.coordXY && s.zone">
+      <LiveRow :label="`X(${rover.zoneName(s.zone)})`">
+        <template v-if="valid && s.xy">{{ s.xy.x.toFixed(3) }}<span :class="unit">m</span></template>
+        <template v-else>--</template>
+      </LiveRow>
+      <LiveRow label="Y">
+        <template v-if="valid && s.xy">{{ s.xy.y.toFixed(3) }}<span :class="unit">m</span></template>
+        <template v-else>--</template>
+      </LiveRow>
+    </template>
+    <template v-else>
+      <LiveRow label="Lat">{{ valid ? `${s.pos.lat.toFixed(9)}°` : '--' }}</LiveRow>
+      <LiveRow label="Lon">{{ valid ? `${s.pos.lon.toFixed(9)}°` : '--' }}</LiveRow>
+    </template>
     <LiveRow :label="height?.elevation ? 'Elev' : 'Alt'">
       <template v-if="valid && height">{{ height.value.toFixed(3) }}<span :class="unit">m</span></template>
       <template v-else>--</template>

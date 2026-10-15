@@ -52,6 +52,7 @@ enum {
 	HIT_SET_FORMAT,
 	HIT_SET_DISPLAY,
 	HIT_SET_ELEVATION,
+	HIT_SET_COORD,			// 座標の表示（緯度経度 / X,Y）と平面直角座標系の系
 	HIT_SET_TCP,
 	HIT_SET_BLE,			// Bluetooth のページを開く
 	HIT_SET_BRIGHTNESS,		// 明るさのページを開く
@@ -249,7 +250,7 @@ static int drawBadge( int x, int y, int h, const char *text, int background, int
 // Status
 //
 //   1段目  左に測位の状態と補正の方法（バッジ）、右に衛星数。その間に、Wi-Fiの接続中、BLEの接続中のアイコンと、ログの保存中の REC
-//   2～4   緯度、経度、高さ。高さは、ジオイドモデル(geoid.cpp)で求めた時は標高(Elev)、
+//   2～4   緯度、経度（X/Y の表示の時は、平面直角座標の X, Y）、高さ。高さは、ジオイドモデル(geoid.cpp)で求めた時は標高(Elev)、
 //          それ以外と、Setup で標高の表示を切った時は楕円体高(Alt)
 //   5      推定精度（矢印のアイコンの後ろに、水平、垂直の順）
 //   6      本体の状態。CPU温度、CPU使用率、メモリ使用率、電圧、SDカードの空き
@@ -317,12 +318,27 @@ static void drawStatus()
 	}
 
 	int y = topHeight;
-	snprintf( text, sizeof(text), "%.9f°", mGpsData.lat );
-	drawRow( y, rowHeight, "Lat", valid ? text : "--", FONT_VALUE );
-	y += rowHeight;
-	snprintf( text, sizeof(text), "%.9f°", mGpsData.lon );
-	drawRow( y, rowHeight, "Lon", valid ? text : "--", FONT_VALUE );
-	y += rowHeight;
+	// 座標。X/Y の表示にしていて、系が決まっている時は平面直角座標（jprcs.cpp）
+	double px, py;
+	if ( mRunInfo.coordXY && mRunInfo.zone ){
+		char label[12];
+		bool xy = valid && jprcsToXY( mGpsData.lat, mGpsData.lon, mRunInfo.zone, &px, &py );
+		snprintf( label, sizeof(label), "X(%s)", jprcsZoneName( mRunInfo.zone ) );
+		snprintf( text, sizeof(text), "%.3f m", px );
+		drawRow( y, rowHeight, label, xy ? text : "--", FONT_VALUE );
+		y += rowHeight;
+		snprintf( text, sizeof(text), "%.3f m", py );
+		drawRow( y, rowHeight, "Y", xy ? text : "--", FONT_VALUE );
+		y += rowHeight;
+	}
+	else {
+		snprintf( text, sizeof(text), "%.9f°", mGpsData.lat );
+		drawRow( y, rowHeight, "Lat", valid ? text : "--", FONT_VALUE );
+		y += rowHeight;
+		snprintf( text, sizeof(text), "%.9f°", mGpsData.lon );
+		drawRow( y, rowHeight, "Lon", valid ? text : "--", FONT_VALUE );
+		y += rowHeight;
+	}
 	bool elev = ( mGpsData.geoidModel != 0 && mRunInfo.elevation );
 	snprintf( text, sizeof(text), "%.3f m", elev ? mGpsData.height - mGpsData.geoidSep : mGpsData.height );
 	drawRow( y, rowHeight, elev ? "Elev" : "Alt", valid ? text : "--", FONT_VALUE );
@@ -715,7 +731,8 @@ static void drawSetup()
 {
 	bool tcp = ( strlen( mAgribusIp ) > 0 );		// 送信先が設定ファイルにある時だけ出す
 	bool geoid = ( geoidName()[0] != '\0' );		// ジオイドモデルがある時だけ出す
-	struct { const uint8_t *icon; const char *label; int id; } items[8];
+	struct { const uint8_t *icon; const char *label; int id; } items[9];
+	char coordLabel[16];
 	int count = 0;
 	items[ count++ ] = { iconWifi, "Wi-Fi", HIT_SET_WIFI };
 	items[ count++ ] = { iconCorrections, "Corrections", HIT_SET_SOURCE };
@@ -723,6 +740,9 @@ static void drawSetup()
 	items[ count++ ] = { iconBrightness, "Brightness", HIT_SET_BRIGHTNESS };
 	items[ count++ ] = { iconRotate, "Rotate", HIT_SET_DISPLAY };
 	if ( geoid ) items[ count++ ] = { iconElevation, mRunInfo.elevation ? "Elev: On" : "Elev: Off", HIT_SET_ELEVATION };
+	if ( mRunInfo.coordXY ) snprintf( coordLabel, sizeof(coordLabel), "XY: %s", jprcsZoneName( mRunInfo.zone ) );
+	else strlcpy( coordLabel, "Lat/Lon", sizeof(coordLabel) );
+	items[ count++ ] = { iconStatus, coordLabel, HIT_SET_COORD };
 	if ( tcp ) items[ count++ ] = { iconSend, mAgribusReady ? "TCP: On" : "TCP: Off", HIT_SET_TCP };
 	items[ count++ ] = { iconBluetooth, "Bluetooth", HIT_SET_BLE };
 
@@ -826,6 +846,20 @@ static void formatLabel( int index, char *buff, int buffSize )
 	snprintf( buff, buffSize, "%s", ( index == 0 && mCsvFormat ) ? "CSV" : name[ index ] );
 }
 
+// 座標の表示の一覧
+//
+static void coordLabel( int index, char *buff, int buffSize )
+{
+	snprintf( buff, buffSize, "%s", index == 0 ? "Lat / Lon" : "X / Y (plane)" );
+}
+
+// 平面直角座標系の系の一覧（I～XIX）
+//
+static void zoneLabel( int index, char *buff, int buffSize )
+{
+	snprintf( buff, buffSize, "Zone %s%s", jprcsZoneName( index + 1 ), index + 1 == mRunInfo.zone ? "  (now)" : "" );
+}
+
 // Setup の項目がタップされた時の処理。選択の画面(ui.cpp)を出し、選ばれたら反映する
 //
 static void onSetting( int id )
@@ -844,6 +878,15 @@ static void onSetting( int id )
 	}
 	else if ( id == HIT_SET_DISPLAY ) appSetRotation( ! mRunInfo.lcdRotation );
 	else if ( id == HIT_SET_ELEVATION ) appSetElevation( ! mRunInfo.elevation );
+	else if ( id == HIT_SET_COORD ){
+		int index = uiSelectList( "Coordinates", 2, coordLabel, "Back" );
+		if ( index < 0 ) return;
+		appSetCoordXY( index == 1 );
+		if ( index == 0 ) return;
+		// X/Y の時は、続けて系を選ぶ
+		int zone = uiSelectList( "Plane zone", JPRCS_ZONE_MAX, zoneLabel, "Back" );
+		if ( zone >= 0 ) appSetZone( zone + 1 );
+	}
 	else if ( id == HIT_SET_TCP ) appSetTcpClient( ! mAgribusReady );
 }
 

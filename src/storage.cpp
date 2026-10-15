@@ -285,6 +285,8 @@ int saveRunInfo( struct stRunInfo *runInfo )
 	doc["rate"] = runInfo->solutionRate;
 	doc["tcpClient"] = ( runInfo->agribusConnect != 0 );
 	doc["elevation"] = ( runInfo->elevation != 0 );
+	doc["zone"] = runInfo->zone;
+	doc["coordXY"] = ( runInfo->coordXY != 0 );
 
 	// IMU の校正の結果（ins.cpp）
 	if ( runInfo->imuForwardWeight > 0 ){
@@ -395,6 +397,8 @@ int readRunInfo( struct stRunInfo *runInfo )
 	runInfo->solutionRate = doc["rate"] | 1;
 	runInfo->agribusConnect = ( doc["tcpClient"] | false ) ? 1 : 0;
 	runInfo->elevation = ( doc["elevation"] | true ) ? 1 : 0;
+	runInfo->zone = constrain( (int)( doc["zone"] | 0 ), 0, JPRCS_ZONE_MAX );
+	runInfo->coordXY = ( doc["coordXY"] | false ) ? 1 : 0;
 	runInfo->imuForward = doc["imu"]["forward"] | 0.0f;
 	runInfo->imuForwardWeight = doc["imu"]["forwardWeight"] | 0.0f;
 	for( int i=0; i < 3; i++ ) runInfo->imuGyroBias[i] = doc["imu"]["gyroBias"][i] | 0.0f;

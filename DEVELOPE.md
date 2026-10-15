@@ -313,6 +313,15 @@ mise run cmd '{"cmd":"run.set","wifi":"home","source":"geortk.jp/tamtam"}'  # Wi
 
 コマンドの一覧と引数は `src/cmd.cpp` の先頭にある。`run.set` を使うと、画面に触らずに Wi-Fi や補正元を切り替えられる。
 
+### 平面直角座標
+
+`src/jprcs.cpp` が、緯度経度を平面直角座標系の X、Y にする(GRS80、X 軸上の縮尺係数 0.9999、河瀬の式で n の5次まで)。
+
+- 系(`m5f9p.run.json` の `zone`、1〜19)と、X/Y で表示するか(`coordXY`)は、本体の Setup と `run.set` の `zone` / `coordXY`(アプリの設定タブ)で選ぶ。系は自動では決めない(都道府県や市町村で決まり、座標だけでは決められないため)。
+- 状況(`status`)の `zone`、`coordXY`、`xy`(`x`、`y`。系を選んでいて、測位データがあるときだけ)でアプリに渡す。アプリは換算せず、この値を表示する。
+- 確かめるときは、国土地理院の換算サービス `https://vldb.gsi.go.jp/sokuchi/surveycalc/surveycalc/bl2xy.pl?outputType=json&refFrame=2&zone=..&latitude=..&longitude=..`(`refFrame=2` が JGD2011)と比べる。I、II、IX、XI〜XVI 系で 0.05mm 以内で一致した。
+- 今期の座標をそのまま換算する。セミ・ダイナミック補正は行っていない。
+
 ### 画面の明るさの自動調整
 
 CoreS3 の前面(カメラの横)の照度・近接センサー LTR-553ALS(内部 I2C の 0x23)で周囲の明るさを測り、Brightness のページの `Auto`(`run.set` の `brightnessAuto`)が入っているときは、画面の明るさを合わせる(`src/light.cpp`)。
@@ -690,6 +699,7 @@ src/
   geoid.cpp     ジオイドモデル(SD カードの geoid.bin)で、楕円体高から標高を求める
   sats.cpp      衛星の配置と信号強度(アプリの「衛星」タブ用)
   light.cpp     照度センサー(LTR-553)と、画面の明るさの自動調整
+  jprcs.cpp     平面直角座標系(緯度経度 → X, Y)
   sysmon.cpp    本体の状態(CPU 温度、CPU 使用率、メモリ使用率、電圧、SD カードの空き)
   cmd.cpp       コマンドの受付(USB シリアル)と実行
   ble.cpp       BLE での状況・測位データの送信とコマンドの受付

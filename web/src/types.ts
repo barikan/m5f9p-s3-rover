@@ -24,6 +24,9 @@ export interface Status {
   };
   rate: number;             // 測位レート Hz
   elevation?: boolean;      // 標高を表示する（表示の設定。run.set の elevation）。古いファームウェアには無い
+  zone?: number;            // 平面直角座標系の系 1〜19。0:選んでいない。古いファームウェアには無い
+  coordXY?: boolean;        // 座標を X, Y で表示する（本体の画面、測位タブ）
+  xy?: { x: number; y: number };  // 平面直角座標 m（X:北が正 Y:東が正）。系を選んでいて、測位データがある時だけ
   base: {
     valid: boolean;
     type: number;           // 4:UART（PHコネクタ）
@@ -88,13 +91,15 @@ export interface RunConfig {
   rotation: number;
   brightness: number;       // 画面の明るさ(%)。15〜100
   brightnessAuto?: boolean; // 画面の明るさを周囲の明るさに合わせて自動で変える
+  zone?: number;            // 平面直角座標系の系 1〜19。0:選んでいない
+  coordXY?: boolean;        // 座標を X, Y で表示する
   elevation?: boolean;      // 標高を表示する。false は楕円体高だけ。古いファームウェアには無い
   wifiList: string[];
   sourceList: string[];
 }
 
 /** 接続の設定のうち、画面から変えるもの（run.set）。本体はすぐに反映する（再起動しない） */
-export type RunValues = Pick<RunConfig, 'wifi' | 'source' | 'format' | 'saveAtBoot' | 'elevation'>;
+export type RunValues = Pick<RunConfig, 'wifi' | 'source' | 'format' | 'saveAtBoot' | 'elevation' | 'zone' | 'coordXY'>;
 
 /**
  * 一覧の項目に付く、パスワードの扱い。本体はパスワードを返さない。

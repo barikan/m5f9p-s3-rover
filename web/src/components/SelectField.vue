@@ -22,8 +22,9 @@ const label = computed(() => props.options.find(o => o.value === props.modelValu
 
 <template>
   <Select v-model="inner">
-    <SelectTrigger :id="id" class="w-full">
-      <SelectValue><span class="truncate">{{ label }}</span></SelectValue>
+    <SelectTrigger :id="id" class="w-full min-w-0">
+      <!-- 長い選択肢は、欄の幅で切って … にする（min-w-0 が無いと欄からはみ出す） -->
+      <SelectValue class="min-w-0"><span class="min-w-0 truncate">{{ label }}</span></SelectValue>
     </SelectTrigger>
     <SelectContent>
       <SelectItem v-for="o in options" :key="o.value" :value="o.value === '' ? EMPTY : o.value">{{ o.label }}</SelectItem>
