@@ -1,11 +1,12 @@
 <script setup lang="ts">
 // 地図タブ。地図そのものは map.ts、ここは地図に重ねる表示とボタン、日の選択。
 import { computed, onMounted, ref, watch } from 'vue';
+import { Info } from 'lucide-vue-next';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import * as rover from '../rover';
 import { state } from '../store';
-import { createMap, mapsKey } from '../map';
+import { createMap, mapsKey, TRACK_LEGEND } from '../map';
 
 const props = defineProps<{ visible?: boolean }>();
 
@@ -13,7 +14,7 @@ type MapController = ReturnType<typeof createMap>;
 
 const mapEl = ref<HTMLElement | null>(null);
 let map: MapController | null = null;
-const view = ref<MapController['view'] | null>(null);         // 追従中か、航空写真か、キーが使えないか
+const view = ref<MapController['view'] | null>(null);         // 追従中か、航空写真か、軌跡を表示しているか、キーが使えないか
 
 onMounted(() => {
   const created = createMap(mapEl.value!);
@@ -26,10 +27,21 @@ watch(() => props.visible, on => map?.setVisible(!!on));
 
 const s = computed(() => state.status);
 const isToday = computed(() => state.trackDay === rover.today());
-const quality = computed(() => rover.qualityOf(s.value?.pos.quality ?? 0));
 // state.deviceMapsKey が変わった時に評価し直す
 const hasKey = computed(() => (state.deviceMapsKey, !!mapsKey()));
 const canFollow = computed(() => !!view.value && !view.value.follow && !!s.value?.pos.valid && isToday.value);
+
+// 左上の表示（座標、軌跡の点数、凡例）。タップで閉じ、左上のボタンで開き直す。端末ごとに覚える。
+// キーが無い、使えない時の案内は、閉じていても出す
+function loadInfoOpen() {
+  try { return localStorage.getItem('mapInfo') !== '0'; } catch (e) { return true; }
+}
+const infoOpen = ref(loadInfoOpen());
+const keyProblem = computed(() => !hasKey.value || !!view.value?.authFailed);
+function setInfoOpen(on: boolean) {
+  infoOpen.value = on;
+  try { localStorage.setItem('mapInfo', on ? '1' : '0'); } catch (e) { /* 覚えられない時は、次回は既定（開く） */ }
+}
 
 // ---------------------------------------------------------------- 表示する日
 
@@ -57,32 +69,47 @@ async function deleteDay(day: string) {
 <template>
   <div ref="mapEl" class="absolute inset-0"></div>
 
-  <div class="bg-card text-card-foreground absolute top-3 left-3 max-w-[calc(100%-1.5rem)] rounded-xl border px-4 py-3 text-sm shadow-sm">
+  <!-- 地図に重ねる表示。地図の上で読みやすいよう、配色によらず暗い地に白い文字にする -->
+  <div
+    v-if="infoOpen || keyProblem" class="absolute top-3 left-3 max-w-[calc(100%-1.5rem)] cursor-pointer rounded-xl bg-black/90 px-4 py-3 text-base text-white shadow-sm select-none"
+    role="button" aria-label="表示を閉じる" @click="setInfoOpen(false)">
     <template v-if="!hasKey">
       <div>Google Maps の API キーが設定されていません。</div>
-      <div class="text-muted-foreground text-xs">「設定」タブでキーを入力するか、本体の設定の Google Maps のキーに書いてください。</div>
+      <div class="text-sm text-white/70">「設定」タブでキーを入力するか、本体の設定の Google Maps のキーに書いてください。</div>
     </template>
     <template v-else-if="view && view.authFailed">
-      <div class="text-destructive-foreground">API キーが使えません</div>
-      <div class="text-muted-foreground text-xs">キーが正しいか、Maps JavaScript API が有効かを確認してください。</div>
+      <div class="text-red-300">API キーが使えません</div>
+      <div class="text-sm text-white/70">キーが正しいか、Maps JavaScript API が有効かを確認してください。</div>
     </template>
     <template v-if="s && isToday">
-      <div class="font-semibold" :style="{ color: quality.color }">{{ quality.label }}</div>
       <template v-if="s.pos.valid">
-        <div class="text-muted-foreground font-mono text-xs">{{ s.pos.lat.toFixed(8) }}, {{ s.pos.lon.toFixed(8) }}</div>
-        <div class="text-muted-foreground text-xs">
+        <div class="font-mono">{{ s.pos.lat.toFixed(8) }}, {{ s.pos.lon.toFixed(8) }}</div>
+        <div>
           {{ rover.heightOf(s).label }}
           <span class="font-mono">{{ rover.heightOf(s).value.toFixed(3) }} m</span>
         </div>
       </template>
     </template>
     <div v-else-if="isToday">本体に接続していません</div>
-    <div class="text-muted-foreground text-xs">{{ isToday ? '今日' : state.trackDay }}の軌跡 {{ state.trackCount }} 点{{ state.syncing ? '（本体から取得中）' : '' }}</div>
+    <div>{{ isToday ? '今日' : state.trackDay }}の軌跡 {{ state.trackCount }} 点{{ state.syncing ? '（本体から取得中）' : '' }}</div>
+    <!-- 軌跡の凡例（軌跡を表示している時だけ） -->
+    <div v-if="view && view.track" class="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-sm">
+      <span v-for="q in TRACK_LEGEND" :key="q" class="flex items-center gap-1">
+        <span class="h-1.5 w-4 rounded-full ring-1 ring-white" :style="{ background: rover.qualityOf(q).color }" />{{ rover.qualityOf(q).label }}
+      </span>
+    </div>
   </div>
+
+  <Button
+    v-else size="icon" variant="outline" class="bg-background dark:bg-background absolute top-3 left-3 shadow-sm"
+    aria-label="座標と凡例を表示する" @click="setInfoOpen(true)">
+    <Info />
+  </Button>
 
   <div class="absolute inset-x-0 bottom-4 flex justify-center gap-2">
     <Button size="sm" v-if="canFollow" variant="outline" class="bg-background dark:bg-background shadow-sm" @click="map?.followCurrent()">現在地</Button>
     <Button size="sm" variant="outline" class="bg-background dark:bg-background shadow-sm" @click="map?.toggleSatellite()">{{ view && view.satellite ? '地図' : '航空写真' }}</Button>
+    <Button size="sm" variant="outline" class="bg-background dark:bg-background shadow-sm" @click="map?.toggleTrack()">{{ view && !view.track ? '軌跡を表示' : '軌跡を隠す' }}</Button>
     <Button size="sm" variant="outline" class="bg-background dark:bg-background shadow-sm" @click="showDays">履歴</Button>
   </div>
 

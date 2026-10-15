@@ -31,6 +31,13 @@ enum {
 #define COLOR_RED      0xEA8A
 #define COLOR_GRAY     0xB5F7
 #define COLOR_BLUE     0x3CBF	// Bluetooth
+// 測位の状態のバッジ（アプリの web/src/rover.ts の QUALITY と同じ色）
+#define COLOR_FIX_FIX    0x231D	// #2563EB 青
+#define COLOR_FIX_FLOAT  0xFB82	// #F97316 オレンジ
+#define COLOR_FIX_DGPS   0x919D	// #9333EA 紫
+#define COLOR_FIX_SINGLE 0x1509	// #16A34A 緑
+#define COLOR_FIX_DR     0xD92E	// #DB2777 ピンク
+#define COLOR_FIX_NONE   0xD924	// #DC2626 赤
 #define COLOR_ACCENT   0xFFFF	// 選択中のボタン（白地に黒文字）
 #define COLOR_ON_ACCENT 0x0841
 

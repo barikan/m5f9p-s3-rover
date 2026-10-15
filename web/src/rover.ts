@@ -6,14 +6,15 @@
 import * as host from './host';
 import type { Change, Connection, ConnectionKind, DeviceConfig, LogFile, RunConfig, RunValues, Satellite, Status, TrackPoint, ConnState } from './types';
 
-// 表記は本体の画面（src/pages.cpp の fixName）と揃える
+// 表記と色は本体の画面（src/pages.cpp の fixName）と揃える。バッジ、地図の軌跡と現在地、凡例で使う。
+// 彩度を抑えた灰色の地図（map.ts）の上で見分けやすい色にしている
 export const QUALITY: Record<number, { label: string; color: string }> = {
-  0: { label: 'No fix', color: '#C62828' },
-  1: { label: 'Single', color: '#546E7A' },
-  2: { label: 'DGPS', color: '#546E7A' },
-  4: { label: 'Fix', color: '#2E7D32' },
-  5: { label: 'Float', color: '#EF6C00' },
-  6: { label: 'DR', color: '#6A1B9A' },        // 推測航法（測位が途切れた間の補間。本体の src/ins.cpp）
+  0: { label: 'No fix', color: '#DC2626' },     // 赤
+  1: { label: 'Single', color: '#16A34A' },     // 緑
+  2: { label: 'DGPS', color: '#9333EA' },       // 紫
+  4: { label: 'Fix', color: '#2563EB' },        // 青
+  5: { label: 'Float', color: '#F97316' },      // オレンジ
+  6: { label: 'DR', color: '#DB2777' },         // ピンク。推測航法（測位が途切れた間の補間。本体の src/ins.cpp）
 };
 export const qualityOf = (q: number) => QUALITY[q] || QUALITY[0];
 

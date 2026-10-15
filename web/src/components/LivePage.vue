@@ -40,8 +40,8 @@ const degrees = (deg: number) => `${Math.round(deg) % 360}°`;
   <div v-if="s" class="mx-auto flex min-h-full max-w-3xl flex-col gap-1.5 py-1">
     <!-- 上段: 測位の状態と補正の方法、ログの保存中の REC、衛星数 -->
     <div class="flex items-center gap-2">
-      <StateBadge kind="fix" class="px-3 py-1 text-base" />
-      <StateBadge kind="correction" class="px-3 py-1 text-base" />
+      <StateBadge kind="fix" class="rounded-lg px-3 py-1 text-base" />
+      <StateBadge kind="correction" class="rounded-lg px-3 py-1 text-base" />
       <div v-if="s.save.on" class="flex items-center gap-1.5 text-sm font-semibold text-red-600">
         <span class="size-3 animate-pulse rounded-full bg-red-600" />REC
       </div>

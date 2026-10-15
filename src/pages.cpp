@@ -169,13 +169,13 @@ static void drawButton( int x, int y, int w, int h, const char *text, int id, bo
 static const char *fixName( int quality, int *color )
 {
 	switch( quality ){
-		case 4: *color = COLOR_GREEN; return "Fix";
-		case 5: *color = COLOR_ORANGE; return "Float";
-		case 2: *color = COLOR_GRAY; return "DGPS";
-		case 1: *color = COLOR_GRAY; return "Single";
-		case 6: *color = COLOR_GRAY; return "DR";		// 推測航法（ins.cpp）
+		case 4: *color = COLOR_FIX_FIX; return "Fix";
+		case 5: *color = COLOR_FIX_FLOAT; return "Float";
+		case 2: *color = COLOR_FIX_DGPS; return "DGPS";
+		case 1: *color = COLOR_FIX_SINGLE; return "Single";
+		case 6: *color = COLOR_FIX_DR; return "DR";		// 推測航法（ins.cpp）
 	}
-	*color = COLOR_RED;
+	*color = COLOR_FIX_NONE;
 	return "No fix";
 }
 
@@ -268,7 +268,7 @@ static void drawStatus()
 	const char *fix = fixName( valid ? mGpsData.quality : 0, &color );
 	const char *correction = correctionName();
 	bool none = ( strcmp( correction, "None" ) == 0 );
-	int fixWidth = drawBadge( MARGIN, badgeY, badgeHeight, fix, color, COLOR_BG );
+	int fixWidth = drawBadge( MARGIN, badgeY, badgeHeight, fix, color, COLOR_TEXT );
 	int correctionWidth = drawBadge( MARGIN + fixWidth + 6, badgeY, badgeHeight, correction, COLOR_PRESSED, none ? COLOR_MUTED : COLOR_TEXT );
 
 	// 右上に衛星数（ラベルの代わりにアイコン）
