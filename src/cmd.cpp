@@ -65,6 +65,7 @@
 //   run.set   実行パラメータを変更する。指定した項目のみ変更し、すぐに反映する（再起動しない）
 //               {"wifi":"SSID"}  接続するWifi。"":使わない
 //               {"source":"名前"} 基準局データ取得先。"":接続しない "uart":UART
+//                                "auto":近くの無料の局を自動で選ぶ（kuon.cpp）
 //                                それ以外は "アドレス/マウントポイント"
 //               {"format":n}     保存形式 0:NMEA 1:RAW 2:RTCM 3:CSV
 //               {"saveAtBoot":b} 起動時から保存する
@@ -147,6 +148,14 @@ static void cmdStatus( JsonDocument &re )
 	base["reconnecting"] = (bool)mBaseReconnecting;
 	base["bytes"] = (int)mBaseRecvCount;
 	base["reconnects"] = (int)mBaseReconnectCount;
+	if ( mRunInfo.baseAuto ){									// 自動で選んでいる（kuon.cpp）
+		base["auto"] = true;
+		base["searching"] = (bool)mKuonSearching;
+		if ( mKuonKm >= 0 ){
+			base["km"] = serialized( String( mKuonKm, 1 ) );	// 選んだ局までの距離（探した時点）
+			base["rate"] = mKuonRate;							// 選んだ局の応答率（%）
+		}
+	}
 	base["rtcmErr"] = mRtcmCrcErrorPercent;
 	base["rtcmAge"] = millis() - mRtcmLastMillis;
 
@@ -368,8 +377,10 @@ static void cmdRunGet( JsonDocument &re )
 	char name[100] = "";
 
 	re["wifi"] = mRunInfo.wifiSsid;
-	if ( mRunInfo.baseSrc.valid ) baseSrcName( &mRunInfo.baseSrc, name, sizeof(name) );
+	if ( mRunInfo.baseAuto ) strcpy( name, "auto" );
+	else if ( mRunInfo.baseSrc.valid ) baseSrcName( &mRunInfo.baseSrc, name, sizeof(name) );
 	re["source"] = name;
+	re["sourceAuto"] = (bool)mRunInfo.baseAuto;		// 取得先を自動で選んでいる（source は "auto"）
 	re["format"] = mRunInfo.saveFormat;
 	re["saveAtBoot"] = (bool)mRunInfo.saving;
 	re["rate"] = mRunInfo.solutionRate;
@@ -400,7 +411,8 @@ static void cmdRunSet( JsonDocument &cmd, JsonDocument &re )
 		const char *ssid = cmd["wifi"];
 		if ( strlen( ssid ) && wifiIndexOf( ssid ) < 0 ) { re["error"] = "bad wifi"; return; }
 	}
-	if ( hasSource ){
+	bool sourceAuto = hasSource && strcmp( cmd["source"].as<const char*>(), "auto" ) == 0;
+	if ( hasSource && ! sourceAuto ){
 		const char *name = cmd["source"];
 		memset( &src, 0, sizeof(src) );
 		if ( strlen( name ) && baseSrcFromList( baseSrcFind( name ), &src ) < 0 ) { re["error"] = "bad source"; return; }
@@ -419,7 +431,8 @@ static void cmdRunSet( JsonDocument &cmd, JsonDocument &re )
 	}
 
 	if ( hasWifi ) appSetWifi( cmd["wifi"] );
-	if ( hasSource ) appSetBaseSource( &src );
+	if ( sourceAuto ) appSetBaseAuto();
+	else if ( hasSource ) appSetBaseSource( &src );
 	if ( cmd["format"].is<int>() ) appSetSaveFormat( cmd["format"] );
 	if ( cmd["rate"].is<int>() ) appSetSolutionRate( cmd["rate"] );
 	if ( cmd["rotation"].is<int>() ) appSetRotation( cmd["rotation"] );

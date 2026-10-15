@@ -153,8 +153,18 @@ const OTHER_GROUPS: { title: string; fields: PathField[] }[] = [
   },
   {
     title: 'rtk2go.com', fields: [
-      { path: ['rtk2go', 'user'], label: 'ユーザー名', help: '本体の画面で rtk2go.com のマウントポイントを選んだ時に使います' },
+      {
+        path: ['rtk2go', 'user'], label: 'ユーザー名',
+        help: '本体の画面で rtk2go.com のマウントポイントを選んだ時に使います。パスワードと両方を入れると、取得先の自動選択でも rtk2go.com の局を選びます',
+      },
       { path: ['rtk2go', 'password'], label: 'パスワード', type: 'password' },
+    ],
+  },
+  {
+    title: '取得先の自動選択', fields: [
+      { path: ['auto', 'minRate'], label: '応答率の下限（%）', type: 'number', help: '直近30日の応答率がこれ未満の局は選びません' },
+      { path: ['auto', 'radiusKm'], label: '検索半径（km）', type: 'number', help: 'これより遠い局は選びません' },
+      { path: ['auto', 'researchKm'], label: '探し直す移動距離（km）', type: 'number', help: '前回探した場所からこれだけ動いたら、近くの局を探し直します' },
     ],
   },
 

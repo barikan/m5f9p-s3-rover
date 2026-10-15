@@ -41,7 +41,8 @@ struct stRunInfo {
 	int brightness;		// 画面の明るさ（%）。15～100。自動の時は、自動を切った時に戻す明るさ
 	int brightnessAuto;	// 画面の明るさを、周囲の明るさに合わせて自動で変える（light.cpp）
 	char wifiSsid[33];	// 接続するWifiのSSID。""の時はWifiを使わない
-	struct stBaseSource baseSrc;	// 基準局データ取得先。valid=falseの時は接続しない
+	struct stBaseSource baseSrc;	// 基準局データ取得先。valid=falseの時は接続しない。自動の時は、最後に選んだ局
+	int baseAuto;		// 取得先を自動で選ぶ（kuon.cpp。KUON GEO の基準局の一覧から）
 	int saveFormat;		// データ保存形式　SAVE_NMEA,SAVE_RAW,SAVE_RTCM,SAVE_CSV
 	int saving;			// SDカード保存 0:保存していない　1:保存中
 	int solutionRate;	// 1秒あたりの位置更新レート 
@@ -74,6 +75,7 @@ void appSetBrightness( int percent );
 void appSetBrightnessAuto( bool on );
 int appSetWifi( const char *ssid );
 void appSetBaseSource( const struct stBaseSource *src );
+void appSetBaseAuto();
 int appSetSaveFormat( int format );
 void appSetTcpClient( bool on );
 void appSetElevation( bool on );
@@ -116,6 +118,9 @@ extern int mBleNmeaRate;
 extern int mBlePairing;
 extern char mRtk2goUser[32];
 extern char mRtk2goPassword[32];
+extern int mAutoMinRate;
+extern int mAutoRadiusKm;
+extern float mAutoResearchKm;
 extern int mGeoidEnable;
 extern int mImuEnable;
 extern int mImuLog;
@@ -162,7 +167,7 @@ void netConfigBegin( int *wifiId, int *srcId );
 void netConfigEnd( int wifiId, int srcId );
 bool uiChooseWifi();
 void baseSrcInit();
-bool uiChooseBaseSource( struct stBaseSource *src );
+bool uiChooseBaseSource( struct stBaseSource *src, bool *autoSelect );
 void baseSrcRequest( const struct stBaseSource *src );
 void tcpClientSet( bool on );
 int baseSrcFromList( int index, struct stBaseSource *src );
@@ -320,6 +325,18 @@ extern struct stSysmon mSysmon;
 
 void sysmonBegin();
 void sysmonPoll();
+
+// ************************************************************
+//                        kuon.cpp
+// ************************************************************
+
+extern volatile bool mKuonSearching;
+extern float mKuonKm;
+extern int mKuonRate;
+
+void kuonReset();
+bool kuonCheck( int failures, struct stBaseSource *next );
+void kuonPoll();
 
 // ************************************************************
 //                        jprcs.cpp

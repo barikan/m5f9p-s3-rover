@@ -70,6 +70,11 @@ int mImuSmooth = INS_SMOOTH_FLOAT;
 char mRtk2goUser[32];
 char mRtk2goPassword[32];
 
+// 補正データの取得先の自動選択（kuon.cpp）
+int mAutoMinRate = 90;			// 応答率の下限（%）
+int mAutoRadiusKm = 40;			// 検索半径（km）
+float mAutoResearchKm = 10;		// 前回探した場所から、これだけ動いたら探し直す（km）
+
 static void strToLower( char* buff )
 {
 	while( *buff ){

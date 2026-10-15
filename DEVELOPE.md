@@ -313,6 +313,19 @@ mise run cmd '{"cmd":"run.set","wifi":"home","source":"geortk.jp/tamtam"}'  # Wi
 
 コマンドの一覧と引数は `src/cmd.cpp` の先頭にある。`run.set` を使うと、画面に触らずに Wi-Fi や補正元を切り替えられる。
 
+### 補正データの取得先の自動選択
+
+`src/kuon.cpp` が、KUON GEO の基準局の一覧(`http://kuongeo.com/api/bases?fmt=tsv&lim=500&off=N&jp=1`)から近くの局を選ぶ。選び方は KUON GEO の `kuon_bases.h`(MIT License。リポジトリには入れていない)を参考にした。
+
+- 一覧は **HTTP/1.0** で取る。HTTP/1.1 だと分割転送(chunked)になり、行の途中に区切りが入る。TLS は内蔵 RAM を約 40KB 使うので使わない(公開データの取得だけ)。日本域は約 450 局、70KB で、500 件ずつ流し読みし、条件に合う局のうち近い順に 24 件だけを残す。
+- 列は列名の行(`host port mount lat lon ... auth fee p30 up ...`)で位置を覚える。位置を決め打ちしない(列が増えたときに全部ずれる)。
+- 候補は、無料(`fee=N`)、応答中(`up=1`)、検索半径の中、認証不要(`auth=N`)。`rtk2go.com` の局だけは、`rtk2go.user` と `rtk2go.password` が両方あれば、認証が要っても候補にし、その値でログインする。
+- 応答率は `p30`(直近30日の応答回数)を一覧の中の最大値で割った値。応答率が `auto.minRate` 以上の中で、いちばん近い局を選ぶ。東京・神田では、16km の局の応答率が 2% だった(近さだけで選ぶと失敗する)。
+- 探すのは `taskBaseRecv`(`kuonCheck()`)で、探して局が変わったら、そのまま切り替えてつなぐ。探すのは、自動にしたあと・起動後の最初(測位できて Wi-Fi がつながったとき)、前回探した場所から `auto.researchKm` 以上動いたとき、今の局に3回続けてつながらないとき(その局を除く)。探せなかったときは 60 秒あける。
+- 選んだ局の保存(`m5f9p.run.json` の `source`。`sourceAuto` が自動の印)は、loopTask の `kuonPoll()` が行う(SD カード)。
+- 状況(`status`)の `base` に `auto`、`searching`、`km`、`rate`、`run.get` に `sourceAuto` が入る。`run.set` の `source` に `"auto"` を送ると自動になり、ほかの取得先を選ぶと手動に戻る。
+- シリアルログに `Kuon:` で始まる行(近い順の候補5件、選んだ局)が出る。
+
 ### 平面直角座標
 
 `src/jprcs.cpp` が、緯度経度を平面直角座標系の X、Y にする(GRS80、X 軸上の縮尺係数 0.9999、河瀬の式で n の5次まで)。
@@ -698,6 +711,7 @@ src/
   sats.cpp      衛星の配置と信号強度(アプリの「衛星」タブ用)
   light.cpp     照度センサー(LTR-553)と、画面の明るさの自動調整
   jprcs.cpp     平面直角座標系(緯度経度 → X, Y)
+  kuon.cpp      補正データの取得先の自動選択(KUON GEO の基準局の一覧)
   sysmon.cpp    本体の状態(CPU 温度、CPU 使用率、メモリ使用率、電圧、SD カードの空き)
   cmd.cpp       コマンドの受付(USB シリアル)と実行
   ble.cpp       BLE での状況・測位データの送信とコマンドの受付

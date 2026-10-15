@@ -678,6 +678,11 @@ static void drawCorrections()
 		tableAdd( "Source", COLOR_TEXT, "%.22s", mBaseSrc.address );
 		tableAdd( "Mount", COLOR_TEXT, "%s", mBaseSrc.mountPoint[0] ? mBaseSrc.mountPoint : "-" );
 	}
+	if ( mRunInfo.baseAuto ){		// 自動（kuon.cpp）
+		if ( mKuonSearching ) tableAdd( "Auto", COLOR_ORANGE, "Searching..." );
+		else if ( mKuonKm >= 0 ) tableAdd( "Auto", COLOR_TEXT, "%.1f km, %d%%", mKuonKm, mKuonRate );
+		else tableAdd( "Auto", COLOR_TEXT, "Waiting" );
+	}
 	if ( mBaseSrc.valid ){
 		bool ready = mBaseRecvReady && ! mBaseReconnecting;
 		tableAdd( "State", ready ? COLOR_GREEN : COLOR_ORANGE, ready ? "Receiving" : "Connecting" );
@@ -867,7 +872,11 @@ static void onSetting( int id )
 	if ( id == HIT_SET_WIFI ) uiChooseWifi();
 	else if ( id == HIT_SET_SOURCE ){
 		struct stBaseSource src;
-		if ( uiChooseBaseSource( &src ) ) appSetBaseSource( &src );
+		bool autoSelect;
+		if ( uiChooseBaseSource( &src, &autoSelect ) ){
+			if ( autoSelect ) appSetBaseAuto();
+			else appSetBaseSource( &src );
+		}
 	}
 	else if ( id == HIT_SET_FORMAT ){
 		static const int formats[3] = { SAVE_NMEA, SAVE_RAW, SAVE_RTCM };

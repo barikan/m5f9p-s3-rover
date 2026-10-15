@@ -32,7 +32,7 @@ M5Stack CoreS3 の液晶(320×240、タッチ)に出る画面と、その移り�
 |---|---|
 | ![Satellites 1/2](images/device/satellites-sky.png) | **Satellites(1/2)** 衛星の配置(スカイプロット)と、衛星系ごとの「使っている数 / 見えている数」。画面をタップすると、信号強度に切り替わります。 |
 | ![Satellites 2/2](images/device/satellites-signal.png) | **Satellites(2/2)** 衛星ごとの信号強度(dBHz)。画面をタップすると、配置に戻ります。 |
-| ![Corrections](images/device/corrections.png) | **Corrections** 補正データの取得先、状態、受信量、RTCM のエラー率、再接続の回数、CLAS の受信量。表示だけです。 |
+| ![Corrections](images/device/corrections.png) | **Corrections** 補正データの取得先、状態、受信量、RTCM のエラー率、再接続の回数、CLAS の受信量。取得先を自動で選んでいるときは、`Auto` の行に選んだ局までの距離と応答率(探している間は `Searching...`)が出ます。表示だけです。 |
 | ![Logging](images/device/logging.png) | **Logging** ログ保存の状態、形式、書き込み回数、SD カードの容量。`Start` / `Stop` で保存を始める・止める、`At boot` で起動時から保存するかどうかを切り替えます。 |
 | ![Rate](images/device/rate.png) | **Rate** 測位レート。1 / 2 / 5 / 10 / 20 Hz から選びます。すぐに反映します。 |
 | ![Device](images/device/device.png) | **Device** 受信機名とバージョン、Wi-Fi、IP アドレス、Bluetooth、MAC アドレス、TCP サーバのポート。異常があるときは、ここに赤い字で警告が出ます。表示だけです。 |
@@ -52,7 +52,7 @@ M5Stack CoreS3 の液晶(320×240、タッチ)に出る画面と、その移り�
 | 画面 | 内容と操作 |
 |---|---|
 | ![Wi-Fi](images/device/setup-wifi.png) | **Wi-Fi** 設定ファイルに登録してある接続先の一覧。行をタップすると、その Wi-Fi につなぎ替えて Setup に戻ります。`Off` は Wi-Fi を使いません。1件も登録していないときは、その旨の案内が出ます。 |
-| ![Corrections](images/device/setup-corrections.png) | **Corrections** 補正データの取得先の一覧。`None`(使わない)、`UART (PH connector)`、設定ファイルに登録した取得先が並びます。Wi-Fi につながっているときは、最後に rtk2go.com のマウントポイントを選ぶ項目が加わります(一覧が1画面に収まらないときは、下の `<` `>` でページを送ります)。 |
+| ![Corrections](images/device/setup-corrections.png) | **Corrections** 補正データの取得先の一覧。`None`(使わない)、`UART (PH connector)`、設定ファイルに登録した取得先が並びます。Wi-Fi につながっているときは、最後に `Auto (KUON GEO)`(近くの無料の局を自動で選ぶ)と、rtk2go.com のマウントポイントを選ぶ項目が加わります(一覧が1画面に収まらないときは、下の `<` `>` でページを送ります)。 |
 | ![Log format](images/device/setup-format.png) | **Log format** ログの保存形式。`NMEA`(設定によっては `CSV`)、`RAW (UBX)`、`RTCM` から選びます。保存中に変えると、新しい形式で保存し直します。 |
 | ![Brightness](images/device/setup-brightness.png) | **Brightness** 画面の明るさ。15 / 25 / 50 / 75 / 100 % から選びます。<br>`Auto` を押すと、前面の照度センサーで測った周囲の明るさに合わせて、自動で変えます(数字のボタンを押すと自動は切れます)。いまの明るさの下に、周囲の明るさ(lx)が出ます。照度センサーが使えないときは `Auto` を出しません。 |
 | ![Bluetooth](images/device/setup-bluetooth.png) | **Bluetooth** 接続している相手の情報(アドレス、ペアリングの状態、接続してからの時間)と、ペアリングを覚えている数。`Disconnect` で相手を切断します(ペアリングは消えないので、相手はあとでつなぎ直せます)。接続していないときは `State` が `Waiting` になり、`Disconnect` は押せません。 |

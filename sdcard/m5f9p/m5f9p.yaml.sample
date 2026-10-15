@@ -41,6 +41,15 @@ sources:
 rtk2go:
   user: ""             # 例: your-mail@example.com
   password: ""         # 例: none
+                       # 両方を書くと、取得先の自動選択で rtk2go.com の局も選ぶようになる
+
+# 補正データの取得先の自動選択（本体の Setup の Corrections、アプリの設定で「自動」を選んだ時）。
+# KUON GEO の基準局の一覧（kuongeo.com）から、近くの無料の局を選ぶ。ログインの要る局は選ばない
+# （rtk2go.com は、上の user と password がある時だけ選ぶ）。
+auto:
+  minRate: 90          # 応答率（直近30日）の下限（%）。これ未満の局は選ばない
+  radiusKm: 40         # 検索半径（km）。これより遠い局は選ばない
+  researchKm: 10       # 前回探した場所からこれだけ動いたら、探し直す（km）
 
 # BLE。スマートフォンやPCから状況の表示と操作を行う。
 ble:

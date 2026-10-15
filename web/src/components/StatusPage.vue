@@ -56,6 +56,13 @@ const sourceName = computed(() => {
   const base = s.value?.base;
   return !base || !base.valid ? 'なし' : base.type === 4 ? 'UART（PHコネクタ）' : `${base.address} / ${base.mount}`;
 });
+// 自動で選んでいる時の、探している状態か、選んだ局の距離と応答率
+const autoInfo = computed(() => {
+  const base = s.value?.base;
+  if (!base?.auto) return '';
+  if (base.searching) return '近くの局を探しています…';
+  return base.km !== undefined ? `${base.km.toFixed(1)} km、応答率 ${base.rate} %` : '測位と Wi-Fi の接続を待っています';
+});
 
 const logsOpen = ref(false);
 
@@ -119,6 +126,7 @@ const gigabytes = (megabytes: number) => (megabytes / 1000).toFixed(1);
         <StateBadge kind="correction" />
       </template>
       <Item label="取得先">{{ sourceName }}</Item>
+      <Item v-if="s.base.auto" label="自動">{{ autoInfo }}</Item>
       <template v-if="s.base.valid">
         <Item label="状態">{{ s.base.ready ? '受信中' : '接続待ち' }}</Item>
         <Item label="受信量">{{ state.baseRate }} バイト/秒</Item>

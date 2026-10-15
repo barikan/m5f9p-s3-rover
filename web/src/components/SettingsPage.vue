@@ -62,6 +62,8 @@ const sourceOptions = computed<Option[]>(() => {
   const c = run.value;
   if (!c) return [];
   const options = [{ value: '', label: 'なし' },
+    // 自動は、対応しているファームウェアの時だけ（sourceAuto が届く）
+    ...(c.sourceAuto !== undefined ? [{ value: 'auto', label: '自動（KUON GEOから取得）' }] : []),
     ...c.sourceList.map(s => ({ value: s, label: s === 'uart' ? 'UART（PHコネクタ）' : s }))];
   // 本体の画面で選んだ rtk2go の局など、一覧に無いものが選ばれている時
   if (c.source && !c.sourceList.includes(c.source)) options.push({ value: c.source, label: c.source });

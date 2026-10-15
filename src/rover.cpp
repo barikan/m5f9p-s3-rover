@@ -373,6 +373,7 @@ static void taskBaseRecv(void* param)
 	int reconnectCount = 0;
 	unsigned long msecGgaLastTime = 0;
 	unsigned long msecWifiBegin = 0;
+	int failures = 0;			// いまの取得先に続けてつながらなかった回数（自動の選択で使う）
 	char buff[ BASE_RECV_BUFF_MAX ];
 	bool isTcp = ( mBaseSrc.valid && mBaseSrc.type == BASE_TYPE_TCP );
 	vTaskDelay(200);
@@ -390,7 +391,23 @@ static void taskBaseRecv(void* param)
 			mBaseRecvReady = ( mBaseSrc.valid && mBaseSrc.type == BASE_TYPE_UART );
 			mBaseReconnecting = isTcp;
 			mBaseRecvLastMillis = millis() - 5000;
+			failures = 0;
 			dbgPrintf( "Base source: %s %s\r\n", ! mBaseSrc.valid ? "(none)" : isTcp ? mBaseSrc.address : "UART", mBaseSrc.mountPoint );
+		}
+
+		// 取得先の自動選択（kuon.cpp）。探して局が変わった時は、その局に切り替える
+		if ( mRunInfo.baseAuto ){
+			struct stBaseSource next;
+			if ( kuonCheck( failures, &next ) ){
+				mBaseRecvReady = false;
+				mBaseRecvClient->stop();
+				memcpy( &mBaseSrc, &next, sizeof( mBaseSrc ) );
+				isTcp = true;
+				mBaseReconnecting = true;
+				mBaseRecvLastMillis = millis() - 5000;
+				failures = 0;
+				dbgPrintf( "Base source (auto): %s %s\r\n", mBaseSrc.address, mBaseSrc.mountPoint );
+			}
 		}
 
 		if (mBaseRecvReady){
@@ -436,10 +453,12 @@ static void taskBaseRecv(void* param)
 				mBaseReconnectCount++;
 				mBaseRecvReady = true;
 				mBaseReconnecting = false;
+				failures = 0;
 			}
 			else {
 				dbgPrintf("reconnect failed : %s (%d)\r\n", mBaseSrc.address, nret );
 				mBaseRecvReady = false;
+				failures++;
 			}
 			mBaseRecvLastMillis = millis();
 		}

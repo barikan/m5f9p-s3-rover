@@ -69,6 +69,16 @@ static int cfgInt( JsonVariantConst v, int def )
 	return v.as<int>();
 }
 
+static double cfgDouble( JsonVariantConst v, double def )
+{
+	if ( v.isNull() ) return def;
+	if ( v.is<const char*>() ) {
+		const char *s = v.as<const char*>();
+		return strlen( s ) ? atof( s ) : def;
+	}
+	return v.as<double>();
+}
+
 static bool cfgBool( JsonVariantConst v, bool def )
 {
 	if ( v.isNull() ) return def;
@@ -203,6 +213,9 @@ void configToJson( JsonDocument &doc, bool secrets )
 	doc["log"]["csv"] = ( mCsvFormat != 0 );
 	doc["log"]["chunkSec"] = (int) mSaveEndSec;
 	doc["geoid"]["enable"] = ( mGeoidEnable != 0 );
+	doc["auto"]["minRate"] = mAutoMinRate;
+	doc["auto"]["radiusKm"] = mAutoRadiusKm;
+	doc["auto"]["researchKm"] = mAutoResearchKm;
 	doc["imu"]["enable"] = ( mImuEnable != 0 );
 	doc["imu"]["log"] = ( mImuLog != 0 );
 	doc["imu"]["dr"]["enable"] = ( mImuDrEnable != 0 );
@@ -361,6 +374,10 @@ void configFromJson( JsonDocument &doc )
 	mSaveEndSec = cfgInt( doc["log"]["chunkSec"], (int) mSaveEndSec );
 
 	mGeoidEnable = cfgBool( doc["geoid"]["enable"], mGeoidEnable != 0 ) ? 1 : 0;
+
+	mAutoMinRate = constrain( cfgInt( doc["auto"]["minRate"], mAutoMinRate ), 0, 100 );
+	mAutoRadiusKm = constrain( cfgInt( doc["auto"]["radiusKm"], mAutoRadiusKm ), 0, 2000 );
+	mAutoResearchKm = (float) constrain( cfgDouble( doc["auto"]["researchKm"], mAutoResearchKm ), 0.0, 1000.0 );
 
 	mImuEnable = cfgBool( doc["imu"]["enable"], mImuEnable != 0 ) ? 1 : 0;
 	mImuLog = cfgBool( doc["imu"]["log"], mImuLog != 0 ) ? 1 : 0;

@@ -204,6 +204,13 @@ SD カードの `/m5f9p/m5f9p.yaml`。読み書きは `config.cpp`、書式の�
 - **国土地理院のジオイドモデル(ISG ファイル、変換した `geoid.bin`)をリポジトリに入れない。** 承認なしに再配布できない。`mise run geoid-make` で利用者が作る。試験用のデータは、スクラッチ用のフォルダに合成して作る。
 - 格子の範囲や間隔をコードに決め打ちしない(`geoid.bin` のヘッダに従う)。ファイルの形を変えたら、`src/geoid.cpp` と `scripts/make_geoid.py` の両方を直す(`--check` は本体と同じ計算をする)。
 
+### 補正データの取得先の自動選択
+
+- 一覧(kuongeo.com)を取りに行き、局を選んで切り替えるのは `taskBaseRecv` の `kuonCheck()`(`src/kuon.cpp`)。保存は loopTask の `kuonPoll()`。ほかのタスクから `mBaseSrc` を書き換えない決まりは同じ。
+- 一覧は HTTP/1.0 で取る(TLS は内蔵 RAM を使いすぎる。HTTP/1.1 は分割転送で行が壊れる)。列は名前で読む。
+- 自動では、有料の局と、ログインの要る局を選ばない。例外は rtk2go.com で、`rtk2go.user` と `rtk2go.password` の両方があるときだけ選ぶ(ユーザーの指示)。
+- 選び方は KUON GEO の `kuon_bases.h`(MIT License。リポジトリには入れていない)を参考にした。
+
 ### 平面直角座標
 
 - 緯度経度から X、Y への換算は本体の `src/jprcs.cpp` だけで行い、状況の `xy` でアプリに渡す。アプリに換算の式を書かない。

@@ -279,8 +279,21 @@ int appSetWifi( const char *ssid )
 void appSetBaseSource( const struct stBaseSource *src )
 {
 	memcpy( &mRunInfo.baseSrc, src, sizeof( mRunInfo.baseSrc ) );
+	mRunInfo.baseAuto = 0;		// 手で選んだら、自動はやめる
 	saveRunInfo( &mRunInfo );
 	baseSrcRequest( src );
+}
+
+// 補正データの取得先を、自動で選ぶようにする（kuon.cpp）
+//
+// ・探して切り替えるのは taskBaseRecv。見つかるまでは、いまの取得先を使い続ける。
+//
+void appSetBaseAuto()
+{
+	kuonReset();
+	if ( mRunInfo.baseAuto ) return;
+	mRunInfo.baseAuto = 1;
+	saveRunInfo( &mRunInfo );
 }
 
 // ログの保存形式を切り替える
@@ -398,6 +411,7 @@ void appBackground()
 	insPoll();
 	satsPoll();
 	geoidPoll();
+	kuonPoll();
 	sysmonPoll();
 	lightPoll();
 	cmdPollUsb();

@@ -37,6 +37,10 @@ export interface Status {
     reconnecting: boolean;
     bytes: number;
     reconnects: number;
+    auto?: boolean;         // 取得先を自動で選んでいる（KUON GEO の一覧から。本体の src/kuon.cpp）
+    searching?: boolean;    // 局を探している間 true
+    km?: number;            // 選んだ局までの距離（探した時点）km
+    rate?: number;          // 選んだ局の応答率（直近30日）%
     rtcmErr: number;        // %
     rtcmAge: number;        // ms
   };
@@ -94,6 +98,7 @@ export interface RunConfig {
   zone?: number;            // 平面直角座標系の系 1〜19。0:選んでいない
   coordXY?: boolean;        // 座標を X, Y で表示する
   elevation?: boolean;      // 標高を表示する。false は楕円体高だけ。古いファームウェアには無い
+  sourceAuto?: boolean;     // 取得先を自動で選んでいる（source は 'auto'）。古いファームウェアには無い
   wifiList: string[];
   sourceList: string[];
 }
@@ -133,7 +138,7 @@ export type ConfigValue = string | number | boolean;
 export interface DeviceConfig {
   wifi?: WifiEntry[];
   sources?: SourceEntry[];
-  // receiver, ble, softap, server, client, log, geoid, imu, jstph, rtk2go
+  // receiver, ble, softap, server, client, log, geoid, imu, jstph, rtk2go, auto
   [group: string]: Record<string, ConfigValue> | WifiEntry[] | SourceEntry[] | undefined;
 }
 

@@ -118,7 +118,7 @@ void netConfigBegin( int *wifiId, int *srcId )
 	if ( mWifiListed ) mWifiBefore = mWifiList[ *wifiId ];
 	mSsid = NULL;		// 一覧の中を指しているので、書き換えている間は taskBaseRecv がつなぎ直さないようにする
 
-	// 本体の画面で選んだ rtk2go.com の局とUARTは、一覧に無いので対象にしない
+	// 本体の画面で選んだ rtk2go.com の局、自動で選んだ局、UARTは、一覧に無いので対象にしない
 	*srcId = -1;
 	mBaseSrcListed = false;
 	if ( mRunInfo.baseSrc.valid && mRunInfo.baseSrc.type == BASE_TYPE_TCP ){
@@ -364,13 +364,15 @@ static int ntripSelect_caster( const char* server, int port, double lat, double 
 //                         基準局
 // ************************************************************
 
-// 本体の画面で選ぶ時の一覧。先頭は「使わない」、次がUART、最後は rtk2go.com（Wifi接続中のみ）
+// 本体の画面で選ぶ時の一覧。先頭は「使わない」、次がUART、設定ファイルの取得先。
+// Wifi接続中は、最後に自動（kuon.cpp）と rtk2go.com
 //
 static void baseSrcLabel( int index, char *buff, int buffSize )
 {
 	if ( index == 0 ) snprintf( buff, buffSize, "None" );
 	else if ( index == 1 ) snprintf( buff, buffSize, "UART (PH connector)" );
 	else if ( index <= mNumBaseSrc ) snprintf( buff, buffSize, "%s %s", mBaseSrcList[ index - 1 ].address, mBaseSrcList[ index - 1 ].mountPoint );
+	else if ( index == mNumBaseSrc + 1 ) snprintf( buff, buffSize, "Auto (KUON GEO)%s", mRunInfo.baseAuto ? "  (now)" : "" );
 	else snprintf( buff, buffSize, "rtk2go.com ..." );
 }
 
@@ -435,19 +437,26 @@ void baseSrcInit()
 
 // 本体の画面で、基準局データ取得先を選ぶ
 //
+// autoSelect: 自動（kuon.cpp）を選んだ時 true（src は使わない）
+//
 // 戻り値＝ true:選んだ（srcに内容。使わない時は valid=false）
 //          false:やめた
 //
-bool uiChooseBaseSource( struct stBaseSource *src )
+bool uiChooseBaseSource( struct stBaseSource *src, bool *autoSelect )
 {
+	*autoSelect = false;
 	int numItems = mNumBaseSrc + 1;		// 先頭に「使わない」
-	if ( WiFi.status() == WL_CONNECTED ) numItems++;	// rtk2go.comのマウントポイントを選択する項目
+	if ( WiFi.status() == WL_CONNECTED ) numItems += 2;	// 自動と、rtk2go.comのマウントポイントを選択する項目
 	int index = uiSelectList( "Corrections", numItems, baseSrcLabel, "Back" );
 	if ( index < 0 ) return false;
 
 	memset( src, 0, sizeof( *src ) );
 	if ( index == 0 ) return true;		// 使わない
-	if ( index - 1 >= mNumBaseSrc ){
+	if ( index == mNumBaseSrc + 1 ){		// 自動
+		*autoSelect = true;
+		return true;
+	}
+	if ( index - 1 > mNumBaseSrc ){
 		double lat = mGpsData.ubxDone ? mGpsData.lat : 100;		// 測位できていない時は距離を出さない
 		double lon = mGpsData.ubxDone ? mGpsData.lon : 400;
 		return ntripSelect_caster( "rtk2go.com", 2101, lat, lon, src ) == 0;
