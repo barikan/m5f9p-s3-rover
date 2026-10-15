@@ -18,7 +18,7 @@ M5Stack CoreS3 の液晶(320×240、タッチ)に出る画面と、その移り�
 
 | | |
 |---|---|
-| ![Status](images/device/status.png) | 1段目は、測位の状態(`Fix` / `Float` / `DGPS` / `Single` / `No fix`)、補正の方法(`NTRIP` / `TCP` / `UART` / `CLAS` / `None`)、衛星数です。BLE の相手が接続している間は Bluetooth のアイコン、ログの保存中は点滅する赤い丸と `REC` が、その間に出ます。<br>続いて、緯度(Lat)、経度(Lon)、高さ(SD カードにジオイドモデルがあるときは標高 `Elev`、ないときと Setup で `Elev: Off` にしたときは楕円体高 `Alt`)、推定精度(Acc。左右の矢印が水平、上下の矢印が垂直)。<br>最下段は本体の状態で、左から CPU 温度、CPU 使用率、メモリ使用率、電圧、SD カードの空きです。 |
+| ![Status](images/device/status.png) | 1段目は、測位の状態(`Fix` / `Float` / `DGPS` / `Single` / `No fix`)、補正の方法(`NTRIP` / `TCP` / `UART` / `CLAS` / `None`)、衛星数です。Wi-Fi に接続している間は Wi-Fi のアイコン、BLE の相手が接続している間は Bluetooth のアイコン、ログの保存中は点滅する赤い丸と `REC` が、その間に左から出ます(幅が足りないときは、`REC` の文字、Wi-Fi のアイコンの順に省きます)。<br>続いて、緯度(Lat)、経度(Lon)、高さ(SD カードにジオイドモデルがあるときは標高 `Elev`、ないときと Setup で `Elev: Off` にしたときは楕円体高 `Alt`)、推定精度(Acc。左右の矢印が水平、上下の矢印が垂直)。<br>最下段は本体の状態で、左から CPU 温度、CPU 使用率、メモリ使用率、電圧、SD カードの空きです。 |
 
 ## Menu
 

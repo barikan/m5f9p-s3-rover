@@ -248,7 +248,7 @@ static int drawBadge( int x, int y, int h, const char *text, int background, int
 
 // Status
 //
-//   1段目  左に測位の状態と補正の方法（バッジ）、右に衛星数。その間に、BLEの接続中のアイコンと、ログの保存中の REC
+//   1段目  左に測位の状態と補正の方法（バッジ）、右に衛星数。その間に、Wi-Fiの接続中、BLEの接続中のアイコンと、ログの保存中の REC
 //   2～4   緯度、経度、高さ。高さは、ジオイドモデル(geoid.cpp)で求めた時は標高(Elev)、
 //          それ以外と、Setup で標高の表示を切った時は楕円体高(Alt)
 //   5      推定精度（矢印のアイコンの後ろに、水平、垂直の順）
@@ -279,25 +279,36 @@ static void drawStatus()
 	int satsLeft = SCREEN_WIDTH - MARGIN - satsWidth - 6 - iconSatSize;
 	screenIcon( satsLeft, ( topHeight - iconSatSize ) / 2 + 2, iconSat, iconSatSize, COLOR_MUTED, COLOR_BG );
 
-	// バッジと衛星数の間に、BLEの相手が接続している間は Bluetooth のアイコンを、ログを
-	// 保存している間は赤い丸（点滅）と REC を、左から並べて出す。
-	// 幅が足りない時（バッジの文字が長い時）は、REC の文字を省いて丸だけにする
+	// バッジと衛星数の間に、左から、Wi-Fiに接続している間は Wi-Fi のアイコン、BLEの相手が
+	// 接続している間は Bluetooth のアイコン、ログを保存している間は赤い丸（点滅）と REC を並べる。
+	// 幅が足りない時（バッジの文字が長い時）は、REC の文字、Wi-Fi のアイコンの順に省く
+	bool wifi = ( WiFi.status() == WL_CONNECTED );
 	bool ble = ( mBleEnable && mBleConnected );
-	if ( mFileSaving || ble ){
+	if ( mFileSaving || ble || wifi ){
 		const int dot = 6;
+		const int between = 3;
 		int left = MARGIN + fixWidth + 6 + correctionWidth;
-		int space = satsLeft - left;
+		int space = satsLeft - left - 2;		// 両側に少しだけ余白を残す
 		int textWidth = screenTextWidth( "REC", FONT_TEXT );
-		int bleWidth = ble ? iconBleSize : 0;
-		int recWidth = mFileSaving ? dot * 2 : 0;
-		int between = ( ble && mFileSaving ) ? 4 : 0;
-		bool withText = ( mFileSaving && space >= bleWidth + between + recWidth + 4 + textWidth + 12 );
-		if ( withText ) recWidth += 4 + textWidth;
-		int x = left + ( space - ( bleWidth + between + recWidth ) ) / 2;
+		auto total = [&]( bool w, bool text ){
+			int n = 0, width = 0;
+			if ( w ){ width += iconWifiSmallSize; n++; }
+			if ( ble ){ width += iconBleSize; n++; }
+			if ( mFileSaving ){ width += dot * 2 + ( text ? 4 + textWidth : 0 ); n++; }
+			return width + ( n > 1 ? ( n - 1 ) * between : 0 );
+		};
+		bool withText = mFileSaving;
+		if ( total( wifi, withText ) > space ) withText = false;
+		if ( total( wifi, withText ) > space ) wifi = false;
+		int x = left + ( satsLeft - left - total( wifi, withText ) ) / 2;
 		int cy = topHeight / 2 + 2;
+		if ( wifi ){
+			screenIcon( x, cy - iconWifiSmallSize / 2, iconWifiSmall, iconWifiSmallSize, COLOR_BLUE, COLOR_BG );
+			x += iconWifiSmallSize + between;
+		}
 		if ( ble ){
 			screenIcon( x, cy - iconBleSize / 2, iconBle, iconBleSize, COLOR_BLUE, COLOR_BG );
-			x += bleWidth + between;
+			x += iconBleSize + between;
 		}
 		if ( mFileSaving ){
 			if ( ( millis() / 500 ) % 2 == 0 ) screenCanvas().fillSmoothCircle( x + dot, cy, dot, (uint16_t) COLOR_RED );
