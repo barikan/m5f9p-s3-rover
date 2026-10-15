@@ -133,7 +133,7 @@ export type ConfigValue = string | number | boolean;
 export interface DeviceConfig {
   wifi?: WifiEntry[];
   sources?: SourceEntry[];
-  // receiver, ble, softap, google, server, client, log, geoid, imu, jstph, rtk2go
+  // receiver, ble, softap, server, client, log, geoid, imu, jstph, rtk2go
   [group: string]: Record<string, ConfigValue> | WifiEntry[] | SourceEntry[] | undefined;
 }
 
@@ -169,7 +169,7 @@ export interface TrackPoint {
 }
 
 /** rover.ts の state のうち、変わったものの名前 */
-export type Change = 'conn' | 'status' | 'runConfig' | 'config' | 'mapsKey' | 'track' | 'sats' | 'message';
+export type Change = 'conn' | 'status' | 'runConfig' | 'config' | 'track' | 'sats' | 'message';
 
 /**
  * BLEのペアリングで、利用者に求める事（Windows）

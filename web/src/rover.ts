@@ -90,7 +90,6 @@ export interface RoverState {
   clasRate: number;
   runConfig: RunConfig | null;      // 接続の設定（run.get）
   config: DeviceConfig | null;      // 本体の設定（config.get）
-  deviceMapsKey: string;            // 本体の設定ファイルにあるGoogle MapsのAPIキー
   trackDay: string;                 // 地図に表示している日（YYYY-MM-DD）
   track: TrackPoint[];              // その日の軌跡
   syncing: boolean;                 // 本体が保持している軌跡を取得している間 true
@@ -108,7 +107,6 @@ export const state: RoverState = {
   clasRate: 0,
   runConfig: null,
   config: null,
-  deviceMapsKey: '',
   trackDay: today(),
   track: [],
   syncing: false,
@@ -203,7 +201,6 @@ export function disconnect() {
 function onConnected() {
   // 位置は状況(1秒毎)から取るので、NMEAは止めて無線の占有を減らす
   send({ cmd: 'nmea', hz: 0 });
-  send({ cmd: 'map.key' });
   startSync();
 }
 
@@ -291,7 +288,6 @@ function onLine(line: string) {
     case 'status': onStatus(m as unknown as Status); break;
     case 'run.get': state.runConfig = m as unknown as RunConfig; notify('runConfig'); break;
     case 'run.set': say('設定を変更しました'); loadRunConfig(); break;      // 本体はすぐに反映する（再起動しない）
-    case 'map.key': state.deviceMapsKey = m.key || ''; notify('mapsKey'); break;
     case 'track.get': onTrackReply(m); break;
     case 'sats.get': onSatsReply(m); break;
   }

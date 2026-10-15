@@ -1,8 +1,8 @@
 // 地図。Google Maps（Maps JavaScript API）に、現在地と選んだ日の軌跡を表示する。
 // 地図の上に重ねる表示とボタンは components/MapPage.vue にある。
 //
-// APIキーは、設定タブで入力したもの（localStorage）を優先し、無ければ本体の設定ファイルの
-// ものを使う。キーが決まった時に、Maps JavaScript API を読み込む。
+// APIキーは、設定タブで入力してこの端末に保存したもの（localStorage）だけを使う（本体には置かない）。
+// キーがある時に、Maps JavaScript API を読み込む。キーを変えた時は、設定タブが画面を読み込み直す。
 
 import { shallowReactive } from 'vue';
 import * as rover from './rover';
@@ -27,7 +27,7 @@ function loadShowTrack() {
 function saveShowTrack(on: boolean) {
   try { localStorage.setItem('showTrack', on ? '1' : '0'); } catch (e) { /* 覚えられない時は、次回は既定（表示） */ }
 }
-export const mapsKey = () => userMapsKey() || state.deviceMapsKey;
+export const mapsKey = userMapsKey;
 
 /**
  * 地図を用意する。mapEl は地図を入れる要素。
@@ -181,11 +181,6 @@ export function createMap(mapEl: HTMLElement) {
     },
     /** rover の状態が変わった時に呼ぶ */
     update(what: Change) {
-      if (what === 'mapsKey') {
-        // 別のキーで読み込み済みの時は、画面を読み込み直さないと切り替えられない
-        if (loadedKey && mapsKey() && loadedKey !== mapsKey()) location.reload();
-        if (visible) load();
-      }
       if (what === 'track') drawTrack();
       if (what === 'status' || what === 'conn') drawCurrent();
     },

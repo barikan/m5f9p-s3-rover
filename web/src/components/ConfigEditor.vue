@@ -157,11 +157,7 @@ const OTHER_GROUPS: { title: string; fields: PathField[] }[] = [
       { path: ['rtk2go', 'password'], label: 'パスワード', type: 'password' },
     ],
   },
-  {
-    title: 'Google Maps', fields: [
-      { path: ['google', 'key'], label: 'API キー', help: 'アプリの設定に入力したキーが無い時に使います' },
-    ],
-  },
+
 ];
 
 // 編集するのはコピー。保存するまで元の設定は変えない

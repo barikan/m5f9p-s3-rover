@@ -39,7 +39,7 @@
 //               補正データの取得先の内容が変わった時は、つなぎ直す。
 //               再起動が要る項目（config.cpp の configNeedsRestart）が変わった時は、
 //               ファイルを書くだけで、応答に "restart":true が入る（再起動後に有効）
-//               パスワードとAPIキーは暗号化して書く（secret.cpp）
+//               パスワードは暗号化して書く（secret.cpp）
 //               一覧の項目で password を書かなければ、id の番号のパスワードを保つ
 //               （詳しくは config.cpp の configRestoreSecrets）
 //   file.get    設定ファイル(YAML)のテキストをそのまま返す。パスワードを含むので、USBのみ
@@ -77,7 +77,6 @@
 //                                表示（本体の画面、アプリ）だけで、NMEAは変わらない
 //               {"zone":n}       平面直角座標系の系（1～19）
 //               {"coordXY":b}    座標を平面直角座標の X, Y で表示する（本体の画面、アプリの測位タブ）
-//   map.key   設定ファイルの google.key を返す（地図の表示用）
 //   sats.get  衛星の配置と信号強度を返す（詳しくは sats.cpp）。問い合わせている間だけ、
 //             F9Pに衛星のメッセージを出力させる
 //               "sats":[[gnssId,svId,仰角,方位角,使用,[[sigId,強度,使用],...]],...]
@@ -578,10 +577,6 @@ void cmdExecute( char *line, String &reply, int channel )
 	}
 	else if ( strcmp( name, "run.get" ) == 0 ) cmdRunGet( re );
 	else if ( strcmp( name, "run.set" ) == 0 ) cmdRunSet( cmd, re );
-	else if ( strcmp( name, "map.key" ) == 0 ){
-		re["key"] = mGoogleKey;
-		re["ok"] = true;
-	}
 	else if ( strcmp( name, "sats.get" ) == 0 ){
 		satsToJson( re );
 		re["ok"] = true;

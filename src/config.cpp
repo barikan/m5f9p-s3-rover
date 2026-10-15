@@ -18,7 +18,10 @@
 //   ・config.put で password が書かれていない項目は、id の番号のパスワードを保つ
 //     （configRestoreSecrets）。
 //
-// 設定ファイルには、パスワードとAPIキーを暗号化して書く（secret.cpp）。
+// Google Maps の API キーは本体では持たない（アプリが端末に保存する）。設定ファイルに google が
+// 残っていたら、読み込んだ時に取り除いて書き直す。書き出す時（configSave）も必ず取り除く。
+//
+// 設定ファイルには、パスワードを暗号化して書く（secret.cpp）。
 //   ・書き出す時は、configSave が暗号化する。
 //   ・読み込む時は、暗号化されていれば復号し、平文ならそのまま使う。平文があった
 //     時は、読み込みの後で暗号化して書き直す（SDカードをPCで編集して、平文で
@@ -130,7 +133,7 @@ static void encryptValue( JsonVariant v )
 	}
 }
 
-// 設定(JSON)の中の、パスワードとAPIキーを暗号化する
+// 設定(JSON)の中の、パスワードを暗号化する
 //
 static void encryptSecrets( JsonDocument &config )
 {
@@ -142,7 +145,6 @@ static void encryptSecrets( JsonDocument &config )
 		if ( ! s["password"].isNull() ) encryptValue( s["password"] );
 	}
 	if ( ! config["rtk2go"]["password"].isNull() ) encryptValue( config["rtk2go"]["password"] );
-	if ( ! config["google"]["key"].isNull() ) encryptValue( config["google"]["key"] );
 }
 
 // ---------------------------------------------------------------- JSONとの変換
@@ -195,7 +197,6 @@ void configToJson( JsonDocument &doc, bool secrets )
 	doc["ble"]["pairing"] = ( mBlePairing != 0 );
 	doc["softap"]["enable"] = ( mSoftApEnable != 0 );
 	doc["softap"]["ip"] = mSoftApIp.toString();
-	doc["google"]["key"] = mGoogleKey;
 	doc["server"]["port"] = mServerPort;
 	doc["client"]["ip"] = mAgribusIp;
 	doc["client"]["port"] = mAgribusPort;
@@ -351,7 +352,6 @@ void configFromJson( JsonDocument &doc )
 	parseIp( cfgStr( doc["softap"]["ip"] ), ip );
 	if ( ip[0] ) mSoftApIp = IPAddress( ip[0], ip[1], ip[2], ip[3] );
 
-	copyStr( mGoogleKey, sizeof(mGoogleKey), cfgSecret( doc["google"]["key"], mGoogleKey ) );
 	mServerPort = cfgInt( doc["server"]["port"], mServerPort );
 	copyStr( mAgribusIp, sizeof(mAgribusIp), cfgStr( doc["client"]["ip"], mAgribusIp ) );
 	mAgribusPort = cfgInt( doc["client"]["port"], mAgribusPort );
@@ -544,13 +544,14 @@ int configSave( JsonVariantConst config )
 {
 	if ( ! config.is<JsonObjectConst>() ) return -1;
 
-	// パスワードとAPIキーは暗号化して書く
+	// パスワードは暗号化して書く。Google Maps の API キーは本体では持たないので書かない
 	JsonDocument doc;
 	doc.set( config );
+	doc.remove( "google" );
 	encryptSecrets( doc );
 
 	String text = "# M5F9P Rover の設定。アプリまたはコマンドから保存された。\n"
-				  "# パスワードとAPIキーは暗号化されている。書き換える時は平文で書けばよい（次の起動時に暗号化される）。\n";
+				  "# パスワードは暗号化されている。書き換える時は平文で書けばよい（次の起動時に暗号化される）。\n";
 	yamlEmit( text, doc.as<JsonVariantConst>(), 0 );
 	if ( text.length() > CONFIG_SIZE_MAX ) return -2;
 	if ( sdSave( mConfigPath, (char*) text.c_str(), text.length(), FILE_WRITE ) != (int) text.length() ) return -3;
@@ -604,11 +605,13 @@ int readConfig()
 	configFromJson( doc );
 
 	if ( mSecretError ) dbgPrintf( "!! %s: some passwords can't be decrypted. Enter them again.\r\n", mConfigPath );
-	if ( mSecretPlain ){
+	// 以前の版が書いた Google Maps の API キー（google.key）は、本体では持たないので取り除く
+	bool hasGoogle = ! doc["google"].isNull();
+	if ( mSecretPlain || hasGoogle ){
 		// 平文のパスワードを暗号化して書き直す。読み込んだ内容(doc)を元にするので、
-		// 復号できなかった値もそのまま残る
+		// 復号できなかった値もそのまま残る（google は configSave が取り除く）
 		int nret = configSave( doc.as<JsonVariantConst>() );
-		dbgPrintf( "Passwords in %s encrypted (%d)\r\n", mConfigPath, nret );
+		dbgPrintf( "%s rewritten (%s%s) (%d)\r\n", mConfigPath, mSecretPlain ? "passwords encrypted " : "", hasGoogle ? "google.key removed" : "", nret );
 	}
 	if ( SD.exists( mIniPath ) ){
 		mIniRemains = true;

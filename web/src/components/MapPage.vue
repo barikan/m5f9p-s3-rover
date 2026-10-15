@@ -27,8 +27,7 @@ watch(() => props.visible, on => map?.setVisible(!!on));
 
 const s = computed(() => state.status);
 const isToday = computed(() => state.trackDay === rover.today());
-// state.deviceMapsKey が変わった時に評価し直す
-const hasKey = computed(() => (state.deviceMapsKey, !!mapsKey()));
+const hasKey = !!mapsKey();     // キーを変えると、設定タブが画面を読み込み直す
 const canFollow = computed(() => !!view.value && !view.value.follow && !!s.value?.pos.valid && isToday.value);
 
 // 左上の表示（座標、軌跡の点数、凡例）。タップで閉じ、左上のボタンで開き直す。端末ごとに覚える。
@@ -37,7 +36,7 @@ function loadInfoOpen() {
   try { return localStorage.getItem('mapInfo') !== '0'; } catch (e) { return true; }
 }
 const infoOpen = ref(loadInfoOpen());
-const keyProblem = computed(() => !hasKey.value || !!view.value?.authFailed);
+const keyProblem = computed(() => !hasKey || !!view.value?.authFailed);
 function setInfoOpen(on: boolean) {
   infoOpen.value = on;
   try { localStorage.setItem('mapInfo', on ? '1' : '0'); } catch (e) { /* 覚えられない時は、次回は既定（開く） */ }
@@ -75,7 +74,7 @@ async function deleteDay(day: string) {
     role="button" aria-label="表示を閉じる" @click="setInfoOpen(false)">
     <template v-if="!hasKey">
       <div>Google Maps の API キーが設定されていません。</div>
-      <div class="text-sm text-white/70">「設定」タブでキーを入力するか、本体の設定の Google Maps のキーに書いてください。</div>
+      <div class="text-sm text-white/70">「設定」タブでキーを入力してください。</div>
     </template>
     <template v-else-if="view && view.authFailed">
       <div class="text-red-300">API キーが使えません</div>

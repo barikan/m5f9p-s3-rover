@@ -68,7 +68,7 @@ mise run android-screenshot          # 端末の画面を screenshot.png に保�
 - 本体との通信仕様は `src/cmd.cpp` と `src/ble.cpp` の先頭にある。状況やコマンドの項目を増減したら `web/src/rover.ts` と画面を合わせる。
 - 衛星の配置と信号強度(`src/sats.cpp`、`web/src/satellites.ts`、`SatellitesPage.vue`、本体の画面は `pages.cpp` の `drawSatellites`)は、アプリが問い合わせている間と、本体の Satellites ページを開いている間だけ F9P に出力させる。常に出力させる作りにしない(F9P の UART と BLE の負荷が増え、RAW 形式のログにも入る)。
 - 状況は BLE では本体が1秒ごとに送り、USB では送らない。`rover.ts` は届いていないときだけ `status` を問い合わせる。
-- Google Maps の API キーは、利用者がアプリの設定タブか本体の設定ファイル(`google.key`)に置く。リポジトリやビルド設定に入れない。地図は Maps JavaScript API で、Maps SDK for Android には戻さない(キーを実行時に渡せないため)。
+- Google Maps の API キーは、利用者がアプリの設定タブで入力し、端末にだけ保存する。本体(設定ファイル、コマンド)では持たない(以前の `google.key` と `map.key` は廃止。設定ファイルに残っていれば本体が取り除く)。リポジトリやビルド設定に入れない。地図は Maps JavaScript API で、Maps SDK for Android には戻さない(キーを実行時に渡せないため)。
 
 ### Windows アプリで気をつけること
 
@@ -192,7 +192,7 @@ SD カードの `/m5f9p/m5f9p.yaml`。読み書きは `config.cpp`、書式の�
 - 設定の一覧(`mWifiList`、`mBaseSrcList`)を読むのは loopTask だけにする。`taskBaseRecv` は Wi-Fi のつなぎ直しに `mSsid` / `mPassword`(一覧の中を指す)を使うので、一覧を書き換える間は `mSsid` を NULL にしている。
 - **パスワードは本体の外に返さない。** `config.get` は `password` の代わりに、一覧の中の番号 `id` と `hasPassword` を返す。`config.put` で `password` が書かれていない項目は、本体が `id` の番号のパスワードを保つ(`config.cpp` の `configRestoreSecrets`)。パスワードの項目を増やすときは、`configToJson`、`configRestoreSecrets`、画面の `ConfigEditor.vue` を揃える。
 - `file.get`(YAML をそのまま返す)はパスワードを含むので、USB からだけ受け付ける(`cmdExecute` の `channel`)。`mise run config-get` はこれを使う。
-- **設定ファイルのパスワードと API キーは暗号化して書く**(`src/secret.cpp`。AES-256-GCM、鍵は NVS)。書き出しは `configSave` が暗号化し、読み込みは `cfgSecret` が復号する。平文も読め、起動時に暗号化して書き直す。暗号化する項目を増やすときは、`config.cpp` の `encryptSecrets` と `configFromJson` の両方に足す。`m5f9p.run.json` の取得先のパスワードも同じ(`storage.cpp`)。
+- **設定ファイルのパスワードは暗号化して書く**(`src/secret.cpp`。AES-256-GCM、鍵は NVS)。書き出しは `configSave` が暗号化し、読み込みは `cfgSecret` が復号する。平文も読め、起動時に暗号化して書き直す。暗号化する項目を増やすときは、`config.cpp` の `encryptSecrets` と `configFromJson` の両方に足す。`m5f9p.run.json` の取得先のパスワードも同じ(`storage.cpp`)。
 - `secretInit()` は無線を始める前に呼ぶ(鍵を作るときの乱数源が、無線と同時に使えない)。内蔵フラッシュを全部消す操作(`pio run -t erase`)は鍵を消し、SD カードのパスワードが読めなくなる。ユーザーに断らずに行わない。
 - 再起動が要る書き換え(`restart: true` の `config.put`、`file.put`)のあとは、再起動するまで `config.get` / `config.put` はエラーになる(本体が持っている一覧と `id` がずれるため)。
 - BLE はペアリングが必要(`ble.pairing`、既定は `true`)。仕組みと、確かめた挙動は `DEVELOPE.md` の「BLE のペアリング」にある。

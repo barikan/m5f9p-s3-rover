@@ -34,7 +34,6 @@ watch(connected, on => {
 
 const savedKey = userMapsKey();
 const keyInput = ref(savedKey);
-const origin = location.origin;
 
 function saveKey() {
   const key = keyInput.value.trim();
@@ -117,12 +116,7 @@ async function restart() {
       <Input v-model="keyInput" type="text" placeholder="API キー" aria-label="API キー" autocomplete="off" spellcheck="false" />
       <Button size="sm" class="mt-3" @click="saveKey">保存</Button>
       <p class="text-muted-foreground mt-3 text-xs">
-        {{ savedKey ? 'ここに保存したキーを使います。'
-          : state.deviceMapsKey ? '未入力のため、本体の設定にあるキーを使います。'
-            : '未入力です。本体の設定にもキーがありません。地図は表示されません。' }}
-      </p>
-      <p class="text-muted-foreground mt-2 text-xs">
-        Maps JavaScript API を有効にしたキーが必要です。キーに「ウェブサイトの制限」をかける場合は {{ origin }}/* を登録してください。
+        {{ savedKey ? 'この端末に保存したキーを使います（本体には保存しません）。' : '未入力です。地図は表示されません。' }}
       </p>
     </Section>
 

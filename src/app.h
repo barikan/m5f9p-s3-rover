@@ -114,7 +114,6 @@ extern int mSoftApEnable;
 extern int mBleEnable;
 extern int mBleNmeaRate;
 extern int mBlePairing;
-extern char mGoogleKey[64];
 extern char mRtk2goUser[32];
 extern char mRtk2goPassword[32];
 extern int mGeoidEnable;
