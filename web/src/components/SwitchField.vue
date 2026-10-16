@@ -4,7 +4,7 @@ import { useId } from 'vue';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 
-defineProps<{ modelValue?: boolean; label: string; help?: string }>();
+defineProps<{ modelValue?: boolean; label: string; help?: string; disabled?: boolean }>();
 defineEmits<{ 'update:modelValue': [value: boolean] }>();
 const id = useId();
 </script>
@@ -13,7 +13,7 @@ const id = useId();
   <div class="mt-4">
     <div class="flex items-center gap-3">
       <Label class="flex-1 leading-normal font-normal" :for="id">{{ label }}</Label>
-      <Switch :id="id" :model-value="modelValue" @update:model-value="$emit('update:modelValue', $event)" />
+      <Switch :id="id" :model-value="modelValue" :disabled="disabled" @update:model-value="$emit('update:modelValue', $event)" />
     </div>
     <p v-if="help" class="text-muted-foreground mt-1 text-xs">{{ help }}</p>
   </div>

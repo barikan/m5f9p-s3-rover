@@ -1,10 +1,11 @@
 <script setup lang="ts">
-// 設定の1項目の入力欄。項目の種類（文字、パスワード、数値、入・切、選択）で部品を切り替える。
+// 設定の1項目の入力欄。項目の種類（文字、パスワード、数値、入・切、選択、複数行）で部品を切り替える。
 import { ref, useId } from 'vue';
 import { Eye, EyeOff } from 'lucide-vue-next';
 import { Button } from '@/components/ui/button';
 import type { ConfigValue, Field } from '../types';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import SelectField from './SelectField.vue';
 import SwitchField from './SwitchField.vue';
@@ -39,6 +40,9 @@ function onInput(value: string | number) {
         <EyeOff v-if="shown" /><Eye v-else />
       </Button>
     </div>
+    <Textarea
+      v-else-if="field.type === 'textarea'" :id="id" :model-value="typeof modelValue === 'string' ? modelValue : ''"
+      class="font-mono text-xs" rows="4" autocomplete="off" autocapitalize="off" spellcheck="false" @update:model-value="onInput" />
     <Input
       v-else :id="id" :type="field.type === 'number' ? 'number' : 'text'" :model-value="typeof modelValue === 'boolean' ? '' : (modelValue ?? '')"
       :required="field.required" autocomplete="off" autocapitalize="off" spellcheck="false" @update:model-value="onInput" />

@@ -47,6 +47,16 @@ export interface Status {
   clas: number;             // CLASの受信バイト数。NEO-D9Cが無い時は -1
   save: { ready: boolean; on: boolean; count: number; format: number; qerr: number };
   wifi: { connected: boolean; ssid: string; ip: string; rssi: number };
+  /** MQTT 配信（本体側は src/mqtt.cpp）。設定で有効な時だけ */
+  mqtt?: {
+    on: boolean;
+    connected: boolean;
+    state: number;          // 0:使わない 1:Wi-Fi待ち 2:時計待ち 3:再試行待ち 4:接続中 5:接続済み
+    published: number;      // 送った数
+    errors: number;         // 接続と送信の失敗の数
+    lastError: number;      // PubSubClient の state()。-4:タイムアウト -2:接続できない 4:認証エラー 5:許可されない
+    lastSec?: number;       // 最後に送った測位の時刻（Unix 秒）
+  };
   sdMB: number;
   /** 本体の状態（本体側は src/sysmon.cpp）。古いファームウェアには無い */
   sys?: {
@@ -99,12 +109,14 @@ export interface RunConfig {
   coordXY?: boolean;        // 座標を X, Y で表示する
   elevation?: boolean;      // 標高を表示する。false は楕円体高だけ。古いファームウェアには無い
   sourceAuto?: boolean;     // 取得先を自動で選んでいる（source は 'auto'）。古いファームウェアには無い
+  mqtt?: boolean;           // MQTT 配信の入・切（設定ファイルの mqtt.enable）。古いファームウェアには無い
+  mqttReady?: boolean;      // ブローカーが設定ファイルにある（入・切を切り替えられる）
   wifiList: string[];
   sourceList: string[];
 }
 
 /** 接続の設定のうち、画面から変えるもの（run.set）。本体はすぐに反映する（再起動しない） */
-export type RunValues = Pick<RunConfig, 'wifi' | 'source' | 'format' | 'saveAtBoot' | 'elevation' | 'zone' | 'coordXY'>;
+export type RunValues = Pick<RunConfig, 'wifi' | 'source' | 'format' | 'saveAtBoot' | 'elevation' | 'zone' | 'coordXY' | 'mqtt'>;
 
 /**
  * 一覧の項目に付く、パスワードの扱い。本体はパスワードを返さない。
@@ -138,7 +150,7 @@ export type ConfigValue = string | number | boolean;
 export interface DeviceConfig {
   wifi?: WifiEntry[];
   sources?: SourceEntry[];
-  // receiver, ble, softap, server, client, log, geoid, imu, jstph, rtk2go, auto
+  // receiver, ble, softap, server, client, mqtt, log, geoid, imu, jstph, rtk2go, auto
   [group: string]: Record<string, ConfigValue> | WifiEntry[] | SourceEntry[] | undefined;
 }
 
@@ -229,7 +241,7 @@ export interface Option {
 /** 設定の1項目の入力欄 */
 export interface Field {
   label: string;
-  type?: 'text' | 'password' | 'number' | 'bool' | 'select';
+  type?: 'text' | 'password' | 'number' | 'bool' | 'select' | 'textarea';
   options?: Option[];
   help?: string;
   required?: boolean;

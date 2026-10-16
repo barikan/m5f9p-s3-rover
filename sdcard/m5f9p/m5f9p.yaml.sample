@@ -73,6 +73,23 @@ client:
   ip: ""
   port: 51020
 
+# MQTT で測位結果を自分のブローカー（Mosquitto 等）へ送る。interval 秒ごとに1回、SenML（JSON）で publish する。
+# TLS は内蔵 RAM を約 40KB 使う。足りない時（接続できない、再起動する）は tls: false にして LAN や VPN の中だけで
+# 使うか、IMU（imu.enable）を切る。
+mqtt:
+  enable: false
+  host: ""                      # ブローカーのホスト名か IP アドレス
+  port: 8883                    # TLS なら 8883、平文なら 1883 が一般的
+  tls: true
+  ca: "/m5f9p/mqtt_ca.pem"      # サーバ証明書を検証する CA（PEM）。SD カードのパスか、PEM そのもの（アプリの設定で貼り付ける）。
+                                # 空なら本体に内蔵の公開 CA の一覧で検証する（Let's Encrypt 等）
+  user: ""
+  password: ""                  # 暗号化して書かれる
+  clientId: ""                  # 空なら受信機名
+  topic: ""                     # 空なら m5f9p/<受信機名>/fix
+  interval: 10                  # 送る間隔（秒）
+  retain: false                 # true にすると、最後の位置をブローカーが保持する
+
 log:
   csv: false           # true にすると、NMEAの代わりにCSV（日付,時刻,緯度,経度,楕円体高,Fix）で保存する
   chunkSec: 0          # ファイルを分割して保存する場合の、1ファイルの秒数。0:分割しない

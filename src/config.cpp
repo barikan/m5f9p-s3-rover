@@ -155,6 +155,7 @@ static void encryptSecrets( JsonDocument &config )
 		if ( ! s["password"].isNull() ) encryptValue( s["password"] );
 	}
 	if ( ! config["rtk2go"]["password"].isNull() ) encryptValue( config["rtk2go"]["password"] );
+	if ( ! config["mqtt"]["password"].isNull() ) encryptValue( config["mqtt"]["password"] );
 }
 
 // ---------------------------------------------------------------- JSONとの変換
@@ -210,6 +211,18 @@ void configToJson( JsonDocument &doc, bool secrets )
 	doc["server"]["port"] = mServerPort;
 	doc["client"]["ip"] = mAgribusIp;
 	doc["client"]["port"] = mAgribusPort;
+	doc["mqtt"]["enable"] = ( mMqttCfg.enable != 0 );
+	doc["mqtt"]["host"] = mMqttCfg.host;
+	doc["mqtt"]["port"] = mMqttCfg.port;
+	doc["mqtt"]["tls"] = ( mMqttCfg.tls != 0 );
+	doc["mqtt"]["ca"] = mMqttCfg.ca;
+	doc["mqtt"]["user"] = mMqttCfg.user;
+	if ( secrets ) doc["mqtt"]["password"] = mMqttCfg.password;
+	else doc["mqtt"]["hasPassword"] = ( mMqttCfg.password[0] != '\0' );
+	doc["mqtt"]["clientId"] = mMqttCfg.clientId;
+	doc["mqtt"]["topic"] = mMqttCfg.topic;
+	doc["mqtt"]["interval"] = mMqttCfg.interval;
+	doc["mqtt"]["retain"] = ( mMqttCfg.retain != 0 );
 	doc["log"]["csv"] = ( mCsvFormat != 0 );
 	doc["log"]["chunkSec"] = (int) mSaveEndSec;
 	doc["geoid"]["enable"] = ( mGeoidEnable != 0 );
@@ -232,7 +245,7 @@ void configToJson( JsonDocument &doc, bool secrets )
 //     password がある            その値にする（空文字なら、パスワードなし）
 //     password が無く id がある  本体が持っている id 番目のパスワードを保つ
 //     どちらも無い               パスワードなし
-// ・rtk2go.password が無い時は、現在の値を保つ
+// ・rtk2go.password、mqtt.password が無い時は、現在の値を保つ
 // ・id と hasPassword は取り除く（設定ファイルには書かない）
 //
 // 戻り値＝ 0:正常終了
@@ -282,6 +295,11 @@ int configRestoreSecrets( JsonDocument &config )
 		JsonObject r = config["rtk2go"];
 		if ( ! r["password"].is<const char*>() ) r["password"] = mRtk2goPassword;
 		r.remove( "hasPassword" );
+	}
+	if ( config["mqtt"].is<JsonObject>() ){
+		JsonObject m = config["mqtt"];
+		if ( ! m["password"].is<const char*>() ) m["password"] = mMqttCfg.password;
+		m.remove( "hasPassword" );
 	}
 	return 0;
 }
@@ -370,6 +388,19 @@ void configFromJson( JsonDocument &doc )
 	mAgribusPort = cfgInt( doc["client"]["port"], mAgribusPort );
 	if ( mAgribusPort <= 0 ) mAgribusPort = 51020;
 
+	JsonVariantConst mq = doc["mqtt"];
+	mMqttCfg.enable = cfgBool( mq["enable"], mMqttCfg.enable != 0 ) ? 1 : 0;
+	copyStr( mMqttCfg.host, sizeof(mMqttCfg.host), cfgStr( mq["host"], mMqttCfg.host ) );
+	mMqttCfg.port = constrain( cfgInt( mq["port"], mMqttCfg.port ), 1, 65535 );
+	mMqttCfg.tls = cfgBool( mq["tls"], mMqttCfg.tls != 0 ) ? 1 : 0;
+	copyStr( mMqttCfg.ca, sizeof(mMqttCfg.ca), cfgStr( mq["ca"], mMqttCfg.ca ) );
+	copyStr( mMqttCfg.user, sizeof(mMqttCfg.user), cfgStr( mq["user"], mMqttCfg.user ) );
+	copyStr( mMqttCfg.password, sizeof(mMqttCfg.password), cfgSecret( mq["password"], mMqttCfg.password ) );
+	copyStr( mMqttCfg.clientId, sizeof(mMqttCfg.clientId), cfgStr( mq["clientId"], mMqttCfg.clientId ) );
+	copyStr( mMqttCfg.topic, sizeof(mMqttCfg.topic), cfgStr( mq["topic"], mMqttCfg.topic ) );
+	mMqttCfg.interval = constrain( cfgInt( mq["interval"], mMqttCfg.interval ), 1, 3600 );
+	mMqttCfg.retain = cfgBool( mq["retain"], mMqttCfg.retain != 0 ) ? 1 : 0;
+
 	mCsvFormat = cfgBool( doc["log"]["csv"], mCsvFormat != 0 ) ? 1 : 0;
 	mSaveEndSec = cfgInt( doc["log"]["chunkSec"], (int) mSaveEndSec );
 
@@ -438,10 +469,13 @@ void configApply( JsonDocument &config )
 	bool clientChanged = ( ip != mAgribusIp || port != mAgribusPort );
 	if ( clientChanged ) tcpClientSet( false );
 
+	struct stMqttConfig mqttBefore = mMqttCfg;
+
 	mSecretError = false;		// 書き換えた後のファイルに、復号できない値は残らない
 	configFromJson( config );
 
 	if ( clientChanged ) tcpClientSet( mRunInfo.agribusConnect != 0 );
+	if ( memcmp( &mqttBefore, &mMqttCfg, sizeof( mMqttCfg ) ) != 0 ) mqttApply();	// MQTT はつなぎ直す（taskMqtt が行う）
 }
 
 // ---------------------------------------------------------------- YAMLの書き出し
@@ -453,6 +487,8 @@ static void yamlScalar( String &out, JsonVariantConst v )
 		// 文字列は必ず引用符で囲む
 		out += '"';
 		for( const char *p = v.as<const char*>(); *p; p++ ){
+			if ( *p == '\n' ){ out += "\\n"; continue; }		// 改行は \n（CA 証明書の PEM 等）
+			if ( *p == '\r' ) continue;
 			if ( *p == '"' || *p == '\\' ) out += '\\';
 			out += *p;
 		}
@@ -557,6 +593,19 @@ bool configCheckYaml( const char *text, String &error )
 // 戻り値＝ 0:正常終了
 //         負数:エラー
 //
+int configSave( JsonVariantConst config );
+
+// 現在の設定を設定ファイルに書く（本体の画面やコマンドで、設定ファイルの項目を変えた時）
+//
+// 戻り値＝ configSave() と同じ
+//
+int configSaveCurrent()
+{
+	JsonDocument doc;
+	configToJson( doc, true );
+	return configSave( doc.as<JsonVariantConst>() );
+}
+
 int configSave( JsonVariantConst config )
 {
 	if ( ! config.is<JsonObjectConst>() ) return -1;

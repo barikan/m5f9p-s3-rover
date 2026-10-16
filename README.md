@@ -23,6 +23,7 @@ u-blox ZED-F9P を載せた M5F9P モジュールを M5Stack CoreS3 に重ねて
   - SD カードへのログ保存(NMEA / CSV / RAW / RTCM)
   - TCP サーバ、TCP クライアント、JST-PH コネクタの UART、USB シリアル
   - BLE(状況と NMEA)
+  - MQTT(SenML/JSON。TLS に対応。下の「MQTT」を参照)
 - 標高の計算。国土地理院のジオイドモデルを SD カードに置くと、楕円体高から標高を求めます(下の「標高」を参照)。
 - 内蔵 IMU による補間となめらか化(実験的)。車体に固定して使うと、測位が途切れた間を推測航法で補間し、Fix 以外の座標のばらつきを抑えます(下の「IMU」を参照)。
 - 電源を入れると、前回の設定で約3秒後に測位を始めます。
@@ -250,6 +251,12 @@ mise run cmd '{"cmd":"run.set","wifi":"home","source":"ntrip.example.com/MOUNTPO
 ```
 
 コマンドの一覧は [`src/cmd.cpp`](src/cmd.cpp) の先頭にあります。BLE は Nordic UART Service と同じ形なので、nRF Connect などの汎用アプリからも確認できます。
+
+## MQTT
+
+自分の MQTT ブローカー(Mosquitto など)へ、設定の間隔ごとに1回、最新の測位結果を SenML(JSON)で送れます。設定ファイルの `mqtt` の節(またはアプリの「本体の設定を編集」→「MQTT 配信」)で、ブローカーのアドレス、ユーザー名とパスワード、TLS の有無、CA 証明書、間隔を書きます。再起動は要りません。送る内容と確かめ方は [DEVELOPE.md](DEVELOPE.md) の「MQTT で測位結果を送る」にあります。
+
+TLS は本体の内蔵 RAM を接続中に約 48KB 使います。BLE を使っていると空きが約 65KB しかないので、**TLS を使うときは BLE を切る(`ble.enable: false`)か、TLS なし(`tls: false`)で LAN や VPN の中だけで使ってください。**
 
 ## Wi-Fi と BLE の同時利用
 

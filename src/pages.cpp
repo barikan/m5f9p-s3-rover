@@ -54,6 +54,7 @@ enum {
 	HIT_SET_ELEVATION,
 	HIT_SET_COORD,			// 座標の表示（緯度経度 / X,Y）と平面直角座標系の系
 	HIT_SET_TCP,
+	HIT_SET_MQTT,			// MQTT 配信の入・切
 	HIT_SET_BLE,			// Bluetooth のページを開く
 	HIT_SET_BRIGHTNESS,		// 明るさのページを開く
 	HIT_SAT_VIEW,			// Satellites の表示の切り替え
@@ -736,7 +737,7 @@ static void drawSetup()
 {
 	bool tcp = ( strlen( mAgribusIp ) > 0 );		// 送信先が設定ファイルにある時だけ出す
 	bool geoid = ( geoidName()[0] != '\0' );		// ジオイドモデルがある時だけ出す
-	struct { const uint8_t *icon; const char *label; int id; } items[9];
+	struct { const uint8_t *icon; const char *label; int id; } items[10];
 	char coordLabel[16];
 	int count = 0;
 	items[ count++ ] = { iconWifi, "Wi-Fi", HIT_SET_WIFI };
@@ -749,6 +750,7 @@ static void drawSetup()
 	else strlcpy( coordLabel, "Lat/Lon", sizeof(coordLabel) );
 	items[ count++ ] = { iconStatus, coordLabel, HIT_SET_COORD };
 	if ( tcp ) items[ count++ ] = { iconSend, mAgribusReady ? "TCP: On" : "TCP: Off", HIT_SET_TCP };
+	if ( mMqttCfg.host[0] ) items[ count++ ] = { iconSend, mMqttCfg.enable ? "MQTT: On" : "MQTT: Off", HIT_SET_MQTT };	// ブローカーが設定ファイルにある時だけ出す
 	items[ count++ ] = { iconBluetooth, "Bluetooth", HIT_SET_BLE };
 
 	const int gap = 8;
@@ -897,6 +899,7 @@ static void onSetting( int id )
 		if ( zone >= 0 ) appSetZone( zone + 1 );
 	}
 	else if ( id == HIT_SET_TCP ) appSetTcpClient( ! mAgribusReady );
+	else if ( id == HIT_SET_MQTT ) appSetMqtt( ! mMqttCfg.enable );
 }
 
 // BLEのペアリング中。相手に入力してもらう番号を表示する
@@ -924,7 +927,7 @@ static void onTap( int id )
 	else if ( id >= HIT_RATE && id < HIT_SET_WIFI ) appSetSolutionRate( mRates[ id - HIT_RATE ] );
 	else if ( id == HIT_SET_BLE ) mPage = PAGE_BLUETOOTH;
 	else if ( id == HIT_BLE_DISCONNECT ) bleDisconnect();
-	else if ( id >= HIT_SET_WIFI && id <= HIT_SET_TCP ) onSetting( id );
+	else if ( id >= HIT_SET_WIFI && id <= HIT_SET_MQTT ) onSetting( id );
 	else if ( id == HIT_SET_BRIGHTNESS ) mPage = PAGE_BRIGHTNESS;
 	else if ( id == HIT_SAT_VIEW ) mSatView = ! mSatView;
 	else if ( id == HIT_BRIGHTNESS_AUTO ) appSetBrightnessAuto( ! mRunInfo.brightnessAuto );

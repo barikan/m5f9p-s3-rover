@@ -117,6 +117,7 @@ mise run android-screenshot          # 端末の画面を screenshot.png に保�
 | `taskBaseRecv` | 0 | rover.cpp | NTRIP/TCP または PH コネクタの補正データを F9P へ書く。GGA 送信と再接続も行う |
 | `taskWifiServer` | 0 | rover.cpp | TCP サーバ(既定ポート 10000)でクライアントへ配信 |
 | `taskSdSave` | 1 | storage.cpp | SD への保存 |
+| `taskMqtt` | 0 | mqtt.cpp | MQTT で測位結果を SenML(JSON)でブローカーへ送る。設定 `mqtt` |
 | loopTask | 1 | main.cpp | タッチ、画面描画(`pagesLoop()`)と、いつもの処理(`appBackground()`: `d9cPoll()`、コマンドの実行 `cmdPollUsb()` / `blePoll()` など) |
 
 `mUartBuff` は読み手が複数いる。`taskRover` と `gpsGetAck()` は `mUartReadIndex` を共有し、RAW/RTCM 保存は別のインデックス(`mUartSaveIndex`)で同じバッファをそのまま SD に書く。
@@ -162,6 +163,14 @@ mise run android-screenshot          # 端末の画面を screenshot.png に保�
 
 - F9P のボーレートは起動時点で分からない(電源投入直後は 38400bps、CoreS3 だけリセットされたときは前回のまま)。`gpsSyncBaudrate()` が目的のボーレートで応答を確かめ、だめなら候補を順に試す。どれにも応答しないときだけ I2C 経由でリセットする(`gpsI2cReset()`)。
 - `taskBaseRecv` は、補正元がなくても動かしておく(動作中に切り替えられるようにするため)。
+
+### MQTT 配信
+
+- 送信は `taskMqtt`(`src/mqtt.cpp`)だけが行う。`taskRover` は `mqttQueueFix()` で最新の測位を大きさ 1 のキューに置くだけ(`bleQueueNmea()` と同じ形)。loopTask は `mqttApply()` で版の番号を進めるだけで、タスクが次の周回で設定を読み直す。**`taskRover` や loopTask からクライアントに触らない。**
+- TLS は内蔵 RAM を約 48KB 使う(接続中だけ)。BLE 接続中の空きは約 65KB なので、**BLE と TLS を同時に使う構成は勧めない**(`ble.enable: false` にするか、`tls: false` で LAN や VPN の中だけで使う)。測定結果は `DEVELOPE.md` の「MQTT で測位結果を送る」。
+- 証明書の検証のために、TLS の接続前に測位の時刻で `settimeofday()` している(本体はほかで時計を合わせていない)。
+- `mqtt.ca` は SD カードのパスか PEM そのもの。PEM を設定ファイルに書くため、`yamlScalar` は改行を `\n` にエスケープする。
+- SenML の項目や単位を変えるときは、`DEVELOPE.md` の見本も合わせる。
 
 ### 補正データの経路
 

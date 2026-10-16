@@ -176,6 +176,9 @@ void setup() {
 	// TCPサーバ（AgriBus-NAVI等）への送信
 	tcpClientSet( mRunInfo.agribusConnect != 0 );
 
+	// MQTT 配信（接続は taskMqtt が行う）
+	mqttInit();
+
 	mSolutionRate = mRunInfo.solutionRate;
 	if ( mSolutionRate < 1 ) mSolutionRate = 1;
 	if ( mRunInfo.saving && mSdSaveReady ) sdSaveStart();
@@ -328,6 +331,16 @@ void appSetTcpClient( bool on )
 	saveRunInfo( &mRunInfo );
 }
 
+// MQTT 配信の入・切。設定ファイル（mqtt.enable）に書き、taskMqtt がつなぎ直す
+//
+void appSetMqtt( bool on )
+{
+	if ( mMqttCfg.host[0] == '\0' ) on = false;		// ブローカーが設定ファイルに無ければ使えない
+	mMqttCfg.enable = on ? 1 : 0;
+	if ( configSaveCurrent() < 0 ) dbgPrintf( "config save error (mqtt)\r\n" );
+	mqttApply();
+}
+
 // 高さの表示を、標高にするか（ジオイドモデルで求められた時）、楕円体高にするかを切り替える
 //
 // ・表示（本体の画面、アプリ）だけで、NMEAの標高とジオイド高は変えない。
@@ -382,13 +395,14 @@ static void dbgStatus()
 	static unsigned long msecLast = 0;
 	if ( mUsbOutMode == 1 || millis() - msecLast < 10000 ) return;
 	msecLast = millis();
-	dbgPrintf( "STAT quality=%d sats=%d rate=%d base(valid=%d type=%d ready=%d reconnecting=%d bytes=%d reconn=%d) rtcm(err=%d%% age=%lums) clas=%d saving=%d saved=%d qerr=%d wifi(st=%d rssi=%d) ble(conn=%d tx=%d) light(lux=%d bright=%d) heap(int=%u)\r\n",
+	dbgPrintf( "STAT quality=%d sats=%d rate=%d base(valid=%d type=%d ready=%d reconnecting=%d bytes=%d reconn=%d) rtcm(err=%d%% age=%lums) clas=%d saving=%d saved=%d qerr=%d wifi(st=%d rssi=%d) ble(conn=%d tx=%d) light(lux=%d bright=%d) mqtt(st=%d pub=%d err=%d) heap(int=%u)\r\n",
 		mGpsData.quality, mGpsData.numSatelites, mSolutionRate,
 		(int)mBaseSrc.valid, mBaseSrc.type, (int)mBaseRecvReady, (int)mBaseReconnecting, (int)mBaseRecvCount, (int)mBaseReconnectCount,
 		mRtcmCrcErrorPercent, millis() - mRtcmLastMillis,
 		mD9CAddress >= 0 ? mD9CRecvCount : -1, (int)mFileSaving, mFileSaved, mQueueFileErrorCount,
 		(int)WiFi.status(), (int)WiFi.RSSI(), (int)mBleConnected, mBleNotifyCount,
 		(int) mLightLux, mBrightnessNow,
+		mMqttState, mMqttPublished, mMqttErrors,
 		(unsigned)heap_caps_get_free_size( MALLOC_CAP_INTERNAL ) );
 	if ( mIns.ok ){
 		dbgPrintf( "IMU hz=%d gap=%dms i2c=%dus ovf=%d still=%d bias=%.2f,%.2f,%.2f rpy=%.1f,%.1f,%.1f acc=%.3f fwd=%.1f(w=%.1f%s) abias=%.2f dr(hdg=%.1f spd=%.2f) logdrop=%d\r\n",
@@ -435,10 +449,10 @@ void loop()
 
 void dbgPrintf( const char *format, ... )
 {
-	char buff[256];
+	char buff[400];		// STAT 行が入る長さ
 	va_list args;
 	va_start( args, format );
-	vsnprintf( buff, 256, format, args );
+	vsnprintf( buff, sizeof(buff), format, args );
 	va_end( args );
 	
 	Serial.print( buff );

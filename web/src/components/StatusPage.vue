@@ -15,6 +15,7 @@ import StateBadge from './StateBadge.vue';
 
 const SAVE_FORMATS = ['NMEA', 'RAW', 'RTCM', 'CSV'];
 const RATES = [1, 2, 5, 10].map(hz => ({ value: String(hz), label: `${hz} Hz` }));
+const MQTT_STATES: Record<number, string> = { 0: '使わない', 1: 'Wi-Fi の接続待ち', 2: '測位待ち（時計合わせ）', 3: '再接続待ち', 4: '接続しています', 5: '接続中' };
 
 // ---------------------------------------------------------------- 接続先の選択
 
@@ -174,6 +175,10 @@ const gigabytes = (megabytes: number) => (megabytes / 1000).toFixed(1);
         <Item label="IPアドレス">{{ s.wifi.ip }}</Item>
       </template>
       <Item v-else label="Wi-Fi">{{ s.wifi.ssid }}（接続中）</Item>
+      <Item v-if="s.mqtt" label="MQTT">
+        <template v-if="s.mqtt.connected">接続中（{{ s.mqtt.published }} 件送信）</template>
+        <template v-else>{{ MQTT_STATES[s.mqtt.state] ?? '未接続' }}<template v-if="s.mqtt.errors">（エラー {{ s.mqtt.errors }} 回）</template></template>
+      </Item>
       <Item label="SDカード">
         <template v-if="s.sdMB === 0">なし</template>
         <template v-else-if="s.sys && s.sys.sdFreeMB >= 0">空き {{ gigabytes(s.sys.sdFreeMB) }} / {{ gigabytes(s.sdMB) }} GB</template>

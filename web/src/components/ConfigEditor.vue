@@ -103,6 +103,21 @@ const OTHER_GROUPS: { title: string; fields: PathField[] }[] = [
     ],
   },
   {
+    title: 'MQTT 配信', fields: [
+      { path: ['mqtt', 'enable'], label: 'MQTT で測位結果を送る', type: 'bool', help: '自分のブローカー（Mosquitto 等）へ、間隔ごとに1回、SenML（JSON）で送ります' },
+      { path: ['mqtt', 'host'], label: 'ブローカーのホスト名または IP アドレス' },
+      { path: ['mqtt', 'port'], label: 'ポート', type: 'number', help: 'TLS なら 8883、平文なら 1883 が一般的です' },
+      { path: ['mqtt', 'tls'], label: 'TLS で暗号化する', type: 'bool', help: '本体の内蔵 RAM を約 40KB 使います。接続できない時は切って、LAN や VPN の中だけで使ってください' },
+      { path: ['mqtt', 'ca'], label: 'CA 証明書（PEM）', type: 'textarea', help: 'サーバ証明書を検証する CA。PEM を貼り付けるか、SD カードのパス（/m5f9p/mqtt_ca.pem）を書きます。空欄なら本体に内蔵の公開 CA の一覧で検証します' },
+      { path: ['mqtt', 'user'], label: 'ユーザー名' },
+      { path: ['mqtt', 'password'], label: 'パスワード', type: 'password' },
+      { path: ['mqtt', 'clientId'], label: 'クライアント ID', help: '空欄なら受信機名' },
+      { path: ['mqtt', 'topic'], label: 'トピック', help: '空欄なら m5f9p/<受信機名>/fix' },
+      { path: ['mqtt', 'interval'], label: '送る間隔（秒）', type: 'number' },
+      { path: ['mqtt', 'retain'], label: '最後の位置をブローカーに保持させる（retain）', type: 'bool' },
+    ],
+  },
+  {
     title: 'ログ', fields: [
       { path: ['log', 'csv'], label: 'NMEA の代わりに CSV で保存する', type: 'bool' },
       { path: ['log', 'chunkSec'], label: 'ファイルを分割する秒数', type: 'number', help: '0 は分割しません' },
@@ -228,10 +243,10 @@ async function editEntry(list: ListDef, index: number) {
   dirty.value = true;
 }
 
-// rtk2go のパスワード（一覧ではないので id は無い。送らなければ本体が保つ）
-const rtk2goKeeps = !!groupOf('rtk2go')?.hasPassword;
-const rtk2goClear = ref(false);
-const isRtk2goPassword = (f: PathField) => f.path[0] === 'rtk2go' && f.path[1] === 'password';
+// 一覧ではない節（rtk2go、mqtt）のパスワード（id は無い。送らなければ本体が保つ）
+const KEPT_GROUPS = ['rtk2go', 'mqtt'] as const;
+const kept = Object.fromEntries(KEPT_GROUPS.map(g => [g, { keeps: !!groupOf(g)?.hasPassword, clear: ref(false) }]));
+const keptOf = (f: PathField) => (f.path[1] === 'password' && f.path.length === 2 ? kept[f.path[0]] : undefined);
 
 /** 本体に送る設定。画面だけで使う印を取り除く */
 function payload(): DeviceConfig {
@@ -239,11 +254,12 @@ function payload(): DeviceConfig {
   for (const key of ['wifi', 'sources'] as ListKey[]) {
     for (const entry of (config[key] ?? []) as Entry[]) delete entry.hasPassword;
   }
-  const rtk2go = config.rtk2go as Record<string, ConfigValue> | undefined;
-  if (rtk2go) {
-    delete rtk2go.hasPassword;
-    if (rtk2goClear.value) rtk2go.password = '';
-    else if (rtk2goKeeps && !rtk2go.password) delete rtk2go.password;
+  for (const name of KEPT_GROUPS) {
+    const group = config[name] as Record<string, ConfigValue> | undefined;
+    if (!group) continue;
+    delete group.hasPassword;
+    if (kept[name].clear.value) group.password = '';
+    else if (kept[name].keeps && !group.password) delete group.password;
   }
   return config;
 }
@@ -317,11 +333,11 @@ async function save() {
     <Section v-for="group in OTHER_GROUPS" :key="group.title" :title="group.title">
       <div class="-mt-4">
         <template v-for="f in group.fields" :key="f.label">
-          <template v-if="isRtk2goPassword(f) && rtk2goKeeps">
+          <template v-if="keptOf(f)?.keeps">
             <FieldInput
-              v-if="!rtk2goClear" :field="{ ...f, help: KEEP_HELP }"
+              v-if="!keptOf(f)!.clear.value" :field="{ ...f, help: KEEP_HELP }"
               :model-value="getPath(f.path)" @update:model-value="setPath(f.path, $event)" />
-            <SwitchField v-model="rtk2goClear" :label="CLEAR_LABEL" @update:model-value="dirty = true" />
+            <SwitchField v-model="keptOf(f)!.clear.value" :label="CLEAR_LABEL" @update:model-value="dirty = true" />
           </template>
           <FieldInput v-else :field="withNote(f)" :model-value="getPath(f.path)" @update:model-value="setPath(f.path, $event)" />
         </template>

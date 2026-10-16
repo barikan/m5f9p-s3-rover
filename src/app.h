@@ -78,6 +78,7 @@ void appSetBaseSource( const struct stBaseSource *src );
 void appSetBaseAuto();
 int appSetSaveFormat( int format );
 void appSetTcpClient( bool on );
+void appSetMqtt( bool on );
 void appSetElevation( bool on );
 void appSetZone( int zone );
 void appSetCoordXY( bool on );
@@ -107,6 +108,23 @@ extern struct stBaseSource mBaseSrcList[ CONFIG_LIST_MAX + 1 ];	// 0番目はUAR
 extern int mNumBaseSrc;
 extern char mAgribusIp[18];
 extern int mAgribusPort;
+
+// MQTT 配信（mqtt.cpp）。測位結果を SenML(JSON)でブローカーへ送る
+#define MQTT_CA_MAX 2048			// CA 証明書（PEM）か、SDカードのパス
+struct stMqttConfig {
+	int enable;
+	char host[64];
+	int port;
+	int tls;
+	char ca[MQTT_CA_MAX];		// 先頭が "-----BEGIN" なら PEM そのもの、それ以外は SD カードのパス。空なら内蔵の公開 CA の一覧
+	char user[32];
+	char password[64];
+	char clientId[32];			// 空なら受信機名
+	char topic[64];				// 空なら m5f9p/<受信機名>/fix
+	int interval;				// 送る間隔（秒）
+	int retain;
+};
+extern struct stMqttConfig mMqttCfg;
 extern int mServerPort;
 extern int mCsvFormat;
 extern unsigned long mSaveEndSec;
@@ -210,6 +228,16 @@ int roverStartUartTask();
 int roverStartTasks();
 void d9cPoll();
 void roverGetGpsData( struct stGpsData *gpsData );
+uint32_t gpsUnixTime( const struct stGpsData *p );
+
+// mqtt.cpp
+void mqttInit();
+void mqttQueueFix( const struct stGpsData *gpsData );
+void mqttApply();
+// void mqttStatus( JsonObject o );   cmd.cpp に宣言（ArduinoJson を app.h に入れないため）
+extern int mMqttState;
+extern int mMqttPublished;
+extern int mMqttErrors;
 void roverGetGpsDataRaw( struct stGpsData *gpsData );
 
 // ************************************************************
@@ -395,6 +423,7 @@ bool secretIsEncrypted( const char *text );
 String secretEncrypt( const char *plain );
 int secretDecrypt( const char *text, String &plain );
 
+int configSaveCurrent();		// 現在の設定を設定ファイルに書く（config.cpp）
 extern bool mSecretError;		// 復号できないパスワードがあった（config.cpp）
 extern bool mIniRemains;		// 旧形式の設定ファイルがSDカードに残っている（config.cpp）
 

@@ -78,9 +78,9 @@ static int mTrackNext;					// 次に書き込む位置
 static int mTrackCount;					// 保持している点数
 static portMUX_TYPE mTrackMux = portMUX_INITIALIZER_UNLOCKED;
 
-// 測位時刻(UTC)を1970-1-1からの秒数に変換する
+// 測位時刻(UTC)を1970-1-1からの秒数に変換する（mqtt.cpp でも使う）
 //
-static uint32_t gpsUnixTime( struct stGpsData *p )
+uint32_t gpsUnixTime( const struct stGpsData *p )
 {
 	struct tm t;
 	memset( &t, 0, sizeof(t) );
@@ -215,6 +215,9 @@ static void distributeGpsData()
 	
 	// BLEでの配信
 	bleQueueNmea( mSaveBuff );
+
+	// MQTT 配信（最新の測位を置くだけ。送るのは taskMqtt）
+	mqttQueueFix( &mGpsData );
 
 	// 移動履歴
 	trackAdd( &mGpsData );

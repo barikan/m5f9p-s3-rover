@@ -74,6 +74,7 @@
 //               {"brightness":n} 画面の明るさ（%） 15～100。自動は切れる
 //               {"brightnessAuto":b} 画面の明るさを、周囲の明るさ（照度センサー）に合わせて自動で変える
 //               {"tcpClient":b}  測位データをTCPサーバ（設定ファイルの client.ip）に送る
+//               {"mqtt":b}       MQTT で測位結果を送る（設定ファイルの mqtt.enable を書き換える。mqtt.cpp）
 //               {"elevation":b}  高さを標高で表示する（ジオイドモデルがある時）。false:楕円体高
 //                                表示（本体の画面、アプリ）だけで、NMEAは変わらない
 //               {"zone":n}       平面直角座標系の系（1～19）
@@ -105,6 +106,8 @@
 extern byte mVersionMajor, mVersionMinor, mVersionPatch;
 
 static bool mRestartRequest;
+
+void mqttStatus( JsonObject o );		// mqtt.cpp
 
 static void cmdStatus( JsonDocument &re )
 {
@@ -216,6 +219,7 @@ static void cmdStatus( JsonDocument &re )
 			test["errMax"] = serialized( String( errMax, 2 ) );
 		}
 	}
+	if ( mMqttCfg.enable ) mqttStatus( re["mqtt"].to<JsonObject>() );	// MQTT 配信（mqtt.cpp）。設定で有効な時だけ
 	re["track"] = trackCount();
 	if ( mSecretError ) re["secretError"] = true;	// 復号できないパスワードがある
 	if ( mIniRemains ) re["iniRemains"] = true;		// 旧形式の設定ファイルが残っている
@@ -390,6 +394,8 @@ static void cmdRunGet( JsonDocument &re )
 	re["elevation"] = (bool)mRunInfo.elevation;
 	re["zone"] = mRunInfo.zone;
 	re["coordXY"] = (bool)mRunInfo.coordXY;
+	re["mqtt"] = ( mMqttCfg.enable != 0 );			// MQTT 配信（設定ファイルの mqtt.enable）
+	re["mqttReady"] = ( mMqttCfg.host[0] != '\0' );	// ブローカーが設定ファイルにある（入・切を切り替えられる）
 
 	// 選択できるWifi接続先と基準局データ取得先
 	JsonArray wifiList = re["wifiList"].to<JsonArray>();
@@ -439,6 +445,7 @@ static void cmdRunSet( JsonDocument &cmd, JsonDocument &re )
 	if ( cmd["brightness"].is<int>() ) appSetBrightness( cmd["brightness"] );
 	if ( cmd["brightnessAuto"].is<bool>() ) appSetBrightnessAuto( cmd["brightnessAuto"].as<bool>() );
 	if ( cmd["tcpClient"].is<bool>() ) appSetTcpClient( cmd["tcpClient"].as<bool>() );
+	if ( cmd["mqtt"].is<bool>() ) appSetMqtt( cmd["mqtt"].as<bool>() );
 	if ( cmd["elevation"].is<bool>() ) appSetElevation( cmd["elevation"].as<bool>() );
 	if ( cmd["zone"].is<int>() ) appSetZone( cmd["zone"] );
 	if ( cmd["coordXY"].is<bool>() ) appSetCoordXY( cmd["coordXY"].as<bool>() );

@@ -466,6 +466,55 @@ Wi-Fi と BLE は1つの無線を時分割で使う。次の構成で、NTRIP �
 - SoftAP は既定で無効。使うときは設定ファイルで `softap.enable: true` にする。SoftAP に端末が接続している間は、BLE との同時利用が不安定になる可能性がある(Espressif の資料で、この組み合わせだけ条件付きの扱い)。
 - BLE を使わないときは `ble.enable: false` にできる。
 
+### MQTT で測位結果を送る
+
+本体は、自分の MQTT ブローカー(Mosquitto 等)へ、設定の間隔ごとに1回、最新の測位結果を SenML(RFC 8428、JSON)で publish できる(`src/mqtt.cpp`)。設定ファイルの `mqtt` の節で有効にする(アプリの「本体の設定を編集」→「MQTT 配信」でも書ける。再起動は要らない)。
+
+```yaml
+mqtt:
+  enable: true
+  host: "192.168.0.10"
+  port: 8883
+  tls: true
+  ca: "/m5f9p/mqtt_ca.pem"   # サーバ証明書を検証する CA(PEM)。SD カードのパスか、PEM そのもの。空なら内蔵の公開 CA の一覧
+  user: "rover"
+  password: "..."
+  interval: 10
+```
+
+送る内容(1回1パック、約 430 バイト。QoS 0。既定のトピックは `m5f9p/<受信機名>/fix`)。
+
+```json
+[{"bn":"m5f9p:","bt":1760000000.2,"n":"lat","u":"lat","v":35.691257617},
+ {"n":"lon","u":"lon","v":139.770043408},
+ {"n":"alt","u":"m","v":26.523},{"n":"hae","u":"m","v":63.346},
+ {"n":"hacc","u":"m","v":0.014},{"n":"vacc","u":"m","v":0.022},
+ {"n":"fix","v":4},{"n":"sats","u":"count","v":31},
+ {"n":"speed","u":"m/s","v":0.00}]
+```
+
+`alt` は標高(ジオイド高を引いた値)、`hae` は楕円体高。`heading`(`deg`)は速度 0.5 m/s 以上のときだけ付く。単位は IANA の SenML Units 登録簿にあるもの。PC で受けるには `mosquitto_sub -h <host> -p 8883 --cafile ca.pem -u <user> -P <pass> -t 'm5f9p/#' -v`。
+
+入・切は、本体の Setup の `MQTT: On` / `MQTT: Off` のタイル(ブローカーを設定しているときだけ出る)、アプリの設定タブの「MQTT で測位結果を送る」、コマンド `run.set {"mqtt":true}` でも切り替えられる(どれも設定ファイルの `mqtt.enable` を書き換える)。状況は `status` の `mqtt`(接続の状態、送った数、エラーの数)と、`STAT` 行の `mqtt(st=.. pub=.. err=..)` で分かる。`st` は 0:使わない 1:Wi-Fi 待ち 2:時計待ち 3:再試行待ち 4:接続中 5:接続済み。つながらないときは 5 秒から倍々に最長 5 分の間隔でつなぎ直す。
+
+- TLS の証明書の検証には時計が要る。本体は接続の前に測位の時刻で時計を合わせる(測位がない間は接続しない)。
+- 送信は専用のタスク(`taskMqtt`、コア 0)が行い、`taskRover` は最新の測位を置くだけなので、ブローカーに届かなくても測位の出力は止まらない。
+
+#### 内蔵 RAM の測定結果(TLS を使えるか)
+
+TLS は mbedTLS の送受信バッファ(16KB × 2)などを内蔵 RAM に取る(core の設定で、変えられない)。接続している間だけで、切れると戻る。BLE 接続中、IMU あり、取得先の自動選択あり、NTRIP 受信中に測った。
+
+| 条件 | 内蔵 RAM の空き |
+|---|---|
+| MQTT なし(BLE 接続中、IMU あり) | 約 65KB |
+| 同、IMU を切る | 約 67KB(IMU は内蔵 RAM をほとんど使っていない) |
+| 同、BLE を切る(`ble.enable: false`) | 約 135KB |
+| TLS で接続中(内蔵の公開 CA の一覧で検証。test.mosquitto.org:8886) | 約 16KB(接続で約 48KB 消費) |
+
+**BLE と TLS の両立は勧めない。** TLS で接続すると空きが約 16KB になり、ほかの処理(NTRIP の再接続、SD の書き込み、画面)が内蔵 RAM を取れなくなるおそれがある。TLS を使うときは `ble.enable: false` にする(空き約 135KB → 接続中でも約 85KB)。BLE を使い続けたいときは `tls: false` にして、LAN や VPN の中だけで送る(平文の MQTT は数 KB しか使わない)。単一の CA(PEM)での消費は、公開 CA の一覧より数 KB 少ないはずだが、測っていない。
+
+開発機(WSL2、ミラーモード)でブローカーを動かして本体から受けるには、Windows の Hyper-V ファイアウォールが WSL への着信を既定で遮断しているので、管理者の PowerShell で許可の規則を足す(`New-NetFirewallHyperVRule -Name m5f9p-mqtt -DisplayName "m5f9p MQTT" -Direction Inbound -VMCreatorId '{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}' -Protocol TCP -LocalPorts 1883,8883`)。
+
 ## クライアントアプリ
 
 本体の状況の表示と操作を行うアプリが2つある。画面は共通で、`web/` にあるもの(Vue 3 + Origin UI)を両方が表示する。
@@ -712,6 +761,7 @@ src/
   light.cpp     照度センサー(LTR-553)と、画面の明るさの自動調整
   jprcs.cpp     平面直角座標系(緯度経度 → X, Y)
   kuon.cpp      補正データの取得先の自動選択(KUON GEO の基準局の一覧)
+  mqtt.cpp      MQTT で測位結果を SenML(JSON)で送る(taskMqtt)
   sysmon.cpp    本体の状態(CPU 温度、CPU 使用率、メモリ使用率、電圧、SD カードの空き)
   cmd.cpp       コマンドの受付(USB シリアル)と実行
   ble.cpp       BLE での状況・測位データの送信とコマンドの受付

@@ -39,6 +39,9 @@ int mNumBaseSrc;
 char mAgribusIp[18];
 int mAgribusPort = 51020;
 
+// MQTT 配信（mqtt.cpp）
+struct stMqttConfig mMqttCfg = { 0, "", 8883, 1, "/m5f9p/mqtt_ca.pem", "", "", "", "", 10, 0 };
+
 int mServerPort = 10000;	// サーバのポート番号　既定値
 
 int mCsvFormat;		// CSVフォーマット 0:無効 

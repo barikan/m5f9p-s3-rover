@@ -45,10 +45,10 @@ function saveKey() {
 // ---------------------------------------------------------------- 接続の設定
 
 const run = computed(() => state.runConfig);
-const values = reactive({ wifi: '', source: '', format: '0', saveAtBoot: false, elevation: true, zone: '0', coordXY: false });
+const values = reactive({ wifi: '', source: '', format: '0', saveAtBoot: false, elevation: true, zone: '0', coordXY: false, mqtt: false });
 watch(run, c => {
   if (c) Object.assign(values, { wifi: c.wifi, source: c.source, format: String(c.format), saveAtBoot: c.saveAtBoot, elevation: c.elevation ?? true,
-    zone: String(c.zone ?? 0), coordXY: c.coordXY ?? false });
+    zone: String(c.zone ?? 0), coordXY: c.coordXY ?? false, mqtt: c.mqtt ?? false });
 }, { immediate: true });
 
 const wifiOptions = computed<Option[]>(() => {
@@ -80,7 +80,8 @@ const runChanged = computed(() => {
   return !!c && (values.wifi !== c.wifi || values.source !== c.source ||
     Number(values.format) !== c.format || values.saveAtBoot !== c.saveAtBoot ||
     (c.elevation !== undefined && values.elevation !== c.elevation) ||
-    (c.zone !== undefined && (Number(values.zone) !== c.zone || values.coordXY !== c.coordXY)));
+    (c.zone !== undefined && (Number(values.zone) !== c.zone || values.coordXY !== c.coordXY)) ||
+    (c.mqtt !== undefined && values.mqtt !== c.mqtt));
 });
 
 function applyRun() {
@@ -89,6 +90,7 @@ function applyRun() {
     // 古いファームウェア（elevation を返さない）には送らない
     ...(run.value?.elevation !== undefined ? { elevation: values.elevation } : {}),
     ...(run.value?.zone !== undefined ? { coordXY: values.coordXY, ...(values.zone !== '0' ? { zone: Number(values.zone) } : {}) } : {}),
+    ...(run.value?.mqtt !== undefined ? { mqtt: values.mqtt } : {}),
   });
 }
 
@@ -151,6 +153,9 @@ async function restart() {
               v-model="values.coordXY" label="座標を X, Y で表示する"
               help="本体の画面と測位タブで、緯度・経度の代わりに平面直角座標の X、Y を表示します。系は自動では決まらないので、今いる場所の系を選んでください" />
           </template>
+          <SwitchField
+            v-if="run.mqtt !== undefined" v-model="values.mqtt" label="MQTT で測位結果を送る" :disabled="!run.mqttReady"
+            :help="run.mqttReady ? '設定ファイルの mqtt のブローカーへ、間隔ごとに1回、SenML（JSON）で送ります' : 'ブローカーは「本体の設定を編集」の「MQTT 配信」で設定します'" />
           <Button size="sm" class="mt-4" :disabled="!runChanged" @click="applyRun">変更する</Button>
           <p class="text-muted-foreground mt-3 text-xs">Wi-Fi や補正データの接続先を追加・変更するには、「本体の設定を編集」を使います。</p>
         </template>
