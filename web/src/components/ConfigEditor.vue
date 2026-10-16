@@ -103,21 +103,6 @@ const OTHER_GROUPS: { title: string; fields: PathField[] }[] = [
     ],
   },
   {
-    title: 'MQTT 配信', fields: [
-      { path: ['mqtt', 'enable'], label: 'MQTT で測位結果を送る', type: 'bool', help: '自分のブローカー（Mosquitto 等）へ、間隔ごとに1回、SenML（JSON）で送ります' },
-      { path: ['mqtt', 'host'], label: 'ブローカーのホスト名または IP アドレス' },
-      { path: ['mqtt', 'port'], label: 'ポート', type: 'number', help: 'TLS なら 8883、平文なら 1883 が一般的です' },
-      { path: ['mqtt', 'tls'], label: 'TLS で暗号化する', type: 'bool', help: '本体の内蔵 RAM を約 40KB 使います。接続できない時は切って、LAN や VPN の中だけで使ってください' },
-      { path: ['mqtt', 'ca'], label: 'CA 証明書（PEM）', type: 'textarea', help: 'サーバ証明書を検証する CA。PEM を貼り付けるか、SD カードのパス（/m5f9p/mqtt_ca.pem）を書きます。空欄なら本体に内蔵の公開 CA の一覧で検証します' },
-      { path: ['mqtt', 'user'], label: 'ユーザー名' },
-      { path: ['mqtt', 'password'], label: 'パスワード', type: 'password' },
-      { path: ['mqtt', 'clientId'], label: 'クライアント ID', help: '空欄なら受信機名' },
-      { path: ['mqtt', 'topic'], label: 'トピック', help: '空欄なら m5f9p/<受信機名>/fix' },
-      { path: ['mqtt', 'interval'], label: '送る間隔（秒）', type: 'number' },
-      { path: ['mqtt', 'retain'], label: '最後の位置をブローカーに保持させる（retain）', type: 'bool' },
-    ],
-  },
-  {
     title: 'ログ', fields: [
       { path: ['log', 'csv'], label: 'NMEA の代わりに CSV で保存する', type: 'bool' },
       { path: ['log', 'chunkSec'], label: 'ファイルを分割する秒数', type: 'number', help: '0 は分割しません' },
@@ -180,6 +165,21 @@ const OTHER_GROUPS: { title: string; fields: PathField[] }[] = [
       { path: ['auto', 'minRate'], label: '応答率の下限（%）', type: 'number', help: '直近30日の応答率がこれ未満の局は選びません' },
       { path: ['auto', 'radiusKm'], label: '検索半径（km）', type: 'number', help: 'これより遠い局は選びません' },
       { path: ['auto', 'researchKm'], label: '探し直す移動距離（km）', type: 'number', help: '前回探した場所からこれだけ動いたら、近くの局を探し直します' },
+    ],
+  },
+  {
+    title: 'MQTT 配信', fields: [
+      { path: ['mqtt', 'enable'], label: 'MQTT で測位結果を送る', type: 'bool', help: '自分のブローカー（Mosquitto 等）へ、間隔ごとに1回、SenML（JSON）で送ります' },
+      { path: ['mqtt', 'host'], label: 'ブローカーのホスト名または IP アドレス' },
+      { path: ['mqtt', 'port'], label: 'ポート', type: 'number', help: 'TLS なら 8883、平文なら 1883 が一般的です' },
+      { path: ['mqtt', 'tls'], label: 'TLS で暗号化する', type: 'bool', help: '本体の内蔵 RAM を約 40KB 使います。接続できない時は切って、LAN や VPN の中だけで使ってください' },
+      { path: ['mqtt', 'ca'], label: 'CA 証明書（PEM）', type: 'textarea', help: 'サーバ証明書を検証する CA。PEM を貼り付けるか、SD カードのパス（/m5f9p/mqtt_ca.pem）を書きます。空欄なら本体に内蔵の公開 CA の一覧で検証します' },
+      { path: ['mqtt', 'user'], label: 'ユーザー名' },
+      { path: ['mqtt', 'password'], label: 'パスワード', type: 'password' },
+      { path: ['mqtt', 'clientId'], label: 'クライアント ID', help: '空欄なら受信機名' },
+      { path: ['mqtt', 'topic'], label: 'トピック', help: '空欄なら m5f9p/<受信機名>/fix' },
+      { path: ['mqtt', 'interval'], label: '送る間隔（秒）', type: 'number' },
+      { path: ['mqtt', 'retain'], label: '最後の位置をブローカーに保持させる（retain）', type: 'bool' },
     ],
   },
 
