@@ -254,7 +254,7 @@ mise run cmd '{"cmd":"run.set","wifi":"home","source":"ntrip.example.com/MOUNTPO
 
 ## MQTT
 
-自分の MQTT ブローカー(Mosquitto など)へ、設定の間隔ごとに1回、最新の測位結果を SenML(JSON)で送れます。設定ファイルの `mqtt` の節(またはアプリの「本体の設定を編集」→「MQTT 配信」)で、ブローカーのアドレス、ユーザー名とパスワード、TLS の有無、CA 証明書、間隔を書きます。再起動は要りません。送る内容と確かめ方は [DEVELOPE.md](DEVELOPE.md) の「MQTT で測位結果を送る」にあります。
+自分の MQTT ブローカー(Mosquitto など)へ、設定の間隔ごとに1回、最新の測位結果を SenML(JSON)で送れます。設定ファイルの `mqtt` の節(またはアプリの「本体の設定を編集」→「MQTT 配信」)で、ブローカーのアドレス、ユーザー名とパスワード、TLS の有無、CA 証明書、間隔を書きます。再起動は要りません。送る内容と確かめ方は [docs/mqtt.md](docs/mqtt.md) にあります。
 
 TLS は本体の内蔵 RAM を接続中に約 48KB 使います。BLE を使っていると空きが約 65KB しかないので、**TLS を使うときは BLE を切る(`ble.enable: false`)か、TLS なし(`tls: false`)で LAN や VPN の中だけで使ってください。**
 
@@ -276,6 +276,7 @@ SoftAP は既定で無効にしています。SoftAP に端末が接続してい
 | [docs/screens-device.md](docs/screens-device.md) | 本体の画面と、画面の移り方(画像つき) |
 | [docs/screens-windows.md](docs/screens-windows.md) | Windows アプリの画面と、画面の移り方(画像つき) |
 | [docs/screens-android.md](docs/screens-android.md) | Android アプリの画面と、画面の移り方(画像つき) |
+| [docs/mqtt.md](docs/mqtt.md) | MQTT で測位結果を送る(設定、送られる内容、確かめ方、TLS と内蔵 RAM の注意) |
 | [CLAUDE.md](CLAUDE.md) | コードを変更するときの決まりごと(タスク構成、排他のルールなど) |
 | [m5f9p_src_v1_0_48/](m5f9p_src_v1_0_48/) | 移植元のプログラム(参照用。ビルドには使いません) |
 

@@ -468,7 +468,7 @@ Wi-Fi と BLE は1つの無線を時分割で使う。次の構成で、NTRIP �
 
 ### MQTT で測位結果を送る
 
-本体は、自分の MQTT ブローカー(Mosquitto 等)へ、設定の間隔ごとに1回、最新の測位結果を SenML(RFC 8428、JSON)で publish できる(`src/mqtt.cpp`)。設定ファイルの `mqtt` の節で有効にする(アプリの「本体の設定を編集」→「MQTT 配信」でも書ける。再起動は要らない)。
+本体は、自分の MQTT ブローカー(Mosquitto 等)へ、設定の間隔ごとに1回、最新の測位結果を SenML(RFC 8428、JSON)で publish できる(`src/mqtt.cpp`)。利用者向けの説明(設定の全項目、確かめ方、うまくいかないとき)は [docs/mqtt.md](docs/mqtt.md)。設定ファイルの `mqtt` の節で有効にする(アプリの「本体の設定を編集」→「MQTT 配信」でも書ける。再起動は要らない)。
 
 ```yaml
 mqtt:
