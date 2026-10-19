@@ -85,7 +85,7 @@ void appSetCoordXY( bool on );
 void appBackground();
 void pagesOpenSetup();
 void pagesLoop();		// pages.cpp
-void pagesPreviewPairing( int passkey );
+void pagesPreviewPairing( int passkey, bool confirm );
 int appSetSolutionRate( int rate );
 
 // ************************************************************
@@ -445,6 +445,8 @@ extern int mBleNmeaRateNow;
 
 int bleStart();
 int blePasskey();
+bool bleConfirmPending();
+void bleConfirmPasskey( bool same );
 int bleBondCount();
 
 // BLEで接続している相手
@@ -456,6 +458,7 @@ struct stBlePeer {
 };
 int bleGetPeer( struct stBlePeer *peer );
 void bleDisconnect();
+int bleUnpair( const char *address );
 int bleUnpairAll();
 void blePoll();
 void bleQueueNmea( const char *nmea );

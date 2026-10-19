@@ -17,7 +17,8 @@ import './tailwind.css';
 
 createApp(App).mount('#app');
 
-// BLEのペアリング（Windows）。本体の画面に出る番号を入力してもらう
+// BLEのペアリング（Windows）。本体の画面と同じ番号かを確かめてもらう（Numeric Comparison）。
+// 本体の画面でも Same を押してもらう。番号の入力（providePin）は、本体が求めない限り出ない
 host.setPairingPrompt(async request => {
   if (request.kind === 'providePin') {
     const values = await formDialog('ペアリング', [
@@ -27,7 +28,7 @@ host.setPairingPrompt(async request => {
     return pin ? { confirmed: true, pin } : { confirmed: false };
   }
   if (request.kind === 'confirmPin') {
-    return { confirmed: await confirmDialog('ペアリング', `本体の画面の番号が ${request.pin} であることを確かめてください。`, '同じ') };
+    return { confirmed: await confirmDialog('ペアリング', `本体の画面に同じ番号 ${request.pin} が出ていることを確かめ、本体の画面の Same を押してください。`, '同じ') };
   }
   return { confirmed: await confirmDialog('ペアリング', '本体とペアリングしますか？', 'ペアリング') };
 });

@@ -20,16 +20,24 @@
 //
 // ペアリング（設定 ble.pairing が true の時。既定）
 //   ・特性の権限で、暗号化されていない読み書きを拒否する。相手は拒否されると
-//     ペアリングを始める。初めての相手の時は、本体の画面に6桁の番号を表示し、
-//     相手がそれを入力する（LE Secure Connections、MITM保護）。番号は毎回変わる。
+//     ペアリングを始める。初めての相手の時は、本体と相手の両方に同じ6桁の番号を
+//     表示し、両方で「同じ」と確認する（LE Secure Connections の Numeric Comparison、
+//     MITM保護）。番号は毎回変わる。本体の確認は画面の Same ボタン（pages.cpp）で、
+//     bleConfirmPasskey() が応える。
+//   ・相手に番号を入力してもらう方式（Passkey Entry）は使わない。Windows 11（2026年10月の
+//     更新以降）で、番号を入力したあとの手順が進まず、両方が応答待ちのまま30秒で失敗した
+//     （Secure Connections でも従来方式でも同じ。OS の設定画面からのペアリングでも同じ）。
+//     番号なし（Just Works）と Numeric Comparison は通った。詳細は DEVELOPE.md。
 //   ・接続の直後には、本体からペアリングを求めない。求めると、Androidでは
 //     ペアリングの画面が前面に出ず、通知になってしまう（アプリが始めたペアリングは
 //     前面に出る）。Windowsでは、アプリの番号入力が呼ばれずに接続できなくなる。
 //   ・接続して数秒たっても暗号化されない時だけ、本体から求める（blePoll）。
 //   ・ペアリングした相手は本体が覚える（NVS）。次からは番号なしで暗号化される。
 //   ・暗号化が済むまで、コマンドは実行せず、状況も送らない。
-//   ・ペアリングのコールバックもBLEのタスクから呼ばれる。変数に入れるだけにし、
-//     画面への表示は loop() が blePasskey() を見て行う。
+//   ・ペアリングの GAP イベントもBLEのタスクから呼ばれる。変数に入れるだけにし、
+//     画面への表示は loop() が blePasskey() を見て行う。番号の比較の返事
+//     （esp_ble_confirm_reply）も loop() から行うため、ライブラリの BLESecurityCallbacks
+//     （イベントの中で即座に返事をする）は使わず、setCustomGapHandler で受ける。
 //
 // 同時に接続できる相手は1台。接続中も、接続を受け付けないアドバタイズを続け、名前の
 // 後ろに BLE_BUSY_SUFFIX を付ける。ほかの端末のアプリは、これを見て「ほかの端末が
@@ -83,22 +91,38 @@ static volatile uint16_t mConnId;
 static volatile unsigned long mConnectMillis;
 static esp_bd_addr_t mPeerAddress;
 static volatile bool mSecurityRequested;	// この接続で、本体から暗号化を求めた
+static volatile bool mConfirmPending;		// 番号の比較の返事（bleConfirmPasskey）を待っている
+static volatile int mConnectEvent;			// 接続・切断をデバグ出力するための印。1:接続した 2:切断した（blePoll()が出力する）
+static volatile int mDisconnectReason;		// 切断の理由（esp_gatt_conn_reason_t）
+static volatile int mAuthFailReason;		// ペアリングに失敗した理由（esp_ble_auth_cmpl_t の fail_reason）
 
-class SecurityCallbacks : public BLESecurityCallbacks {
-	// 本体は番号を表示するだけ（入力はできない）
-	uint32_t onPassKeyRequest() { return 0; }
-	bool onConfirmPIN( uint32_t pin ) { return false; }
-	bool onSecurityRequest() { return true; }
-
-	void onPassKeyNotify( uint32_t passkey ) {
-		mPasskey = (int) passkey;
-	}
-	void onAuthenticationComplete( esp_ble_auth_cmpl_t result ) {
+// ペアリングの GAP イベント（BLEのタスクから呼ばれる。変数に入れるだけ）
+//
+// ・ESP_GAP_BLE_SEC_REQ_EVT は、ライブラリが承諾を返す（BLESecurityCallbacks を登録していない時）。
+//
+static void gapEventHandler( esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param_t *param )
+{
+	switch( event ){
+	case ESP_GAP_BLE_NC_REQ_EVT:			// 番号の比較。相手にも同じ番号が出ている。返事は loop() から
+		mPasskey = (int) param->ble_security.key_notif.passkey;
+		mConfirmPending = true;
+		break;
+	case ESP_GAP_BLE_PASSKEY_NOTIF_EVT:		// 相手が入力だけできる時（Passkey Entry）。本体は表示するだけ
+		mPasskey = (int) param->ble_security.key_notif.passkey;
+		break;
+	case ESP_GAP_BLE_PASSKEY_REQ_EVT:		// 本体に番号の入力を求められた（入力はできないので断る）
+		esp_ble_passkey_reply( param->ble_security.ble_req.bd_addr, false, 0 );
+		break;
+	case ESP_GAP_BLE_AUTH_CMPL_EVT:
 		mPasskey = -1;
-		if ( result.success ) mAuthenticated = true;
-		else mAuthFailed = true;
+		mConfirmPending = false;
+		if ( param->ble_security.auth_cmpl.success ) mAuthenticated = true;
+		else { mAuthFailed = true; mAuthFailReason = param->ble_security.auth_cmpl.fail_reason; }
+		break;
+	default:
+		break;
 	}
-};
+}
 
 class ServerCallbacks : public BLEServerCallbacks {
 	void onConnect( BLEServer* server, esp_ble_gatts_cb_param_t *param ) {
@@ -111,6 +135,7 @@ class ServerCallbacks : public BLEServerCallbacks {
 		mPasskey = -1;
 		mAuthenticated = ! mBlePairing;
 		mBleConnected = true;
+		mConnectEvent = 1;
 
 		// 接続間隔を長めにして、Wifiが使える時間を確保する（単位1.25ms：30～50ms）
 		esp_ble_conn_update_params_t conn;
@@ -122,10 +147,13 @@ class ServerCallbacks : public BLEServerCallbacks {
 		conn.timeout = 400;		// 単位10ms
 		esp_ble_gap_update_conn_params( &conn );
 	}
-	void onDisconnect( BLEServer* server ) {
+	void onDisconnect( BLEServer* server, esp_ble_gatts_cb_param_t *param ) {
+		mDisconnectReason = param->disconnect.reason;
+		mConnectEvent = 2;
 		mBleConnected = false;
 		mAuthenticated = false;
 		mPasskey = -1;
+		mConfirmPending = false;
 		mBleNmeaRateNow = mBleNmeaRate;
 		mRestartAdvertising = true;
 	}
@@ -166,6 +194,28 @@ int blePasskey()
 	return mPasskey;
 }
 
+// 番号の比較で、本体の確認（bleConfirmPasskey）を待っているか
+//
+// 戻り値＝ true:待っている（画面に Same / Cancel のボタンを出す）
+//
+bool bleConfirmPending()
+{
+	return mConfirmPending;
+}
+
+// 番号の比較に答える（画面の Same / Cancel ボタン）
+//
+// ・loopTaskから呼ぶ事。
+// ・same が false なら、ペアリングは失敗し、blePoll() が切断する。
+//
+void bleConfirmPasskey( bool same )
+{
+	if ( ! mConfirmPending ) return;
+	mConfirmPending = false;
+	esp_ble_confirm_reply( mPeerAddress, same );
+	dbgPrintf( "BLE numeric comparison %s\r\n", same ? "confirmed" : "rejected" );
+}
+
 // ペアリングを覚えている相手の数
 //
 int bleBondCount()
@@ -187,6 +237,22 @@ int bleGetPeer( struct stBlePeer *peer )
 	peer->encrypted = mAuthenticated;
 	peer->seconds = ( millis() - mConnectMillis ) / 1000;
 	return 1;
+}
+
+// 指定したアドレスの相手のペアリングを消す
+//
+// address  "30:E3:A4:5B:F1:4D" の形
+//
+// 戻り値＝ 1:消した
+//          0:覚えていない、または書式が誤り
+//
+int bleUnpair( const char *address )
+{
+	unsigned a[6];
+	if ( sscanf( address, "%x:%x:%x:%x:%x:%x", &a[0], &a[1], &a[2], &a[3], &a[4], &a[5] ) != 6 ) return 0;
+	esp_bd_addr_t bda;
+	for( int i=0; i < 6; i++ ) bda[i] = (uint8_t) a[i];
+	return esp_ble_remove_bond_device( bda ) == ESP_OK ? 1 : 0;
 }
 
 // 覚えているペアリングを全て消す
@@ -268,10 +334,10 @@ int bleStart()
 
 		// BLEDevice::setEncryptionLevel() は呼ばない。呼ぶと、ライブラリが接続のたびに本体から
 		// ペアリングを求める（ファイル先頭の説明を参照）
-		BLEDevice::setSecurityCallbacks( new SecurityCallbacks() );
+		BLEDevice::setCustomGapHandler( gapEventHandler );
 		BLESecurity security;
 		security.setAuthenticationMode( ESP_LE_AUTH_REQ_SC_MITM_BOND );
-		security.setCapability( ESP_IO_CAP_OUT );		// 番号を表示する
+		security.setCapability( ESP_IO_CAP_IO );		// 番号を表示し、Same / Cancel で答える（Numeric Comparison）
 		security.setInitEncryptionKey( ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK );
 		security.setRespEncryptionKey( ESP_BLE_ENC_KEY_MASK | ESP_BLE_ID_KEY_MASK );
 	}
@@ -282,7 +348,16 @@ int bleStart()
 	advertising->setScanResponse( true );
 	bleAdvertise( false );
 
-	dbgPrintf( "BLE started  name=%s pairing=%d bonded=%d\r\n", mReceiverName, mBlePairing, bleBondCount() );
+	dbgPrintf( "BLE started  name=%s pairing=%d bonded=%d address=%s\r\n", mReceiverName, mBlePairing, bleBondCount(),
+			BLEDevice::getAddress().toString().c_str() );
+	esp_ble_bond_dev_t bonds[ BLE_BOND_MAX ];
+	int num = BLE_BOND_MAX;
+	if ( esp_ble_get_bond_device_list( &num, bonds ) == ESP_OK ){
+		for( int i=0; i < num; i++ ){
+			uint8_t *a = bonds[i].bd_addr;
+			dbgPrintf( "BLE bonded  %02X:%02X:%02X:%02X:%02X:%02X\r\n", a[0], a[1], a[2], a[3], a[4], a[5] );
+		}
+	}
 	return 0;
 }
 
@@ -368,9 +443,19 @@ void blePoll()
 		bleAdvertise( busy );
 	}
 
+	// 接続と切断をデバグ出力する（コールバックでは印を立てるだけにしている）
+	if ( mConnectEvent ){
+		int ev = mConnectEvent;
+		mConnectEvent = 0;
+		if ( ev == 1 ) dbgPrintf( "BLE connected  peer=%02X:%02X:%02X:%02X:%02X:%02X\r\n",
+				mPeerAddress[0], mPeerAddress[1], mPeerAddress[2], mPeerAddress[3], mPeerAddress[4], mPeerAddress[5] );
+		else dbgPrintf( "BLE disconnected  reason=0x%02X authenticated=%d\r\n", mDisconnectReason, mAuthenticated ? 1 : 0 );
+	}
+
 	// ペアリングに失敗した、または時間内に済まなかった時は切断する
 	if ( mBleConnected && ! mAuthenticated && ( mAuthFailed || millis() - mConnectMillis > BLE_AUTH_TIMEOUT ) ){
-		dbgPrintf( "BLE pairing %s\r\n", mAuthFailed ? "failed" : "timeout" );
+		if ( mAuthFailed ) dbgPrintf( "BLE pairing failed  reason=0x%02X\r\n", mAuthFailReason );
+		else dbgPrintf( "BLE pairing timeout\r\n" );
 		mAuthFailed = false;
 		mConnectMillis = millis();
 		mServer->disconnect( mConnId );
@@ -404,7 +489,7 @@ void blePoll()
 	static bool authenticatedLast = false;
 	if ( mPasskey != passkeyLast ){
 		passkeyLast = mPasskey;
-		if ( passkeyLast >= 0 ) dbgPrintf( "BLE pairing code %06d\r\n", passkeyLast );
+		if ( passkeyLast >= 0 ) dbgPrintf( "BLE pairing code %06d%s\r\n", passkeyLast, mConfirmPending ? " (numeric comparison)" : "" );
 	}
 	if ( mAuthenticated != authenticatedLast ){
 		authenticatedLast = mAuthenticated;

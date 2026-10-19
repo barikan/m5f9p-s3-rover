@@ -115,9 +115,9 @@ async function connectUsb() {
 
 // ---------------------------------------------------------------- Windows: BLE
 //
-// 本体はペアリングを求める（本体の画面に6桁の番号が出る）。Windowsでは、番号の入力を
-// アプリが受け持つ（windows/main.js の setBluetoothPairingHandler）。入力の画面は
-// setPairingPrompt() で渡してもらう（ここは画面の部品に依存しないため）。
+// 本体はペアリングを求める（本体とWindowsの両方に同じ6桁の番号が出て、両方で確認する）。
+// Windowsでは、番号の確認をアプリが受け持つ（windows/main.js の setBluetoothPairingHandler）。
+// 確認の画面は setPairingPrompt() で渡してもらう（ここは画面の部品に依存しないため）。
 
 /** ペアリングの番号を利用者に尋ねる関数を登録する（Windows） */
 export function setPairingPrompt(prompt: (request: PairingRequest) => Promise<PairingReply>) {

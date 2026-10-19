@@ -112,20 +112,24 @@ mise run cmd '{"cmd":"restart"}'   # 再起動すると反映される
 
 設定 `ble.pairing`(既定は `true`)で、BLE の接続にペアリングを求める。
 
-- 本体は、暗号化されていない読み書き(通知を受け取る設定を含む)を特性の権限で拒否する。相手は拒否されるとペアリングを始める。初めての相手のときは、本体の画面に6桁の番号が出て、相手がそれを入力する(LE Secure Connections、番号の確認あり)。番号は毎回変わり、シリアルにも `BLE pairing code 123456` と出る。
+- 本体は、暗号化されていない読み書き(通知を受け取る設定を含む)を特性の権限で拒否する。相手は拒否されるとペアリングを始める。初めての相手のときは、本体と相手の両方に同じ6桁の番号が出て、両方で「同じ」と確認する(LE Secure Connections の Numeric Comparison、MITM 保護あり。本体の IO capability は DisplayYesNo)。本体の確認は画面の `Same` / `Cancel` で、`pages.cpp` が `bleConfirmPasskey()` を呼ぶ。番号は毎回変わり、シリアルにも `BLE pairing code 123456 (numeric comparison)` と出る。
+- **相手に番号を入力してもらう方式(Passkey Entry。本体の IO capability が DisplayOnly)は使わない。** 2026年10月19日に、Windows 11(25H2、10月14〜17日の更新 KB5127647・KB5127648・KB5127690 のあと)で、番号を入力したあとの手順が進まなくなった。本体のログは入力の直後から応答待ちになり 30 秒で `BLE pairing failed reason=0x63`(SMP の応答待ちタイムアウト)、Windows のシステムログも同じ時刻に「セキュリティ マネージャー プロトコルは…応答を待機しているときにタイムアウト」(イベント 29)。Secure Connections でも従来方式(Legacy)でも、アプリ経由でも Windows の設定画面からでも同じ。番号なし(Just Works)と Numeric Comparison は通ったので、Numeric Comparison に切り替えた。原因が Windows 側にあるかどうかは確定していない(ほかの番号入力の機器では試していない)。
+- ペアリングの GAP イベント(`ESP_GAP_BLE_NC_REQ_EVT` など)は `BLEDevice::setCustomGapHandler` で受ける。ライブラリの `BLESecurityCallbacks` は番号の比較の返事をイベントの中で即座に返す作りで、画面での確認を待てないため。
 - ペアリングした相手は本体が覚え(内蔵フラッシュ)、次からは番号なしで暗号化される。暗号化が済むと、シリアルに `BLE encrypted  bonded=2` と出る。
 - 暗号化が済むまで、本体はコマンドを実行せず、状況も送らない。60 秒以内に済まなければ切断する。
 - **接続の直後には、本体からペアリングを求めない。** Arduino の BLE ライブラリは `BLEDevice::setEncryptionLevel()` を呼ぶと接続のたびに本体からペアリングを求めるが、そうすると次の問題が出た。
   - Android: ペアリングの画面が前面に出ず、通知になることがある。
   - Windows: OS が自分でペアリングを始めてしまい、アプリの入力画面(下記)が呼ばれずに、接続が失敗し続ける。
 - 接続して3秒たっても暗号化されず、ペアリングも始まっていない(番号を表示していない)ときだけ、本体から暗号化を求める(シリアルに `BLE security request`)。Windows で、ペアリング済みのはずなのに読み書きが「Not paired」で失敗し続け、番号の入力画面も出ない状態になったことがあり、その状態から抜けるため(本体から求めると、Windows がペアリングをやり直し、アプリに番号の入力画面が出る)。その状態になった原因は特定できていない。
-- Android: 通知の有効化が拒否されたら、アプリが `createBond()` でペアリングを始める(`BleClient.kt`)。番号の入力は Android の標準の画面。
-- Windows: 番号の入力はアプリが受け持つ。Electron の `session.setBluetoothPairingHandler` で要求を受け、画面のダイアログで番号を聞いて返す(`windows/main.js`、`web/src/main.ts`)。これがないと、Windows では番号の要るペアリングが自動で取り消される。
+- Android: 通知の有効化が拒否されたら、アプリが `createBond()` でペアリングを始める(`BleClient.kt`)。番号の確認は Android の標準の画面。
+- Windows: 番号の確認はアプリが受け持つ。Electron の `session.setBluetoothPairingHandler` で要求(`confirmPin`)を受け、画面のダイアログで同じかを聞いて返す(`windows/main.js`、`web/src/main.ts`)。これがないと、Windows では確認の要るペアリングが自動で取り消される。
 - **Android は、ペアリングした相手のサービスの一覧を覚えていて、つなぎ直したときに調べ直さない。** 覚えている内容が本体と食い違うと、接続はできるのに書き込みが拒否され(logcat に `write status=3`)、通知も届かず、アプリは「本体からの状況を待っています」のまま止まった。接続のたびに `BluetoothGatt.refresh()`(公開されていないメソッド)で捨ててから調べ直している(`BleClient.kt` の `refreshCache`)。食い違った原因は特定できていない。
 - Windows でペアリングした直後の接続は、通知が届かないことがあった(上と同じ原因の可能性があるが、確かめていない)。6 秒間何も届かなければ、アプリがつなぎ直す(`web/src/host.ts`)。この回避が効くことは確かめていない(アプリを起動し直すと届く)。
 - Windows の再接続の処理(`host.ts` の `connectBle`)は、つながるまでの繰り返しを同時に2つ動かさない。以前は、切断の通知のたびに繰り返しを始めていて、接続の途中の処理どうしがぶつかり、画面は「接続済み」なのに何も届かない状態になった。
-- ペアリングを消すには `mise run cmd '{"cmd":"ble.unpair"}'`(USB のみ)。相手の側にも記憶が残るので、端末の Bluetooth の設定で本体の登録を解除する。解除しないと接続に失敗し続ける(Android アプリは、3回続くと案内を出す)。
-- nRF Connect などで確認するときは、同じように番号を入力するか、`ble.pairing: false` にする。
+- ペアリングを消すには `mise run cmd '{"cmd":"ble.unpair"}'`(USB のみ。`"address":"30:E3:A4:5B:F1:4D"` を付けると、その相手だけ消す)。相手の側にも記憶が残るので、端末の Bluetooth の設定で本体の登録を解除する。解除しないと接続に失敗し続ける(Android アプリは、3回続くと案内を出す)。
+- **端末に本体の登録が残ったまま、本体の記憶だけが無いとき**(2026年10月19日に Windows で発生。本体が Windows の記憶を失った経緯は不明)、端末は覚えている鍵で暗号化を始め、本体に鍵が無いので端末が即座に切断する。本体のログは `BLE connected` の直後に `BLE disconnected reason=0x13`(相手からの切断)の繰り返し、Windows アプリのコンソールは `NotSupportedError: GATT Error Unknown` の繰り返しで、アプリは「接続しています…」のまま。端末の Bluetooth の設定で本体を削除すれば、次の接続でペアリングし直す。本体の起動時のシリアルに `BLE bonded <アドレス>` で覚えている相手が出るので、端末のアドレスと見比べられる(Windows は `Get-PnpDeviceProperty -KeyName DEVPKEY_Bluetooth_RadioAddress`)。
+- 接続と切断は、相手のアドレスと理由をシリアルに出す(`BLE connected peer=…`、`BLE disconnected reason=0x…`)。理由は `esp_gatt_conn_reason_t`(0x13: 相手が切断、0x16: 本体が切断、0x08: 電波が届かない)。
+- nRF Connect などで確認するときは、同じように番号を確認するか、`ble.pairing: false` にする。
 
 #### ほかの端末が接続中の表示
 
@@ -265,7 +269,8 @@ Status 以外のページは、上端の帯(`‹ 題名`)をタップすると M
 mise run lcd-shot              # lcd.png に保存する
 mise run lcd-shot status.png
 mise run lcd-tap 160 120       # 画面の (160, 120) をタップした事にする
-mise run cmd '{"cmd":"lcd.tap","pairing":123456}'   # ペアリング中の画面を5秒間表示する
+mise run cmd '{"cmd":"lcd.tap","pairing":123456}'   # ペアリング中の画面(番号の比較。Same / Cancel つき)を5秒間表示する
+mise run cmd '{"cmd":"lcd.tap","pairing":123456,"confirm":false}'   # 同、相手に入力してもらう形
 ```
 
 Setup で一覧を選んでいる途中でも使える。
@@ -881,9 +886,9 @@ M5Unified は `Serial` を初期化しない。`setup()` の先頭にある `Ser
 | `run.set`(再起動なしで反映) | 確認済み(補正データの取得先と保存形式。正しくない SSID は拒否) |
 | TCP サーバ配信 | 確認済み(Wi-Fi 経由で PC から受信) |
 | rtk2go の局選択、TCP クライアント送信、PH コネクタの入出力、USB の NMEA 出力、画面の180度回転 | 未確認 |
-| BLE のペアリング: Windows | 確認済み(アプリの入力画面で番号を入れて接続、ペアリング前は通知の受け取りが拒否されること、アプリを起動し直したあと番号なしで接続して状況が表示されること、本体の再起動後に自動で再接続して状況が表示されること) |
-| BLE のペアリング: Android | 確認済み(ペアリング後の接続、本体の再起動後の自動再接続と、再接続後に状況が表示されること)。初回のペアリング(番号の入力)は、本体から求める方式のときに確認。いまの方式(アプリから始める)での初回のペアリングは未確認 |
-| BLE のペアリング: 本体の画面の番号表示 | 確認済み |
+| BLE のペアリング: Windows | 番号の入力(旧方式)で確認済み(アプリの入力画面で番号を入れて接続、ペアリング前は通知の受け取りが拒否されること、アプリを起動し直したあと番号なしで接続して状況が表示されること、本体の再起動後に自動で再接続して状況が表示されること)。2026年10月19日に番号の入力が Windows で通らなくなり、番号の比較(Numeric Comparison)に切り替えた。Windows の設定画面からの比較でのペアリングは確認済み(本体は自動承認の試作版)。本体の `Same` での承認と、アプリの確認画面からのペアリングは未確認 |
+| BLE のペアリング: Android | 番号の入力(旧方式)で確認済み(ペアリング後の接続、本体の再起動後の自動再接続と、再接続後に状況が表示されること)。番号の比較での初回のペアリングは未確認 |
+| BLE のペアリング: 本体の画面の番号表示 | 確認済み(番号の比較の `Same` / `Cancel` は画像の取り出しで確認) |
 | BLE のペアリング: 番号を間違えたとき・やめたとき、`ble.unpair` | 未確認 |
 | BLE のペアリング: 内蔵 RAM と Wi-Fi への影響 | 確認済み(内蔵 RAM の空きは約 106KB → 約 103.5KB。暗号化した接続で2分間、NTRIP は10秒あたり 5〜7KB、エラー率 0%、再接続なし) |
 | ログファイルのダウンロードと削除 | 確認済み(Windows、USB。一覧、252KB のファイルのダウンロードと大きさの一致、試験用のファイルの削除、正しくない名前の拒否)。RAW・RTCM 形式のファイル、書き込み中のファイル、数 MB 以上のファイルは未確認 |

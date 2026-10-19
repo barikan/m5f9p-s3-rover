@@ -51,7 +51,7 @@
 //   lcd.shot    本体の画面の内容を返す（確認用）。USBのみ。応答の後に、画像が
 //               "LCD:" で始まる行で続く（screen.cpp の「画像の取り出し」を参照）
 //   lcd.tap     {"x":0-319,"y":0-239}  本体の画面をタップした事にする（確認用）。USBのみ
-//   ble.unpair  BLEのペアリングの記憶を全て消す。USBのみ
+//   ble.unpair  BLEのペアリングの記憶を消す。USBのみ。{"address":"30:E3:A4:5B:F1:4D"} で、その相手だけ消す
 //   ログファイルの取り出し（USBのみ。BLEでは時間がかかりすぎるため）
 //   log.list    {"start":n}  SDカードのログファイルの一覧を返す。1回に LOG_LIST_MAX 件まで
 //                 "files":[{"name":"20261006/gps_r0_20261006_123456.log","size":バイト数},...]
@@ -504,7 +504,7 @@ void cmdExecute( char *line, String &reply, int channel )
 		if ( channel != CMD_USB ) re["error"] = "usb only";
 		else {
 			// {"pairing":番号} の時は、ペアリング中の画面を数秒間表示する（見た目の確認用）
-			if ( cmd["pairing"].is<int>() ) pagesPreviewPairing( cmd["pairing"] );
+			if ( cmd["pairing"].is<int>() ) pagesPreviewPairing( cmd["pairing"], cmd["confirm"] | true );
 			else screenInjectTap( cmd["x"] | 0, cmd["y"] | 0 );
 			re["ok"] = true;
 		}
@@ -570,7 +570,8 @@ void cmdExecute( char *line, String &reply, int channel )
 		if ( channel != CMD_USB ) re["error"] = "usb only";
 		else if ( ! mBleEnable ) re["error"] = "BLE disabled";
 		else {
-			re["removed"] = bleUnpairAll();
+			const char *address = cmd["address"] | "";
+			re["removed"] = address[0] ? bleUnpair( address ) : bleUnpairAll();
 			re["ok"] = true;
 		}
 	}

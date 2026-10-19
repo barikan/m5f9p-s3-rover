@@ -135,8 +135,9 @@ mise run android-screenshot          # 端末の画面を screenshot.png に保�
 - **USB への応答は、長さが 64 バイトの倍数にならないようにしている**(`cmdPollUsb`)。倍数だと USB の送信の区切りが付かず、次に何か出力するまで相手に届かない(数秒止まる)。USB に行を出す処理を足すときは、同じことに気をつける。
 - コマンドは1行の JSON で、入口は USB シリアル(cmd.cpp)と BLE(ble.cpp)。どちらも `cmdExecute()` を通り、**実行は loopTask で行う。**
 - **ペアリングは相手(Android、Windows)から始めさせる。`BLEDevice::setEncryptionLevel()` を呼ばない。** 本体から暗号化を求めるのは、接続して数秒たっても暗号化されないときだけ(`blePoll`)。 呼ぶと本体が接続のたびにペアリングを求め、Android では画面が通知になり、Windows ではアプリの番号入力が呼ばれずに接続できなくなる。
-- ペアリングのコールバック(`SecurityCallbacks`)も BLE のタスクから呼ばれる。変数に入れるだけにし、番号の表示は `loop()` が `blePasskey()` を見て行う。
-- `ble.unpair` やペアリングの記憶を消す操作は、ユーザーの端末側でも登録の解除が必要になる。断らずに実行しない。
+- ペアリングは番号の比較(Numeric Comparison。本体の IO capability は DisplayYesNo)で行う。**相手に番号を入力させる方式(DisplayOnly)に戻さない。** Windows 11(2026年10月の更新以降)で、番号を入力したあとの手順が進まず失敗する(`DEVELOPE.md` の「BLE のペアリング」)。
+- ペアリングの GAP イベントは `BLEDevice::setCustomGapHandler` で受け、BLE のタスクから呼ばれる。変数に入れるだけにし、番号の表示と `Same` / `Cancel` の返事(`bleConfirmPasskey()`)は loopTask(`pages.cpp`)が行う。ライブラリの `BLESecurityCallbacks` は使わない(番号の比較の返事をイベントの中で即座に返してしまう)。
+- `ble.unpair` やペアリングの記憶を消す操作は、ユーザーの端末側でも登録の解除が必要になる。断らずに実行しない。相手を限って消すには `{"cmd":"ble.unpair","address":"..."}`。
 - **BLE のコールバックは BLE のタスクから呼ばれる。そこでは受信した行をキューに積むだけにする。** I2C、画面、SD に触る処理をコールバックに書かない。送信も `blePoll()` からだけ行う。
 - 測位データを BLE に流すときも同じで、`taskRover` は `bleQueueNmea()` で渡すだけ。
 - Wi-Fi と BLE は無線を共用する。BLE の送信量を増やす変更(通知の頻度、NMEA のレート上限 `BLE_NMEA_RATE_MAX`、接続間隔)は、NTRIP の受信に影響しないか `STAT` 行で確かめる。測定結果は `DEVELOPE.md` にある。

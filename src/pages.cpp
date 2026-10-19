@@ -59,6 +59,8 @@ enum {
 	HIT_SET_BRIGHTNESS,		// 明るさのページを開く
 	HIT_SAT_VIEW,			// Satellites の表示の切り替え
 	HIT_BLE_DISCONNECT,		// BLEで接続している相手を切断する
+	HIT_PAIR_SAME,			// ペアリングの番号が相手と同じ
+	HIT_PAIR_CANCEL,		// ペアリングをやめる
 	HIT_BRIGHTNESS_AUTO,	// 明るさの自動の入・切
 	HIT_BRIGHTNESS = 80,	// + 明るさの番号
 };
@@ -902,15 +904,26 @@ static void onSetting( int id )
 	else if ( id == HIT_SET_MQTT ) appSetMqtt( ! mMqttCfg.enable );
 }
 
-// BLEのペアリング中。相手に入力してもらう番号を表示する
+// BLEのペアリング中。番号を表示する
 //
-static void drawPairing( int passkey )
+// confirm  true:相手にも同じ番号が出ている（Numeric Comparison）。Same / Cancel のボタンを出す
+//          false:相手に入力してもらう（Passkey Entry）
+//
+static void drawPairing( int passkey, bool confirm )
 {
 	char text[16];
 	screenText( SCREEN_WIDTH / 2, 36, "Bluetooth pairing", FONT_TITLE, COLOR_TEXT, lgfx::textdatum_t::middle_center );
-	screenText( SCREEN_WIDTH / 2, 72, "Enter this code on your phone or PC", FONT_TEXT, COLOR_MUTED, lgfx::textdatum_t::middle_center );
+	screenText( SCREEN_WIDTH / 2, 72, confirm ? "Same code on your phone or PC?" : "Enter this code on your phone or PC",
+			FONT_TEXT, COLOR_MUTED, lgfx::textdatum_t::middle_center );
 	snprintf( text, sizeof(text), "%03d %03d", passkey / 1000, passkey % 1000 );
-	screenText( SCREEN_WIDTH / 2, 150, text, FONT_DIGITS, COLOR_TEXT, lgfx::textdatum_t::middle_center );
+	screenText( SCREEN_WIDTH / 2, confirm ? 130 : 150, text, FONT_DIGITS, COLOR_TEXT, lgfx::textdatum_t::middle_center );
+	if ( confirm ){
+		const int bh = 44;
+		const int by = SCREEN_HEIGHT - MARGIN - bh;
+		const int bw = ( SCREEN_WIDTH - MARGIN * 3 ) / 2;
+		drawButton( MARGIN, by, bw, bh, "Cancel", HIT_PAIR_CANCEL );
+		drawButton( MARGIN * 2 + bw, by, bw, bh, "Same", HIT_PAIR_SAME );
+	}
 }
 
 // ---------------------------------------------------------------- タップの処理
@@ -927,6 +940,8 @@ static void onTap( int id )
 	else if ( id >= HIT_RATE && id < HIT_SET_WIFI ) appSetSolutionRate( mRates[ id - HIT_RATE ] );
 	else if ( id == HIT_SET_BLE ) mPage = PAGE_BLUETOOTH;
 	else if ( id == HIT_BLE_DISCONNECT ) bleDisconnect();
+	else if ( id == HIT_PAIR_SAME ) bleConfirmPasskey( true );
+	else if ( id == HIT_PAIR_CANCEL ) bleConfirmPasskey( false );
 	else if ( id >= HIT_SET_WIFI && id <= HIT_SET_MQTT ) onSetting( id );
 	else if ( id == HIT_SET_BRIGHTNESS ) mPage = PAGE_BRIGHTNESS;
 	else if ( id == HIT_SAT_VIEW ) mSatView = ! mSatView;
@@ -944,22 +959,24 @@ void pagesOpenSetup()
 }
 
 static int mPreviewPasskey = -1;
+static bool mPreviewConfirm;
 static unsigned long mPreviewMillis;
 
 // ペアリング中の画面を、数秒間だけ表示する（見た目の確認用。lcd.tap コマンド）
 //
-void pagesPreviewPairing( int passkey )
+void pagesPreviewPairing( int passkey, bool confirm )
 {
 	mPreviewPasskey = passkey;
+	mPreviewConfirm = confirm;
 	mPreviewMillis = millis();
 }
 
-static void draw( int passkey )
+static void draw( int passkey, bool confirm )
 {
 	screenClear();
 	mNumHits = 0;
 
-	if ( passkey >= 0 ) drawPairing( passkey );
+	if ( passkey >= 0 ) drawPairing( passkey, confirm );
 	else switch( mPage ){
 		case PAGE_STATUS: drawStatus(); break;
 		case PAGE_MENU: drawMenu(); break;
@@ -987,16 +1004,29 @@ void pagesLoop()
 
 	updateRates();
 	int passkey = mBleEnable ? blePasskey() : -1;
+	bool confirm = passkey >= 0 && bleConfirmPending();
 	if ( mPreviewPasskey >= 0 ){
 		if ( millis() - mPreviewMillis > 5000 ) mPreviewPasskey = -1;
-		else if ( passkey < 0 ) passkey = mPreviewPasskey;
+		else if ( passkey < 0 ){
+			passkey = mPreviewPasskey;
+			confirm = mPreviewConfirm;
+		}
 	}
 
 	int x, y;
 	bool released;
 	bool touching = screenTouch( &x, &y, &released );
 	int pressed = HIT_NONE;
-	if ( touching && passkey < 0 ){
+	if ( touching && passkey >= 0 ){
+		// ペアリング中は、Same / Cancel のボタンだけ受け付ける
+		int id = hitFind( x, y );
+		if ( released ){
+			if ( id != HIT_NONE && mPreviewPasskey < 0 ) onTap( id );
+			redraw = true;
+		}
+		else pressed = id;
+	}
+	else if ( touching ){
 		mLastTouchMillis = millis();
 		if ( mPage == PAGE_STATUS ){
 			// Status はどこをタップしても Menu に移る
@@ -1027,6 +1057,6 @@ void pagesLoop()
 
 	if ( redraw || millis() - msecLastDraw >= DRAW_PERIOD ){
 		msecLastDraw = millis();
-		draw( passkey );
+		draw( passkey, confirm );
 	}
 }
