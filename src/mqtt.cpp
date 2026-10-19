@@ -55,6 +55,7 @@ int mMqttState = MQS_IDLE;
 int mMqttPublished;				// 送った数
 int mMqttErrors;				// 接続と送信の失敗の数
 static int mMqttLastError;		// PubSubClient の state()
+static const char *mAlpn[] = { "mqtt", NULL };	// TLS の ALPN。MQTT の正式な識別子。対応しないブローカーは無視する
 static uint32_t mMqttLastSec;	// 最後に送った測位の時刻（Unix 秒）
 
 static QueueHandle_t mQueue;
@@ -196,6 +197,7 @@ static bool connectClient()
 		else mTls->setCACertBundle( rootca_crt_bundle_start );
 		mTls->setHandshakeTimeout( 15 );
 		mTls->setTimeout( 10 );
+		mTls->setAlpnProtocols( mAlpn );	// AWS IoT Core のポート 443 は、ALPN "mqtt" が無いと MQTT として扱わず応答しない
 		client = mTls;
 	}
 	else {
