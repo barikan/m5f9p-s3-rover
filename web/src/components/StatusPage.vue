@@ -64,6 +64,13 @@ const autoInfo = computed(() => {
   if (base.searching) return '近くの局を探しています…';
   return base.km !== undefined ? `${base.km.toFixed(1)} km、応答率 ${base.rate} %` : '測位と Wi-Fi の接続を待っています';
 });
+// 基準局の位置（補正データの RTCM 1005/1006 から。届くまでは出ない）と、現在地からの距離
+const baseInfo = computed(() => {
+  const base = s.value?.base;
+  if (!base?.pos) return '';
+  const km = base.km !== undefined && !base.auto ? `（${base.km.toFixed(1)} km）` : '';
+  return `${base.pos.lat.toFixed(8)}, ${base.pos.lon.toFixed(8)}${km}`;
+});
 
 const logsOpen = ref(false);
 
@@ -128,6 +135,7 @@ const gigabytes = (megabytes: number) => (megabytes / 1000).toFixed(1);
       </template>
       <Item label="取得先">{{ sourceName }}</Item>
       <Item v-if="s.base.auto" label="自動">{{ autoInfo }}</Item>
+      <Item v-if="baseInfo" label="基準局" mono>{{ baseInfo }}</Item>
       <template v-if="s.base.valid">
         <Item label="状態">{{ s.base.ready ? '受信中' : '接続待ち' }}</Item>
         <Item label="受信量">{{ state.baseRate }} バイト/秒</Item>

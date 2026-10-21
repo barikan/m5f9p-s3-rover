@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import * as rover from '../rover';
 import { state } from '../store';
-import { createMap, mapsKey, TRACK_LEGEND } from '../map';
+import { BASE_COLOR, createMap, mapsKey, TRACK_LEGEND } from '../map';
 
 const props = defineProps<{ visible?: boolean }>();
 
@@ -29,6 +29,7 @@ const s = computed(() => state.status);
 const isToday = computed(() => state.trackDay === rover.today());
 const hasKey = !!mapsKey();     // キーを変えると、設定タブが画面を読み込み直す
 const canFollow = computed(() => !!view.value && !view.value.follow && !!s.value?.pos.valid && isToday.value);
+const basePos = computed(() => s.value?.base.pos);      // 基準局の位置（補正データの 1005/1006。無い時は undefined）
 
 // 左上の表示（座標、軌跡の点数、凡例）。タップで閉じ、左上のボタンで開き直す。端末ごとに覚える。
 // キーが無い、使えない時の案内は、閉じていても出す
@@ -91,6 +92,10 @@ async function deleteDay(day: string) {
           <span class="font-mono">{{ rover.heightOf(s).value.toFixed(3) }} m</span>
         </div>
       </template>
+      <div v-if="basePos" class="flex items-center gap-1.5">
+        <svg class="h-3.5 w-3.5" viewBox="-12 -13 24 22" aria-hidden="true"><path d="M 0 -12 L 11 8 L -11 8 Z" :fill="BASE_COLOR" stroke="#FFFFFF" stroke-width="2" /></svg>
+        基準局{{ s.base.km !== undefined ? ` ${s.base.km.toFixed(1)} km` : '' }}
+      </div>
     </template>
     <div v-else-if="isToday">本体に接続していません</div>
     <div>{{ isToday ? '今日' : state.trackDay }}の軌跡 {{ state.trackCount }} 点{{ state.syncing ? '（本体から取得中）' : '' }}</div>
@@ -110,6 +115,7 @@ async function deleteDay(day: string) {
 
   <div class="absolute inset-x-0 bottom-4 flex justify-center gap-2">
     <Button size="sm" v-if="canFollow" variant="outline" class="bg-background dark:bg-background shadow-sm" @click="map?.followCurrent()">現在地</Button>
+    <Button size="sm" v-if="basePos && isToday" variant="outline" class="bg-background dark:bg-background shadow-sm" @click="map?.showBase()">基準局</Button>
     <Button size="sm" variant="outline" class="bg-background dark:bg-background shadow-sm" @click="map?.toggleSatellite()">{{ view && view.satellite ? '地図' : '航空写真' }}</Button>
     <Button size="sm" variant="outline" class="bg-background dark:bg-background shadow-sm" @click="map?.toggleTrack()">{{ view && !view.track ? '軌跡を表示' : '軌跡を隠す' }}</Button>
     <Button size="sm" variant="outline" class="bg-background dark:bg-background shadow-sm" @click="showDays">履歴</Button>

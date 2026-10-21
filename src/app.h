@@ -355,14 +355,32 @@ void sysmonBegin();
 void sysmonPoll();
 
 // ************************************************************
+//                        rtcm.cpp
+// ************************************************************
+
+struct stRtcmBase {
+	bool valid;
+	double lat;			// 度（WGS84）
+	double lon;
+	double height;		// 楕円体高（m）。アンテナ基準点
+	int stationId;		// DF003
+	int msgType;		// 1005 / 1006
+	unsigned long millis;	// 最後に受けた時刻
+};
+
+void rtcmFeed( const uint8_t *data, int len );
+void rtcmReset();
+bool rtcmGetBase( struct stRtcmBase *out );
+
+// ************************************************************
 //                        kuon.cpp
 // ************************************************************
 
 extern volatile bool mKuonSearching;
-extern float mKuonKm;
 extern int mKuonRate;
 
 void kuonReset();
+float kuonDistanceKm();
 bool kuonCheck( int failures, struct stBaseSource *next );
 void kuonPoll();
 

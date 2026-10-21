@@ -16,6 +16,10 @@ export const userMapsKey = () => localStorage.getItem('mapsKey') || '';
 // （CSS の filter は軌跡と現在地にもかかってしまうので使わない）
 const MAP_SATURATION = -90;
 
+/** 基準局の印（三角。先端が位置）。凡例（MapPage.vue）でも同じ形と色を使う */
+export const BASE_ICON_PATH = 'M 0 -12 L 11 8 L -11 8 Z';
+export const BASE_COLOR = '#1F2937';   // 濃い灰色。軌跡の色（rover.ts の QUALITY）と見分けがつくもの
+
 /** 凡例（MapPage.vue）に並べる測位の状態。色は rover.ts の QUALITY（バッジと同じ） */
 export const TRACK_LEGEND = [4, 5, 2, 1, 6];
 const trackColorOf = (q: number) => rover.qualityOf(q).color;
@@ -38,6 +42,7 @@ export function createMap(mapEl: HTMLElement) {
 
   let map: google.maps.Map | null = null;
   let marker: google.maps.Marker | null = null;
+  let baseMarker: google.maps.Marker | null = null;   // 基準局（補正データの 1005/1006 の位置。status の base.pos）
   let lines: google.maps.Polyline[] = [];           // 測位の状態が変わる毎に線を分ける（色を変えるため）。白い縁の線も入る
   let lastLine: google.maps.Polyline | null = null;
   let lastOutline: google.maps.Polyline | null = null;   // lastLine の後ろの白い縁
@@ -68,8 +73,13 @@ export function createMap(mapEl: HTMLElement) {
       // 地図を指で動かしたら追従をやめる
       map.addListener('dragstart', () => { view.follow = false; });
       marker = new google.maps.Marker({ map, visible: false, clickable: false, zIndex: 10 });
+      baseMarker = new google.maps.Marker({
+        map, visible: false, clickable: false, zIndex: 9,
+        icon: { path: BASE_ICON_PATH, scale: 1, fillColor: BASE_COLOR, fillOpacity: 1, strokeColor: '#FFFFFF', strokeWeight: 2, anchor: new google.maps.Point(0, 12) },
+      });
       drawTrack();
       drawCurrent();
+      drawBase();
     };
     const script = document.createElement('script');
     script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&callback=__mapReady&loading=async&language=ja&region=JP`;
@@ -135,6 +145,23 @@ export function createMap(mapEl: HTMLElement) {
     for (; drawn < state.track.length; drawn++) addPoint(state.track[drawn]);
   }
 
+  function basePosition() {
+    const b = state.status?.base;
+    return b && b.pos ? { lat: b.pos.lat, lng: b.pos.lon } : null;
+  }
+
+  /** 基準局の印。位置が分かっている間だけ出す（取得先を切り替えると、次の 1005/1006 が届くまで消える） */
+  function drawBase() {
+    if (!baseMarker) return;
+    const position = basePosition();
+    if (!position) {
+      baseMarker.setVisible(false);
+      return;
+    }
+    baseMarker.setPosition(position);
+    baseMarker.setVisible(true);
+  }
+
   function drawCurrent() {
     if (!map || !marker) return;
     const position = currentPosition();
@@ -179,10 +206,18 @@ export function createMap(mapEl: HTMLElement) {
       view.satellite = !view.satellite;
       if (map) map.setMapTypeId(view.satellite ? 'hybrid' : 'roadmap');
     },
+    /** 基準局へ移動する（追従はやめる）。基準局の位置が無い時は何もしない */
+    showBase() {
+      const position = basePosition();
+      if (!map || !position) return;
+      view.follow = false;
+      if ((map.getZoom() ?? 0) < 10) map.setZoom(16);
+      map.panTo(position);
+    },
     /** rover の状態が変わった時に呼ぶ */
     update(what: Change) {
       if (what === 'track') drawTrack();
-      if (what === 'status' || what === 'conn') drawCurrent();
+      if (what === 'status' || what === 'conn') { drawCurrent(); drawBase(); }
     },
   };
 }

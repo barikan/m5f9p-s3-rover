@@ -57,8 +57,10 @@ struct stKuonBase {
 };
 
 volatile bool mKuonSearching;				// 探している間 true
-float mKuonKm = -1;							// 選んだ局までの距離（探した時点）。-1:分からない
 int mKuonRate = -1;							// 選んだ局の応答率（%）。-1:分からない
+static bool mKuonPosValid;					// 選んだ局の位置が分かっている
+static double mKuonLat, mKuonLon;			// 選んだ局の位置
+static float mKuonKmLast = -1;				// 最後に計算した局までの距離。測位が無い間はこれを返す
 
 static struct stKuonBase mCand[ KUON_CANDIDATES ];
 static int mNumCand;
@@ -254,8 +256,28 @@ void kuonReset()
 {
 	mSearched = false;
 	mRetryMillis = 0;
-	mKuonKm = -1;
+	mKuonPosValid = false;
+	mKuonKmLast = -1;
 	mKuonRate = -1;
+}
+
+// 基準局までの距離（km）。現在地から計算し直す（画面と status が呼ぶ。loopTask）
+// 位置は、補正データの 1005/1006 から取れた正確な値（rtcm.cpp）があればそれ、
+// 無ければ一覧の値（小数2桁。約 1km の精度）。
+//
+// 戻り値＝ 距離（km）。負数：分からない（局の位置が無い、まだ測位していない）
+//
+float kuonDistanceKm()
+{
+	struct stRtcmBase b;
+	bool exact = rtcmGetBase( &b );
+	if ( ! exact && ! mKuonPosValid ) return -1;
+	if ( mGpsData.ubxDone && mGpsData.quality > 0 ){
+		if ( exact ) mKuonKmLast = distanceKm( mGpsData.lat, mGpsData.lon, b.lat, b.lon );
+		else mKuonKmLast = distanceKm( mGpsData.lat, mGpsData.lon, mKuonLat, mKuonLon );
+	}
+	else if ( exact && mKuonKmLast < 0 ) return -1;
+	return mKuonKmLast;
 }
 
 // 探し直すかどうか決め、探して局が変わった時は next に入れる。taskBaseRecv から呼ぶ
@@ -303,7 +325,10 @@ bool kuonCheck( int failures, struct stBaseSource *next )
 	}
 
 	const struct stKuonBase *b = &mCand[ pick ];
-	mKuonKm = b->km;
+	mKuonLat = b->lat;
+	mKuonLon = b->lon;
+	mKuonPosValid = true;
+	mKuonKmLast = b->km;
 	mKuonRate = rateOf( b );
 	if ( strcmp( b->host, mBaseSrc.address ) == 0 && strcmp( b->mount, mBaseSrc.mountPoint ) == 0 && mBaseSrc.valid ){
 		dbgPrintf( "Kuon: keep %s/%s\r\n", b->host, b->mount );

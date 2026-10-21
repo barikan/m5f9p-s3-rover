@@ -390,6 +390,7 @@ static void taskBaseRecv(void* param)
 			mBaseRecvReady = false;
 			mBaseRecvClient->stop();
 			memcpy( &mBaseSrc, &mBaseSrcNext, sizeof( mBaseSrc ) );
+			rtcmReset();									// 前の局の位置を忘れる
 			isTcp = ( mBaseSrc.valid && mBaseSrc.type == BASE_TYPE_TCP );
 			mBaseRecvReady = ( mBaseSrc.valid && mBaseSrc.type == BASE_TYPE_UART );
 			mBaseReconnecting = isTcp;
@@ -405,6 +406,7 @@ static void taskBaseRecv(void* param)
 				mBaseRecvReady = false;
 				mBaseRecvClient->stop();
 				memcpy( &mBaseSrc, &next, sizeof( mBaseSrc ) );
+				rtcmReset();
 				isTcp = true;
 				mBaseReconnecting = true;
 				mBaseRecvLastMillis = millis() - 5000;
@@ -421,6 +423,7 @@ static void taskBaseRecv(void* param)
 				nret = gpsWrite( buff, numRecvBytes );
 				if ( nret > 0 ) mBaseRecvCount += nret;
 				mBaseRecvLastMillis = millis();
+				rtcmFeed( (const uint8_t*) buff, numRecvBytes );	// 基準局の位置（1005/1006）を拾う（rtcm.cpp）
 			}
 		}
 		if ( ! isTcp ) continue;

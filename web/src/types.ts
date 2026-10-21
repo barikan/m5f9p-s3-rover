@@ -39,8 +39,9 @@ export interface Status {
     reconnects: number;
     auto?: boolean;         // 取得先を自動で選んでいる（KUON GEO の一覧から。本体の src/kuon.cpp）
     searching?: boolean;    // 局を探している間 true
-    km?: number;            // 選んだ局までの距離（探した時点）km
-    rate?: number;          // 選んだ局の応答率（直近30日）%
+    km?: number;            // 基準局までの距離（現在地から計算し直した値）km。位置が分かっている時（pos か、自動で選んだ局の一覧の位置）
+    rate?: number;          // 選んだ局の応答率（直近30日）%。自動の時だけ
+    pos?: { lat: number; lon: number; height: number; id: number };  // 補正データの RTCM 1005/1006 から取れた基準局の位置（本体の src/rtcm.cpp）。height は楕円体高 m、id は局の番号
     rtcmErr: number;        // %
     rtcmAge: number;        // ms
   };

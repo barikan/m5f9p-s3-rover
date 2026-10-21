@@ -681,11 +681,15 @@ static void drawCorrections()
 		tableAdd( "Source", COLOR_TEXT, "%.22s", mBaseSrc.address );
 		tableAdd( "Mount", COLOR_TEXT, "%s", mBaseSrc.mountPoint[0] ? mBaseSrc.mountPoint : "-" );
 	}
+	float km = kuonDistanceKm();
 	if ( mRunInfo.baseAuto ){		// 自動（kuon.cpp）
 		if ( mKuonSearching ) tableAdd( "Auto", COLOR_ORANGE, "Searching..." );
-		else if ( mKuonKm >= 0 ) tableAdd( "Auto", COLOR_TEXT, "%.1f km, %d%%", mKuonKm, mKuonRate );
+		else if ( km >= 0 ) tableAdd( "Auto", COLOR_TEXT, "%.1f km, %d%%", km, mKuonRate );
 		else tableAdd( "Auto", COLOR_TEXT, "Waiting" );
 	}
+	else if ( km >= 0 ) tableAdd( "Distance", COLOR_TEXT, "%.1f km", km );
+	struct stRtcmBase rb;
+	if ( rtcmGetBase( &rb ) ) tableAdd( "Base", COLOR_TEXT, "%.5f, %.5f", rb.lat, rb.lon );	// 1005/1006 の位置（rtcm.cpp）
 	if ( mBaseSrc.valid ){
 		bool ready = mBaseRecvReady && ! mBaseReconnecting;
 		tableAdd( "State", ready ? COLOR_GREEN : COLOR_ORANGE, ready ? "Receiving" : "Connecting" );

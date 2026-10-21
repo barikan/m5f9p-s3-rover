@@ -151,13 +151,20 @@ static void cmdStatus( JsonDocument &re )
 	base["reconnecting"] = (bool)mBaseReconnecting;
 	base["bytes"] = (int)mBaseRecvCount;
 	base["reconnects"] = (int)mBaseReconnectCount;
+	float km = kuonDistanceKm();
+	if ( km >= 0 ) base["km"] = serialized( String( km, 1 ) );	// 基準局までの距離（現在地から計算し直した値）
 	if ( mRunInfo.baseAuto ){									// 自動で選んでいる（kuon.cpp）
 		base["auto"] = true;
 		base["searching"] = (bool)mKuonSearching;
-		if ( mKuonKm >= 0 ){
-			base["km"] = serialized( String( mKuonKm, 1 ) );	// 選んだ局までの距離（探した時点）
-			base["rate"] = mKuonRate;							// 選んだ局の応答率（%）
-		}
+		if ( mKuonRate >= 0 ) base["rate"] = mKuonRate;		// 選んだ局の応答率（%）
+	}
+	struct stRtcmBase rb;
+	if ( rtcmGetBase( &rb ) ){									// 補正データの 1005/1006 から取れた基準局の位置（rtcm.cpp）
+		JsonObject pos = base["pos"].to<JsonObject>();
+		pos["lat"] = serialized( String( rb.lat, 8 ) );
+		pos["lon"] = serialized( String( rb.lon, 8 ) );
+		pos["height"] = serialized( String( rb.height, 3 ) );	// 楕円体高（m）
+		pos["id"] = rb.stationId;
 	}
 	base["rtcmErr"] = mRtcmCrcErrorPercent;
 	base["rtcmAge"] = millis() - mRtcmLastMillis;

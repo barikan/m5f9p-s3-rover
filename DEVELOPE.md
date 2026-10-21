@@ -326,9 +326,10 @@ mise run cmd '{"cmd":"run.set","wifi":"home","source":"geortk.jp/tamtam"}'  # Wi
 - 列は列名の行(`host port mount lat lon ... auth fee p30 up ...`)で位置を覚える。位置を決め打ちしない(列が増えたときに全部ずれる)。
 - 候補は、無料(`fee=N`)、応答中(`up=1`)、検索半径の中、認証不要(`auth=N`)。`rtk2go.com` の局だけは、`rtk2go.user` と `rtk2go.password` が両方あれば、認証が要っても候補にし、その値でログインする。
 - 応答率は `p30`(直近30日の応答回数)を一覧の中の最大値で割った値。応答率が `auto.minRate` 以上の中で、いちばん近い局を選ぶ。東京・神田では、16km の局の応答率が 2% だった(近さだけで選ぶと失敗する)。
-- 探すのは `taskBaseRecv`(`kuonCheck()`)で、探して局が変わったら、そのまま切り替えてつなぐ。探すのは、自動にしたあと・起動後の最初(測位できて Wi-Fi がつながったとき)、前回探した場所から `auto.researchKm` 以上動いたとき、今の局に3回続けてつながらないとき(その局を除く)。探せなかったときは 60 秒あける。
+- 探すのは `taskBaseRecv`(`kuonCheck()`)で、探して局が変わったら、そのまま切り替えてつなぐ。探すのは、自動にしたあと・起動後の最初(測位できて Wi-Fi がつながったとき)、前回探した場所から `auto.researchKm` 以上動いたとき、今の局に3回続けてつながらないとき(その局を除く)。探せなかったときは 60 秒あける。 利用者向けの説明は [docs/auto-base.md](docs/auto-base.md)。
 - 選んだ局の保存(`m5f9p.run.json` の `source`。`sourceAuto` が自動の印)は、loopTask の `kuonPoll()` が行う(SD カード)。
-- 状況(`status`)の `base` に `auto`、`searching`、`km`、`rate`、`run.get` に `sourceAuto` が入る。`run.set` の `source` に `"auto"` を送ると自動になり、ほかの取得先を選ぶと手動に戻る。
+- 状況(`status`)の `base` に `auto`、`searching`、`km`、`rate`、`run.get` に `sourceAuto` が入る。`km` は、状況を作るたびに現在地から計算し直す(`kuonDistanceKm()`。探した時点の値ではない)。
+- 基準局の正確な位置は、補正データの RTCM 1005 / 1006(アンテナ基準点の ECEF 座標、0.1mm 単位)から取る(`src/rtcm.cpp`)。`taskBaseRecv` が受けたバイト列を `rtcmFeed()` に流し、CRC-24Q を確かめて、ECEF を WGS84 の緯度経度と楕円体高に変える。取得先を切り替えたら `rtcmReset()` で忘れる。状況の `base.pos`(`lat`、`lon`、`height`、`id`)に入り、距離 `km` もこの位置があればこちらを使う(一覧の位置は小数2桁で約 1km の精度)。アプリの地図は `base.pos` に三角の印を出す(`web/src/map.ts`)。D9C の CLAS(SSR)には 1005 / 1006 が無いので流さない。手動で選んだ取得先や PH コネクタからの補正データでも位置は取れる。`run.set` の `source` に `"auto"` を送ると自動になり、ほかの取得先を選ぶと手動に戻る。
 - シリアルログに `Kuon:` で始まる行(近い順の候補5件、選んだ局)が出る。
 
 ### 平面直角座標
