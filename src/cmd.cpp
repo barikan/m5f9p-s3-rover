@@ -79,6 +79,7 @@
 //                                表示（本体の画面、アプリ）だけで、NMEAは変わらない
 //               {"zone":n}       平面直角座標系の系（1～19）
 //               {"coordXY":b}    座標を平面直角座標の X, Y で表示する（本体の画面、アプリの測位タブ）
+//               {"dms":b}        緯度経度を度分秒で表示する（本体の画面、アプリ）。false:度（小数）
 //   sats.get  衛星の配置と信号強度を返す（詳しくは sats.cpp）。問い合わせている間だけ、
 //             F9Pに衛星のメッセージを出力させる
 //               "sats":[[gnssId,svId,仰角,方位角,使用,[[sigId,強度,使用],...]],...]
@@ -134,6 +135,7 @@ static void cmdStatus( JsonDocument &re )
 	// 平面直角座標系（jprcs.cpp）。xy は系が決まっていて、測位データがある時だけ
 	re["zone"] = mRunInfo.zone;								// 系 1～19。0:選んでいない
 	re["coordXY"] = (bool)mRunInfo.coordXY;					// X, Y で表示する（表示の設定）
+	re["dms"] = (bool)mRunInfo.dms;							// 緯度経度を度分秒で表示する（表示の設定）
 	double x, y;
 	if ( mGpsData.ubxDone && jprcsToXY( mGpsData.lat, mGpsData.lon, mRunInfo.zone, &x, &y ) ){
 		JsonObject xy = re["xy"].to<JsonObject>();
@@ -401,6 +403,7 @@ static void cmdRunGet( JsonDocument &re )
 	re["elevation"] = (bool)mRunInfo.elevation;
 	re["zone"] = mRunInfo.zone;
 	re["coordXY"] = (bool)mRunInfo.coordXY;
+	re["dms"] = (bool)mRunInfo.dms;
 	re["mqtt"] = ( mMqttCfg.enable != 0 );			// MQTT 配信（設定ファイルの mqtt.enable）
 	re["mqttReady"] = ( mMqttCfg.host[0] != '\0' );	// ブローカーが設定ファイルにある（入・切を切り替えられる）
 
@@ -456,6 +459,7 @@ static void cmdRunSet( JsonDocument &cmd, JsonDocument &re )
 	if ( cmd["elevation"].is<bool>() ) appSetElevation( cmd["elevation"].as<bool>() );
 	if ( cmd["zone"].is<int>() ) appSetZone( cmd["zone"] );
 	if ( cmd["coordXY"].is<bool>() ) appSetCoordXY( cmd["coordXY"].as<bool>() );
+	if ( cmd["dms"].is<bool>() ) appSetDms( cmd["dms"].as<bool>() );
 	if ( cmd["saveAtBoot"].is<bool>() ){
 		mRunInfo.saving = cmd["saveAtBoot"].as<bool>() ? 1 : 0;
 		saveRunInfo( &mRunInfo );

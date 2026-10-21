@@ -335,10 +335,10 @@ static void drawStatus()
 		y += rowHeight;
 	}
 	else {
-		snprintf( text, sizeof(text), "%.9f°", mGpsData.lat );
+		formatLatLon( text, sizeof(text), mGpsData.lat, true, mRunInfo.dms, 9 );		// 度か度分秒（main.cpp）
 		drawRow( y, rowHeight, "Lat", valid ? text : "--", FONT_VALUE );
 		y += rowHeight;
-		snprintf( text, sizeof(text), "%.9f°", mGpsData.lon );
+		formatLatLon( text, sizeof(text), mGpsData.lon, false, mRunInfo.dms, 9 );
 		drawRow( y, rowHeight, "Lon", valid ? text : "--", FONT_VALUE );
 		y += rowHeight;
 	}
@@ -689,7 +689,12 @@ static void drawCorrections()
 	}
 	else if ( km >= 0 ) tableAdd( "Distance", COLOR_TEXT, "%.1f km", km );
 	struct stRtcmBase rb;
-	if ( rtcmGetBase( &rb ) ) tableAdd( "Base", COLOR_TEXT, "%.5f, %.5f", rb.lat, rb.lon );	// 1005/1006 の位置（rtcm.cpp）
+	if ( rtcmGetBase( &rb ) ){		// 1005/1006 の位置（rtcm.cpp）
+		char latText[24], lonText[24];
+		formatLatLon( latText, sizeof(latText), rb.lat, true, mRunInfo.dms, 5 );
+		formatLatLon( lonText, sizeof(lonText), rb.lon, false, mRunInfo.dms, 5 );
+		tableAdd( "Base", COLOR_TEXT, "%s, %s", latText, lonText );
+	}
 	if ( mBaseSrc.valid ){
 		bool ready = mBaseRecvReady && ! mBaseReconnecting;
 		tableAdd( "State", ready ? COLOR_GREEN : COLOR_ORANGE, ready ? "Receiving" : "Connecting" );
@@ -753,7 +758,7 @@ static void drawSetup()
 	items[ count++ ] = { iconRotate, "Rotate", HIT_SET_DISPLAY };
 	if ( geoid ) items[ count++ ] = { iconElevation, mRunInfo.elevation ? "Elev: On" : "Elev: Off", HIT_SET_ELEVATION };
 	if ( mRunInfo.coordXY ) snprintf( coordLabel, sizeof(coordLabel), "XY: %s", jprcsZoneName( mRunInfo.zone ) );
-	else strlcpy( coordLabel, "Lat/Lon", sizeof(coordLabel) );
+	else strlcpy( coordLabel, mRunInfo.dms ? "Lat/Lon: DMS" : "Lat/Lon", sizeof(coordLabel) );
 	items[ count++ ] = { iconStatus, coordLabel, HIT_SET_COORD };
 	if ( tcp ) items[ count++ ] = { iconSend, mAgribusReady ? "TCP: On" : "TCP: Off", HIT_SET_TCP };
 	if ( mMqttCfg.host[0] ) items[ count++ ] = { iconSend, mMqttCfg.enable ? "MQTT: On" : "MQTT: Off", HIT_SET_MQTT };	// ブローカーが設定ファイルにある時だけ出す
@@ -863,7 +868,8 @@ static void formatLabel( int index, char *buff, int buffSize )
 //
 static void coordLabel( int index, char *buff, int buffSize )
 {
-	snprintf( buff, buffSize, "%s", index == 0 ? "Lat / Lon" : "X / Y (plane)" );
+	static const char *labels[] = { "Lat / Lon (degrees)", "Lat / Lon (DMS)", "X / Y (plane)" };
+	snprintf( buff, buffSize, "%s", labels[ index ] );
 }
 
 // 平面直角座標系の系の一覧（I～XIX）
@@ -896,10 +902,11 @@ static void onSetting( int id )
 	else if ( id == HIT_SET_DISPLAY ) appSetRotation( ! mRunInfo.lcdRotation );
 	else if ( id == HIT_SET_ELEVATION ) appSetElevation( ! mRunInfo.elevation );
 	else if ( id == HIT_SET_COORD ){
-		int index = uiSelectList( "Coordinates", 2, coordLabel, "Back" );
+		int index = uiSelectList( "Coordinates", 3, coordLabel, "Back" );
 		if ( index < 0 ) return;
-		appSetCoordXY( index == 1 );
-		if ( index == 0 ) return;
+		if ( index < 2 ) appSetDms( index == 1 );		// 度か度分秒
+		appSetCoordXY( index == 2 );
+		if ( index < 2 ) return;
 		// X/Y の時は、続けて系を選ぶ
 		int zone = uiSelectList( "Plane zone", JPRCS_ZONE_MAX, zoneLabel, "Back" );
 		if ( zone >= 0 ) appSetZone( zone + 1 );

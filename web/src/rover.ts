@@ -66,6 +66,23 @@ export const compassOf = (deg: number) => COMPASS[Math.round((((deg % 360) + 360
 /** これより遅い時は、進行方向を出さない（止まっている間の F9P の進行方向は当てにならない） */
 export const HEADING_MIN_SPEED = 1;     // km/h
 
+/**
+ * 緯度または経度を表示用の文字にする。dms が true なら度分秒（本体の設定 run.set の dms。本体の画面 main.cpp の formatLatLon と同じ形）。
+ * places は度（小数）の桁数。度分秒のときは、秒の桁数を同じ精度（9桁なら秒5桁、8桁なら秒4桁）にする
+ */
+export function formatLatLon(value: number, axis: 'lat' | 'lon', dms: boolean | undefined, places = 9) {
+  if (!dms) return `${value.toFixed(places)}°`;
+  const hemisphere = axis === 'lat' ? (value < 0 ? 'S' : 'N') : (value < 0 ? 'W' : 'E');
+  const secondPlaces = Math.max(0, places - 4);
+  let total = Math.abs(value) * 3600;                     // 秒
+  total = Math.round(total * 10 ** secondPlaces) / 10 ** secondPlaces;   // 丸めで 60 秒になるのを防ぐため、先に丸める
+  const degrees = Math.floor(total / 3600);
+  const minutes = Math.floor((total - degrees * 3600) / 60);
+  const seconds = total - degrees * 3600 - minutes * 60;
+  const secondText = seconds.toFixed(secondPlaces).padStart(secondPlaces ? 3 + secondPlaces : 2, '0');
+  return `${degrees}°${String(minutes).padStart(2, '0')}'${secondText}"${hemisphere}`;
+}
+
 /** いま使っている補正の方法。本体の画面（src/pages.cpp の correctionName）と同じ決め方 */
 export function correctionOf(status: Status | null, clasRate: number) {
   const base = status?.base;

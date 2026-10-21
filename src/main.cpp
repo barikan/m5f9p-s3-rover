@@ -372,6 +372,36 @@ void appSetCoordXY( bool on )
 	saveRunInfo( &mRunInfo );
 }
 
+// 緯度経度の表示を、度（小数）にするか度分秒にするかを切り替える（本体の画面とアプリ。NMEA は変わらない）
+//
+void appSetDms( bool on )
+{
+	if ( on == ( mRunInfo.dms != 0 ) ) return;
+	mRunInfo.dms = on ? 1 : 0;
+	saveRunInfo( &mRunInfo );
+}
+
+// 緯度または経度を表示用の文字にする。アプリ（web/src/rover.ts の formatLatLon）と同じ形にする
+//
+// places: 度（小数）の桁数。度分秒の時は秒の桁数を同じ精度（places - 4）にする
+//
+void formatLatLon( char *buff, int buffSize, double value, bool isLat, bool dms, int places )
+{
+	if ( ! dms ){
+		snprintf( buff, buffSize, "%.*f°", places, value );
+		return;
+	}
+	char hemisphere = isLat ? ( value < 0 ? 'S' : 'N' ) : ( value < 0 ? 'W' : 'E' );
+	int secPlaces = places - 4;
+	if ( secPlaces < 0 ) secPlaces = 0;
+	double scale = pow( 10.0, secPlaces );
+	double total = round( fabs( value ) * 3600.0 * scale ) / scale;	// 先に丸めて、秒が 60 になるのを防ぐ
+	int degrees = (int)( total / 3600.0 );
+	int minutes = (int)( ( total - degrees * 3600.0 ) / 60.0 );
+	double seconds = total - degrees * 3600.0 - minutes * 60.0;
+	snprintf( buff, buffSize, "%d°%02d'%0*.*f\"%c", degrees, minutes, secPlaces ? secPlaces + 3 : 2, secPlaces, seconds, hemisphere );
+}
+
 // 1秒あたりの測位回数を変更する
 //
 // 戻り値＝ 0:正常終了

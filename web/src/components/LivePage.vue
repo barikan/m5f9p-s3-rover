@@ -62,8 +62,8 @@ const degrees = (deg: number) => `${Math.round(deg) % 360}°`;
       </LiveRow>
     </template>
     <template v-else>
-      <LiveRow label="Lat">{{ valid ? `${s.pos.lat.toFixed(9)}°` : '--' }}</LiveRow>
-      <LiveRow label="Lon">{{ valid ? `${s.pos.lon.toFixed(9)}°` : '--' }}</LiveRow>
+      <LiveRow label="Lat">{{ valid ? rover.formatLatLon(s.pos.lat, 'lat', s.dms) : '--' }}</LiveRow>
+      <LiveRow label="Lon">{{ valid ? rover.formatLatLon(s.pos.lon, 'lon', s.dms) : '--' }}</LiveRow>
     </template>
     <LiveRow :label="height?.elevation ? 'Elev' : 'Alt'">
       <template v-if="valid && height">{{ height.value.toFixed(3) }}<span :class="unit">m</span></template>

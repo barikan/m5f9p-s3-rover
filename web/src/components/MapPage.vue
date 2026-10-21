@@ -83,7 +83,7 @@ async function deleteDay(day: string) {
     </template>
     <template v-if="s && isToday">
       <template v-if="s.pos.valid">
-        <div class="font-mono">{{ s.pos.lat.toFixed(8) }}, {{ s.pos.lon.toFixed(8) }}</div>
+        <div class="font-mono">{{ rover.formatLatLon(s.pos.lat, 'lat', s.dms, 8) }}, {{ rover.formatLatLon(s.pos.lon, 'lon', s.dms, 8) }}</div>
         <div v-if="s.xy && s.zone">
           {{ rover.zoneName(s.zone) }} 系 <span class="font-mono">X {{ s.xy.x.toFixed(3) }}　Y {{ s.xy.y.toFixed(3) }}</span>
         </div>

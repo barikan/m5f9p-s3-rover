@@ -69,7 +69,7 @@ const baseInfo = computed(() => {
   const base = s.value?.base;
   if (!base?.pos) return '';
   const km = base.km !== undefined && !base.auto ? `（${base.km.toFixed(1)} km）` : '';
-  return `${base.pos.lat.toFixed(8)}, ${base.pos.lon.toFixed(8)}${km}`;
+  return `${rover.formatLatLon(base.pos.lat, 'lat', s.value?.dms, 8)}, ${rover.formatLatLon(base.pos.lon, 'lon', s.value?.dms, 8)}${km}`;
 });
 
 const logsOpen = ref(false);
@@ -114,8 +114,8 @@ const gigabytes = (megabytes: number) => (megabytes / 1000).toFixed(1);
         <StateBadge kind="fix" />
       </template>
       <template v-if="s.pos.valid">
-        <Item label="緯度" mono>{{ s.pos.lat.toFixed(9) }}°</Item>
-        <Item label="経度" mono>{{ s.pos.lon.toFixed(9) }}°</Item>
+        <Item label="緯度" mono>{{ rover.formatLatLon(s.pos.lat, 'lat', s.dms) }}</Item>
+        <Item label="経度" mono>{{ rover.formatLatLon(s.pos.lon, 'lon', s.dms) }}</Item>
         <Item v-if="s.xy && s.zone" label="平面直角座標" mono>X {{ s.xy.x.toFixed(3) }} / Y {{ s.xy.y.toFixed(3) }} m<span class="text-muted-foreground font-sans">（{{ rover.zoneName(s.zone) }} 系）</span></Item>
         <template v-if="s.pos.geoid !== undefined && s.elevation !== false">
           <Item label="標高" mono>{{ (s.pos.height - s.pos.geoid).toFixed(3) }} m</Item>

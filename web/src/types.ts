@@ -26,6 +26,7 @@ export interface Status {
   elevation?: boolean;      // 標高を表示する（表示の設定。run.set の elevation）。古いファームウェアには無い
   zone?: number;            // 平面直角座標系の系 1〜19。0:選んでいない。古いファームウェアには無い
   coordXY?: boolean;        // 座標を X, Y で表示する（本体の画面、測位タブ）
+  dms?: boolean;            // 緯度経度を度分秒で表示する（本体の画面、アプリ）。古いファームウェアには無い
   xy?: { x: number; y: number };  // 平面直角座標 m（X:北が正 Y:東が正）。系を選んでいて、測位データがある時だけ
   base: {
     valid: boolean;
@@ -108,6 +109,7 @@ export interface RunConfig {
   brightnessAuto?: boolean; // 画面の明るさを周囲の明るさに合わせて自動で変える
   zone?: number;            // 平面直角座標系の系 1〜19。0:選んでいない
   coordXY?: boolean;        // 座標を X, Y で表示する
+  dms?: boolean;            // 緯度経度を度分秒で表示する
   elevation?: boolean;      // 標高を表示する。false は楕円体高だけ。古いファームウェアには無い
   sourceAuto?: boolean;     // 取得先を自動で選んでいる（source は 'auto'）。古いファームウェアには無い
   mqtt?: boolean;           // MQTT 配信の入・切（設定ファイルの mqtt.enable）。古いファームウェアには無い
@@ -117,7 +119,7 @@ export interface RunConfig {
 }
 
 /** 接続の設定のうち、画面から変えるもの（run.set）。本体はすぐに反映する（再起動しない） */
-export type RunValues = Pick<RunConfig, 'wifi' | 'source' | 'format' | 'saveAtBoot' | 'elevation' | 'zone' | 'coordXY' | 'mqtt'>;
+export type RunValues = Partial<Pick<RunConfig, 'wifi' | 'source' | 'format' | 'saveAtBoot' | 'elevation' | 'zone' | 'coordXY' | 'dms' | 'mqtt'>>;   // run.set は指定した項目だけ変える
 
 /**
  * 一覧の項目に付く、パスワードの扱い。本体はパスワードを返さない。

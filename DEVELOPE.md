@@ -336,7 +336,7 @@ mise run cmd '{"cmd":"run.set","wifi":"home","source":"geortk.jp/tamtam"}'  # Wi
 
 `src/jprcs.cpp` が、緯度経度を平面直角座標系の X、Y にする(GRS80、X 軸上の縮尺係数 0.9999、河瀬の式で n の5次まで)。
 
-- 系(`m5f9p.run.json` の `zone`、1〜19)と、X/Y で表示するか(`coordXY`)は、本体の Setup と `run.set` の `zone` / `coordXY`(アプリの設定タブ)で選ぶ。系は自動では決めない(都道府県や市町村で決まり、座標だけでは決められないため)。
+- 系(`m5f9p.run.json` の `zone`、1〜19)と、X/Y で表示するか(`coordXY`)、緯度経度を度分秒で出すか(`dms`)は、本体の Setup と `run.set` の `zone` / `coordXY` / `dms`(アプリの設定タブ)で選ぶ。度分秒の書式は本体(`main.cpp` の `formatLatLon`)とアプリ(`rover.ts` の `formatLatLon`)で同じにしておく。系は自動では決めない(都道府県や市町村で決まり、座標だけでは決められないため)。
 - 状況(`status`)の `zone`、`coordXY`、`xy`(`x`、`y`。系を選んでいて、測位データがあるときだけ)でアプリに渡す。アプリは換算せず、この値を表示する。
 - 確かめるときは、国土地理院の換算サービス `https://vldb.gsi.go.jp/sokuchi/surveycalc/surveycalc/bl2xy.pl?outputType=json&refFrame=2&zone=..&latitude=..&longitude=..`(`refFrame=2` が JGD2011)と比べる。I、II、IX、XI〜XVI 系で 0.05mm 以内で一致した。
 - 今期の座標をそのまま換算する。セミ・ダイナミック補正は行っていない。

@@ -50,6 +50,7 @@ struct stRunInfo {
 	int elevation;		// 高さの表示 0:楕円体高 1:標高（ジオイドモデルで求められた時）。NMEAは変わらない
 	int zone;			// 平面直角座標系の系の番号 1～19。0:選んでいない（jprcs.cpp）
 	int coordXY;		// 本体の画面とアプリの測位タブで、緯度経度の代わりに X, Y を出す
+	int dms;			// 緯度経度を度分秒で出す（本体の画面、アプリ）。0:度（小数）
 	float imuForward;	// IMUの校正の結果（ins.cpp）。車体の前方向（レベル座標の角度、度）
 	float imuForwardWeight;	// 前方向の校正の重み。0 の時は校正していない
 	float imuGyroBias[3];	// ジャイロのずれ（deg/s）
@@ -82,6 +83,8 @@ void appSetMqtt( bool on );
 void appSetElevation( bool on );
 void appSetZone( int zone );
 void appSetCoordXY( bool on );
+void appSetDms( bool on );
+void formatLatLon( char *buff, int buffSize, double value, bool isLat, bool dms, int places );
 void appBackground();
 void pagesOpenSetup();
 void pagesLoop();		// pages.cpp
