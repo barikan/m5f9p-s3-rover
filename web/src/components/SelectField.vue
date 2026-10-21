@@ -9,6 +9,7 @@ const props = withDefaults(defineProps<{
   modelValue?: string;
   options: Option[];
   id?: string;
+  disabled?: boolean;
 }>(), { modelValue: '' });
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>();
 
@@ -21,7 +22,7 @@ const label = computed(() => props.options.find(o => o.value === props.modelValu
 </script>
 
 <template>
-  <Select v-model="inner">
+  <Select v-model="inner" :disabled="disabled">
     <SelectTrigger :id="id" class="w-full min-w-0">
       <!-- 長い選択肢は、欄の幅で切って … にする（min-w-0 が無いと欄からはみ出す） -->
       <SelectValue class="min-w-0"><span class="min-w-0 truncate">{{ label }}</span></SelectValue>

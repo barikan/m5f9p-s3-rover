@@ -1,10 +1,12 @@
 <script setup lang="ts">
 // 設定タブ。
 //
-//   ・Google MapsのAPIキー（この端末に保存）
-//   ・接続の設定（Wi-Fi、補正データの取得先、保存形式、標高の表示）。変更はすぐに反映される（再起動しない）
-//   ・本体の設定（設定ファイルの内容）の編集は ConfigEditor.vue
+//   ・上から、表示（座標の形、系、標高）、接続の設定（Wi-Fi、補正データの取得先、MQTT）、ログ（保存形式、起動時から保存）。
+//     どれも本体の起動時の設定（run.set）で、変えた項目をその場で送る（「変更する」は無い）。本体はすぐに反映する（再起動しない）
+//   ・Google MapsのAPIキー（この端末に保存。伏せ字で、目のアイコンで見せる）
+//   ・本体（設定ファイルの編集は ConfigEditor.vue、再起動）は一番下
 import { computed, reactive, ref, watch } from 'vue';
+import { Eye, EyeOff } from 'lucide-vue-next';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -16,6 +18,7 @@ import type { Option } from '../types';
 import Section from './Section.vue';
 import SelectField from './SelectField.vue';
 import SwitchField from './SwitchField.vue';
+import SegmentGroup from './SegmentGroup.vue';
 import ConfigEditor from './ConfigEditor.vue';
 
 const SAVE_FORMATS = ['NMEA', 'RAW', 'RTCM', 'CSV'];
@@ -34,6 +37,7 @@ watch(connected, on => {
 
 const savedKey = userMapsKey();
 const keyInput = ref(savedKey);
+const keyVisible = ref(false);     // 目のアイコンで、キーを伏せ字にするか見せるかを切り替える
 
 function saveKey() {
   const key = keyInput.value.trim();
@@ -45,10 +49,10 @@ function saveKey() {
 // ---------------------------------------------------------------- 接続の設定
 
 const run = computed(() => state.runConfig);
-const values = reactive({ wifi: '', source: '', format: '0', saveAtBoot: false, elevation: true, zone: '0', coordXY: false, mqtt: false });
+const values = reactive({ wifi: '', source: '', format: '0', saveAtBoot: false, elevation: true, zone: '0', coordXY: false, dms: false, mqtt: false });
 watch(run, c => {
   if (c) Object.assign(values, { wifi: c.wifi, source: c.source, format: String(c.format), saveAtBoot: c.saveAtBoot, elevation: c.elevation ?? true,
-    zone: String(c.zone ?? 0), coordXY: c.coordXY ?? false, mqtt: c.mqtt ?? false });
+    zone: String(c.zone ?? 0), coordXY: c.coordXY ?? false, dms: c.dms ?? false, mqtt: c.mqtt ?? false });
 }, { immediate: true });
 
 const wifiOptions = computed<Option[]>(() => {
@@ -75,22 +79,25 @@ const zoneOptions = computed<Option[]>(() => [
   ...(values.zone === '0' ? [{ value: '0', label: '選んでいない' }] : []),
   ...rover.ZONES.slice(1).map((z, i) => ({ value: String(i + 1), label: `${z.name} 系（${z.area}）` })),
 ]);
-const runChanged = computed(() => {
-  const c = run.value;
-  return !!c && (values.wifi !== c.wifi || values.source !== c.source ||
-    Number(values.format) !== c.format || values.saveAtBoot !== c.saveAtBoot ||
-    (c.elevation !== undefined && values.elevation !== c.elevation) ||
-    (c.zone !== undefined && (Number(values.zone) !== c.zone || values.coordXY !== c.coordXY)) ||
-    (c.mqtt !== undefined && values.mqtt !== c.mqtt));
-});
+// 変えた項目をその場で本体に送る（run.set は指定した項目だけ変える）。本体の応答で run.get を読み直し、values に写る
+function set<K extends keyof typeof values>(key: K, value: (typeof values)[K]) {
+  values[key] = value;
+  if (key === 'format') rover.applyRunConfig({ format: Number(value) });
+  else if (key === 'zone') { if (value !== '0') rover.applyRunConfig({ zone: Number(value) }); }
+  else rover.applyRunConfig({ [key]: value });
+}
 
-function applyRun() {
+// 座標の形。度 / 度分秒 / XY のどれか（本体の coordXY と dms の組み合わせ）
+const COORD_FORMATS = [{ value: 'deg', label: '度' }, { value: 'dms', label: '度分秒' }, { value: 'xy', label: 'XY' }];
+const coordFormat = computed(() => (values.coordXY ? 'xy' : values.dms ? 'dms' : 'deg'));
+function setCoordFormat(format: string) {
+  const c = run.value;
+  if (!c) return;
+  values.coordXY = format === 'xy';
+  if (format !== 'xy') values.dms = format === 'dms';
   rover.applyRunConfig({
-    wifi: values.wifi, source: values.source, format: Number(values.format), saveAtBoot: values.saveAtBoot,
-    // 古いファームウェア（elevation を返さない）には送らない
-    ...(run.value?.elevation !== undefined ? { elevation: values.elevation } : {}),
-    ...(run.value?.zone !== undefined ? { coordXY: values.coordXY, ...(values.zone !== '0' ? { zone: Number(values.zone) } : {}) } : {}),
-    ...(run.value?.mqtt !== undefined ? { mqtt: values.mqtt } : {}),
+    ...(c.zone !== undefined ? { coordXY: values.coordXY } : {}),
+    ...(c.dms !== undefined ? { dms: values.dms } : {}),
   });
 }
 
@@ -116,59 +123,81 @@ async function restart() {
   <ConfigEditor v-if="editing === 'editing' && state.config" :config="state.config" @close="editing = ''" />
 
   <div v-else class="grid grid-cols-[repeat(auto-fit,minmax(20rem,1fr))] items-start gap-3">
+    <template v-if="connected">
+      <Section title="表示">
+        <p v-if="!run">本体から読み込んでいます…</p>
+        <template v-else>
+          <template v-if="run.zone !== undefined">
+            <div class="grid gap-2">
+              <Label>座標の形</Label>
+              <SegmentGroup label="座標の形" :options="COORD_FORMATS" :model-value="coordFormat" @update:model-value="setCoordFormat" />
+              <p class="text-muted-foreground text-xs">本体の画面とアプリの座標を、緯度経度の度（小数）、度分秒（35°41'28.50705&quot;N）、平面直角座標の X、Y のどれで表示するかです。NMEA の出力は変わりません</p>
+            </div>
+            <div class="mt-4 grid gap-2">
+              <Label for="run-zone">平面直角座標系</Label>
+              <SelectField id="run-zone" :model-value="values.zone" :options="zoneOptions" :disabled="!values.coordXY" @update:model-value="set('zone', $event)" />
+              <p class="text-muted-foreground text-xs">XY のときに使います。系は自動では決まらないので、今いる場所の系を選んでください</p>
+            </div>
+          </template>
+          <SwitchField
+            v-if="run.elevation !== undefined" :model-value="values.elevation" label="標高を表示する"
+            help="本体の画面とアプリの高さを、標高（SD カードのジオイドモデルで求めた値）で表示します。切ると楕円体高を表示します。NMEA の出力は変わりません"
+            @update:model-value="set('elevation', $event)" />
+        </template>
+      </Section>
+
+      <Section v-if="run" title="接続の設定">
+        <div class="grid gap-2">
+          <Label for="run-wifi">Wi-Fi</Label>
+          <SelectField id="run-wifi" :model-value="values.wifi" :options="wifiOptions" @update:model-value="set('wifi', $event)" />
+        </div>
+        <div class="mt-4 grid gap-2">
+          <Label for="run-source">補正データの取得先</Label>
+          <SelectField id="run-source" :model-value="values.source" :options="sourceOptions" @update:model-value="set('source', $event)" />
+        </div>
+        <SwitchField
+          v-if="run.mqtt !== undefined" :model-value="values.mqtt" label="MQTT で測位結果を送る" :disabled="!run.mqttReady"
+          :help="run.mqttReady ? '設定ファイルの mqtt のブローカーへ、間隔ごとに1回、SenML（JSON）で送ります' : 'ブローカーは「本体の設定を編集」の「MQTT 配信」で設定します'"
+          @update:model-value="set('mqtt', $event)" />
+        <p class="text-muted-foreground mt-3 text-xs">変更はすぐに本体に反映されます。Wi-Fi や補正データの接続先を追加・変更するには、「本体の設定を編集」を使います。</p>
+      </Section>
+
+      <Section v-if="run" title="ログ">
+        <div class="grid gap-2">
+          <Label for="run-format">ログの保存形式</Label>
+          <SelectField id="run-format" :model-value="values.format" :options="formatOptions" @update:model-value="set('format', $event)" />
+        </div>
+        <SwitchField :model-value="values.saveAtBoot" label="起動時からログを保存する" @update:model-value="set('saveAtBoot', $event)" />
+      </Section>
+    </template>
+    <p v-else class="text-muted-foreground text-sm">本体の設定は、本体に接続している時に変更できます。</p>
+
     <Section title="Google Maps の API キー">
-      <Input v-model="keyInput" type="text" placeholder="API キー" aria-label="API キー" autocomplete="off" spellcheck="false" />
-      <Button size="sm" class="mt-3" @click="saveKey">保存</Button>
+      <div class="flex items-center gap-2">
+        <div class="relative min-w-0 flex-1">
+          <Input
+            v-model="keyInput" :type="keyVisible ? 'text' : 'password'" placeholder="API キー" aria-label="API キー"
+            autocomplete="off" spellcheck="false" class="pr-9" />
+          <Button
+            variant="ghost" size="icon" class="text-muted-foreground hover:text-foreground absolute inset-y-0 right-0 h-full w-9 hover:bg-transparent"
+            :aria-label="keyVisible ? 'キーを隠す' : 'キーを表示する'" :aria-pressed="keyVisible" @click="keyVisible = !keyVisible">
+            <EyeOff v-if="keyVisible" aria-hidden="true" />
+            <Eye v-else aria-hidden="true" />
+          </Button>
+        </div>
+        <Button size="sm" @click="saveKey">保存</Button>
+      </div>
       <p class="text-muted-foreground mt-3 text-xs">
         {{ savedKey ? 'この端末に保存したキーを使います（本体には保存しません）。' : '未入力です。地図は表示されません。' }}
       </p>
     </Section>
 
-    <template v-if="connected">
-      <Section title="接続の設定">
-        <p v-if="!run">本体から読み込んでいます…</p>
-        <template v-else>
-          <div class="grid gap-2">
-            <Label for="run-wifi">Wi-Fi</Label>
-            <SelectField id="run-wifi" v-model="values.wifi" :options="wifiOptions" />
-          </div>
-          <div class="mt-4 grid gap-2">
-            <Label for="run-source">補正データの取得先</Label>
-            <SelectField id="run-source" v-model="values.source" :options="sourceOptions" />
-          </div>
-          <div class="mt-4 grid gap-2">
-            <Label for="run-format">ログの保存形式</Label>
-            <SelectField id="run-format" v-model="values.format" :options="formatOptions" />
-          </div>
-          <SwitchField v-model="values.saveAtBoot" label="起動時からログを保存する" />
-          <SwitchField
-            v-if="run.elevation !== undefined" v-model="values.elevation" label="標高を表示する"
-            help="本体の画面とアプリの高さを、標高（SD カードのジオイドモデルで求めた値）で表示します。切ると楕円体高を表示します。NMEA の出力は変わりません" />
-          <template v-if="run.zone !== undefined">
-            <div class="mt-4 grid gap-2">
-              <Label for="run-zone">平面直角座標系</Label>
-              <SelectField id="run-zone" v-model="values.zone" :options="zoneOptions" />
-            </div>
-            <SwitchField
-              v-model="values.coordXY" label="座標を X, Y で表示する"
-              help="本体の画面と測位タブで、緯度・経度の代わりに平面直角座標の X、Y を表示します。系は自動では決まらないので、今いる場所の系を選んでください" />
-          </template>
-          <SwitchField
-            v-if="run.mqtt !== undefined" v-model="values.mqtt" label="MQTT で測位結果を送る" :disabled="!run.mqttReady"
-            :help="run.mqttReady ? '設定ファイルの mqtt のブローカーへ、間隔ごとに1回、SenML（JSON）で送ります' : 'ブローカーは「本体の設定を編集」の「MQTT 配信」で設定します'" />
-          <Button size="sm" class="mt-4" :disabled="!runChanged" @click="applyRun">変更する</Button>
-          <p class="text-muted-foreground mt-3 text-xs">Wi-Fi や補正データの接続先を追加・変更するには、「本体の設定を編集」を使います。</p>
-        </template>
-      </Section>
-
-      <Section title="本体">
-        <div class="grid gap-2">
-          <Button size="sm" variant="outline" @click="editConfig">本体の設定を編集</Button>
-          <p v-if="editing === 'loading'" class="text-muted-foreground text-xs">本体から読み込んでいます…</p>
-          <Button size="sm" variant="outline" @click="restart">本体を再起動</Button>
-        </div>
-      </Section>
-    </template>
-    <p v-else class="text-muted-foreground text-sm">本体の設定は、本体に接続している時に変更できます。</p>
+    <Section v-if="connected" title="本体">
+      <div class="grid gap-2">
+        <Button size="sm" variant="outline" @click="editConfig">本体の設定を編集</Button>
+        <p v-if="editing === 'loading'" class="text-muted-foreground text-xs">本体から読み込んでいます…</p>
+        <Button size="sm" variant="outline" @click="restart">本体を再起動</Button>
+      </div>
+    </Section>
   </div>
 </template>
