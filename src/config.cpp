@@ -428,7 +428,7 @@ void configFromJson( JsonDocument &doc )
 // 再起動しないと反映できない項目が、現在の設定から変わるか調べる
 //
 // ・起動時に1回だけ使う項目（BLEの開始、soft AP、TCPサーバのポート、PHコネクタのボーレート、
-//   IMUの開始）と、受信機名（BLEとsoft APの名前）。項目を増やす時は、画面（ConfigEditor.vue）の
+//   IMUの開始）と、受信機名（BLEとsoft APの名前）。項目を増やす時は、画面（web/src/config-fields.ts）の
 //   注意書きも揃える。
 //
 // 戻り値＝ true:再起動が要る

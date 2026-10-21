@@ -14,6 +14,8 @@ const id = useId();
     <div class="flex items-center gap-3">
       <Label class="flex-1 leading-normal font-normal" :for="id">{{ label }}</Label>
       <Switch :id="id" :model-value="modelValue" :disabled="disabled" @update:model-value="$emit('update:modelValue', $event)" />
+      <!-- 右に添えるもの（「編集」のボタンなど） -->
+      <slot name="action" />
     </div>
     <p v-if="help" class="text-muted-foreground mt-1 text-xs">{{ help }}</p>
   </div>

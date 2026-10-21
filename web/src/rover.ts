@@ -107,6 +107,7 @@ export interface RoverState {
   clasRate: number;
   runConfig: RunConfig | null;      // 接続の設定（run.get）
   config: DeviceConfig | null;      // 本体の設定（config.get）
+  configLocked: boolean;            // 再起動が要る設定を保存したまま。本体を再起動するまで config.get / config.put はできない
   trackDay: string;                 // 地図に表示している日（YYYY-MM-DD）
   track: TrackPoint[];              // その日の軌跡
   syncing: boolean;                 // 本体が保持している軌跡を取得している間 true
@@ -124,6 +125,7 @@ export const state: RoverState = {
   clasRate: 0,
   runConfig: null,
   config: null,
+  configLocked: false,
   trackDay: today(),
   track: [],
   syncing: false,
@@ -216,6 +218,8 @@ export function disconnect() {
 }
 
 function onConnected() {
+  state.configLocked = false;     // 再起動後の接続なら解除（していなければ、次の config.get でまた立つ）
+  state.config = null;
   // 位置は状況(1秒毎)から取るので、NMEAは止めて無線の占有を減らす
   send({ cmd: 'nmea', hz: 0 });
   startSync();
@@ -238,16 +242,32 @@ export const loadRunConfig = () => send({ cmd: 'run.get' });
 export const applyRunConfig = (values: RunValues) => send({ cmd: 'run.set', ...values });
 export const restart = () => send({ cmd: 'restart' });
 
-/** 本体の設定を読み込む（state.config に入る）。読めない時は例外 */
-export async function loadConfig() {
-  state.config = null;
-  notify('config');
+const RESTART_REQUIRED = 'restart required';
+const LOCKED_MESSAGE = '本体を再起動するまで、本体の設定は変更できません';
+let loadingConfig: Promise<void> | null = null;
+
+/**
+ * 本体の設定を読み込む（state.config に入る）。読めない時は例外。
+ * 読み込み中に重ねて呼ばれた時は、同じ読み込みを待つ（本体は同じコマンドを同時に受けない）
+ */
+export function loadConfig(): Promise<void> {
+  if (!loadingConfig) loadingConfig = loadConfigOnce().finally(() => { loadingConfig = null; });
+  return loadingConfig;
+}
+
+async function loadConfigOnce() {
   let m: Message;
   try {
     m = await request({ cmd: 'config.get' });
   } catch (e) {
+    state.config = null;
     // 再起動が要る設定を保存したまま、再起動していない時
-    if (e instanceof Error && e.message === 'restart required') throw new Error('本体を再起動するまで、本体の設定は編集できません');
+    if (e instanceof Error && e.message === RESTART_REQUIRED) {
+      state.configLocked = true;
+      notify('config');
+      throw new Error(LOCKED_MESSAGE);
+    }
+    notify('config');
     throw e;
   }
   state.config = m.config ?? {};
@@ -255,15 +275,32 @@ export async function loadConfig() {
 }
 
 /**
- * 本体の設定を書き換える。
+ * 本体の設定を書き換える。送った項目だけが変わる（本体が深くマージする。wifi と sources の一覧は丸ごと）。
  * 戻り値が true の時は、再起動しないと反映されない項目が変わっている（本体はファイルを
- * 書いただけ）。false の時は、本体がすぐに反映している。
+ * 書いただけで、再起動するまで config.get / config.put を受け付けない。state.configLocked）。
+ * false の時は、本体がすぐに反映していて、設定と起動時の設定を読み直す
  */
 export async function saveConfig(config: DeviceConfig): Promise<boolean> {
-  const m = await request({ cmd: 'config.put', config });
+  let m: Message;
+  try {
+    m = await request({ cmd: 'config.put', config });
+  } catch (e) {
+    if (e instanceof Error && e.message === RESTART_REQUIRED) {
+      state.configLocked = true;
+      notify('config');
+      throw new Error(LOCKED_MESSAGE);
+    }
+    throw e;
+  }
   // 古いファームウェアは restart を返さず、いつも再起動が要る
   const restartNeeded = m.restart !== false;
-  if (!restartNeeded) loadRunConfig();      // Wi-Fi と取得先の一覧が変わっている
+  if (restartNeeded) {
+    state.configLocked = true;
+    notify('config');
+  } else {
+    loadRunConfig();      // Wi-Fi と取得先の一覧が変わっている
+    await loadConfig();   // 本体が丸めた値を画面に戻す
+  }
   return restartNeeded;
 }
 

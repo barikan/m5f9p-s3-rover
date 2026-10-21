@@ -193,14 +193,14 @@ Status の最下段に出す本体の状態は `sysmon.cpp` が測る。電源 I
 
 ### 設定ファイル
 
-SD カードの `/m5f9p/m5f9p.yaml`。読み書きは `config.cpp`、書式の見本は `sdcard/m5f9p/m5f9p.yaml.sample`。項目を増やしたら、`configToJson` / `configFromJson`、見本、画面の `web/src/components/ConfigEditor.vue` を揃える。
+SD カードの `/m5f9p/m5f9p.yaml`。読み書きは `config.cpp`、書式の見本は `sdcard/m5f9p/m5f9p.yaml.sample`。項目を増やしたら、`configToJson` / `configFromJson`、見本、画面の定義 `web/src/config-fields.ts`(と、それを並べる `SettingsPage.vue`)を揃える。
 
 - 読み込みは YAMLDuino で `JsonDocument` に変換して行う。**変換の前に `configCheckYaml()`(libyaml)で書式を検査する。** 誤った YAML をそのまま渡すと YAMLDuino が異常終了し、本体が起動を繰り返す。
 - **書き出しは自前(`yamlEmit`)で行い、文字列は必ず引用符で囲む。** YAMLDuino の `serializeYml` は囲まないので、先頭が 0 の数字や `#`、`:` を含むパスワードが壊れる。
 - 起動時の設定(`stRunInfo`)は別のファイル `/m5f9p/m5f9p.run.json`。本体が測位レートの変更などで随時書き直すので、設定ファイルと分けてある(分けないと、そのたびに手書きのコメントが消える)。Wi-Fi は番号ではなく SSID で覚える。
-- **`config.put`(アプリの「本体の設定を編集」)は、再起動なしで反映する。** ファイルを書いたあと `configApply` で動作中の変数を書き換え、使用中の Wi-Fi と取得先は `netConfigBegin` / `netConfigEnd`(net.cpp)が `id` で追って、内容が変わっていればつなぎ直す。起動時にしか反映できない項目(受信機名、BLE の入・切とペアリング、soft AP、TCP サーバのポート、PH コネクタのボーレート)が変わるときだけ、ファイルを書くだけにして、応答に `restart: true` を入れる(`config.cpp` の `configNeedsRestart`。項目を足したら、`ConfigEditor.vue` の `restart` の印も揃える)。`file.put` は、いつもファイルを書くだけで、反映は再起動で行う。
+- **`config.put`(アプリの設定タブ。枠ごとの「保存」と「編集」のダイアログが、変えた項目だけを送る)は、再起動なしで反映する。** ファイルを書いたあと `configApply` で動作中の変数を書き換え、使用中の Wi-Fi と取得先は `netConfigBegin` / `netConfigEnd`(net.cpp)が `id` で追って、内容が変わっていればつなぎ直す。起動時にしか反映できない項目(受信機名、BLE の入・切とペアリング、soft AP、TCP サーバのポート、PH コネクタのボーレート)が変わるときだけ、ファイルを書くだけにして、応答に `restart: true` を入れる(`config.cpp` の `configNeedsRestart`。項目を足したら、`web/src/config-fields.ts` の `restart` の印も揃える)。再起動が要る保存のあとは、再起動するまで `config.get` / `config.put` を拒むので、アプリは `state.configLocked` で設定ファイル由来の部品を無効にする。`file.put` は、いつもファイルを書くだけで、反映は再起動で行う。
 - 設定の一覧(`mWifiList`、`mBaseSrcList`)を読むのは loopTask だけにする。`taskBaseRecv` は Wi-Fi のつなぎ直しに `mSsid` / `mPassword`(一覧の中を指す)を使うので、一覧を書き換える間は `mSsid` を NULL にしている。
-- **パスワードは本体の外に返さない。** `config.get` は `password` の代わりに、一覧の中の番号 `id` と `hasPassword` を返す。`config.put` で `password` が書かれていない項目は、本体が `id` の番号のパスワードを保つ(`config.cpp` の `configRestoreSecrets`)。パスワードの項目を増やすときは、`configToJson`、`configRestoreSecrets`、画面の `ConfigEditor.vue` を揃える。
+- **パスワードは本体の外に返さない。** `config.get` は `password` の代わりに、一覧の中の番号 `id` と `hasPassword` を返す。`config.put` で `password` が書かれていない項目は、本体が `id` の番号のパスワードを保つ(`config.cpp` の `configRestoreSecrets`)。パスワードの項目を増やすときは、`configToJson`、`configRestoreSecrets`、画面の `web/src/config-fields.ts`(`KEPT_GROUPS`)と `config-draft.ts` を揃える。
 - `file.get`(YAML をそのまま返す)はパスワードを含むので、USB からだけ受け付ける(`cmdExecute` の `channel`)。`mise run config-get` はこれを使う。
 - **設定ファイルのパスワードは暗号化して書く**(`src/secret.cpp`。AES-256-GCM、鍵は NVS)。書き出しは `configSave` が暗号化し、読み込みは `cfgSecret` が復号する。平文も読め、起動時に暗号化して書き直す。暗号化する項目を増やすときは、`config.cpp` の `encryptSecrets` と `configFromJson` の両方に足す。`m5f9p.run.json` の取得先のパスワードも同じ(`storage.cpp`)。
 - `secretInit()` は無線を始める前に呼ぶ(鍵を作るときの乱数源が、無線と同時に使えない)。内蔵フラッシュを全部消す操作(`pio run -t erase`)は鍵を消し、SD カードのパスワードが読めなくなる。ユーザーに断らずに行わない。

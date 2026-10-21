@@ -36,10 +36,11 @@ flowchart TD
     Status <--> Settings["設定"]
 
     Map -- "履歴" --> Days["表示する日"]
-    Settings -- "本体の設定を編集" --> Config["本体の設定"]
-    Config -- "編集 / Wi-Fi を追加" --> WifiEdit["Wi-Fi の編集"]
-    Config -- "編集 / 取得先を追加" --> SourceEdit["補正データの取得先の編集"]
-    Config -- "保存 / やめる" --> Settings
+    Settings -- "Wi-Fi の 編集" --> WifiList["Wi-Fi の一覧"]
+    WifiList -- "編集 / Wi-Fi を追加" --> WifiEdit["Wi-Fi の編集"]
+    Settings -- "補正データの取得先の 編集" --> SourceList["補正データの取得先の一覧"]
+    SourceList -- "編集 / 取得先を追加" --> SourceEdit["補正データの取得先の編集"]
+    Settings -- "編集（受信機名、MQTT、TCP など）" --> GroupEdit["項目の編集"]
     Settings -- "本体を再起動" --> Restart["再起動の確認"]
 
     Status -- "切断" --> Start
@@ -111,16 +112,14 @@ flowchart TD
 |---|---|
 | <img src="images/android/settings.png" width="270" alt="設定(上)"> | <img src="images/android/settings-2.png" width="270" alt="設定(下)"> |
 
-Google Maps の API キー、接続の設定(使う Wi-Fi、補正データの取得先(「自動(KUON GEOから取得)」も選べる)、ログの保存形式、起動時からログを保存するかどうか、標高を表示するかどうか、平面直角座標系の系と X, Y で表示するかどうか、MQTT で測位結果を送るかどうか)、本体(`本体の設定を編集`、`本体を再起動`)の枠が縦に並びます。
+表示、接続の設定、ログ、本体、IMU(実験的)、Google Maps の API キーの枠が縦に並びます。項目と操作は Windows アプリと同じです([Windows アプリの画面](screens-windows.md#設定))。
 
-`変更する` は、本体にすぐ反映します。`本体を再起動` を押すと確認が出て、`実行` で再起動します。
+起動時の設定(座標の形、使う Wi-Fi と取得先、保存形式など)は、変えた時点で本体に反映します。設定ファイルの項目は、変えると枠の `保存` が押せるようになります。`本体を再起動` を押すと確認が出て、`実行` で再起動します。
 
-### 本体の設定
+### Wi-Fi と補正データの取得先の一覧
 
 | | |
 |---|---|
-| <img src="images/android/config.png" width="270" alt="本体の設定"> | <img src="images/android/config-wifi.png" width="270" alt="Wi-Fi の編集"> |
+| <img src="images/android/config.png" width="270" alt="Wi-Fi の一覧"> | <img src="images/android/config-wifi.png" width="270" alt="Wi-Fi の編集"> |
 
-`本体の設定を編集` を押すと、設定のタブの中身が、本体の設定ファイルの編集画面に替わります(左の画像)。項目と操作は Windows アプリと同じです([Windows アプリの画面](screens-windows.md#本体の設定))。
-
-一覧の `編集` を押すと、その項目の編集画面が開きます(右の画像は Wi-Fi)。`OK` で一覧に反映し、`やめる` で閉じます。本体に書き込むのは、上の `保存` を押したときです。`やめる` で設定のタブに戻ります。
+Wi-Fi や補正データの取得先の `編集` を押すと、登録の一覧のダイアログが開きます(左の画像)。一覧の `編集` や追加を押すと、その項目の入力画面が重なって開きます(右の画像は Wi-Fi)。`OK` で一覧に反映し、本体に書き込むのは一覧の `保存` を押したときです。

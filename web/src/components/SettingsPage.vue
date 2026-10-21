@@ -1,52 +1,64 @@
 <script setup lang="ts">
-// 設定タブ。
+// 設定タブ。上から、表示 / 接続の設定 / ログ / 本体 / IMU（実験的） / Google Maps の API キー。
 //
-//   ・上から、表示（座標の形、系、標高）、接続の設定（Wi-Fi、補正データの取得先、MQTT）、ログ（保存形式、起動時から保存）。
-//     どれも本体の起動時の設定（run.set）で、変えた項目をその場で送る（「変更する」は無い）。本体はすぐに反映する（再起動しない）
-//   ・Google MapsのAPIキー（この端末に保存。伏せ字で、目のアイコンで見せる）
-//   ・本体（設定ファイルの編集は ConfigEditor.vue、再起動）は一番下
+//   ・起動時の設定（run.set: 座標の形、系、標高の表示、Wi-Fi、取得先、MQTT の入・切、保存形式、起動時から保存）は、
+//     変えた時点で本体に送る（すぐに反映される）。
+//   ・本体の設定（設定ファイルの内容。config.put）のうち、選択と入・切はグループの下書き（config-draft.ts の
+//     useConfigDraft）に溜め、グループの「保存」で変えた項目だけを送る。自由入力（受信機名、ブローカー、ポート、
+//     しきい値）と一覧（Wi-Fi、取得先）は、項目のそばの「編集」で開くダイアログで編集し、そのダイアログの保存で送る。
+//   ・再起動が要る項目を保存したあとは、本体を再起動するまで本体の設定を変えられない（state.configLocked）。
+//     その間は帯を出し、設定ファイル由来の部品を無効にする。
+//   ・Google Maps の API キーはこの端末に保存する（本体には置かない）。
 import { computed, reactive, ref, watch } from 'vue';
 import { Eye, EyeOff } from 'lucide-vue-next';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import * as rover from '../rover';
-import { state, toast } from '../store';
+import { state } from '../store';
 import { confirmDialog } from '../dialogs';
 import { userMapsKey } from '../map';
-import type { Option } from '../types';
+import { editGroupDialog, useConfigDraft } from '../config-draft';
+import {
+  AUTO_GROUP, BAUD_OPTIONS, BLE_ENABLE, BLE_NMEA, BLE_NMEA_OPTIONS, BLE_PAIRING, CHUNK_OPTIONS, DR_GROUP, GEOID_ENABLE,
+  IMU_DR_ENABLE, IMU_ENABLE, IMU_LOG, IMU_SMOOTH, IMU_SMOOTH_OPTIONS, JSTPH_BAUD, JSTPH_FORMAT, JSTPH_FORMAT_OPTIONS, LOG_CHUNK,
+  MQTT_GROUP, RECEIVER_NAME_GROUP, SOFTAP_ENABLE, SOFTAP_GROUP, SOURCE_LIST, TCP_GROUP, USB_NMEA, WIFI_LIST, getPath, withCurrent, withNote,
+} from '../config-fields';
+import type { ConfigValue, Option } from '../types';
 import Section from './Section.vue';
 import SelectField from './SelectField.vue';
 import SwitchField from './SwitchField.vue';
 import SegmentGroup from './SegmentGroup.vue';
-import ConfigEditor from './ConfigEditor.vue';
+import EditRow from './EditRow.vue';
+import ListEditDialog from './ListEditDialog.vue';
 
 const SAVE_FORMATS = ['NMEA', 'RAW', 'RTCM', 'CSV'];
 const connected = computed(() => state.conn === 'connected');
 
-// 本体の設定の編集。'' | 'loading' | 'editing'
-const editing = ref<'' | 'loading' | 'editing'>('');
+// ---------------------------------------------------------------- 本体の設定の読み込み
 
-// タブを開いた時、接続状態が変わった時は、最初の画面に戻して読み込み直す
-watch(connected, on => {
-  editing.value = '';
-  if (on) rover.loadRunConfig();
-}, { immediate: true });
+const config = computed(() => state.config);
+const locked = computed(() => state.configLocked);
+const configError = ref('');     // 読み込めなかった時の文言（再起動待ちは locked で出す）
 
-// ---------------------------------------------------------------- Google MapsのAPIキー
-
-const savedKey = userMapsKey();
-const keyInput = ref(savedKey);
-const keyVisible = ref(false);     // 目のアイコンで、キーを伏せ字にするか見せるかを切り替える
-
-function saveKey() {
-  const key = keyInput.value.trim();
-  localStorage.setItem('mapsKey', key);
-  // 地図を読み込み済みの時は、読み込み直さないとキーを切り替えられない
-  if (key !== savedKey) location.reload();
+async function loadConfig() {
+  configError.value = '';
+  try {
+    await rover.loadConfig();
+  } catch (e) {
+    if (!state.configLocked) configError.value = e instanceof Error ? e.message : String(e);
+  }
 }
 
-// ---------------------------------------------------------------- 接続の設定
+// 接続した時に、起動時の設定と本体の設定を読み込む
+watch(connected, on => {
+  if (on) {
+    rover.loadRunConfig();
+    loadConfig();
+  }
+}, { immediate: true });
+
+// ---------------------------------------------------------------- 起動時の設定（run.set。その場で反映）
 
 const run = computed(() => state.runConfig);
 const values = reactive({ wifi: '', source: '', format: '0', saveAtBoot: false, elevation: true, zone: '0', coordXY: false, dms: false, mqtt: false });
@@ -79,6 +91,7 @@ const zoneOptions = computed<Option[]>(() => [
   ...(values.zone === '0' ? [{ value: '0', label: '選んでいない' }] : []),
   ...rover.ZONES.slice(1).map((z, i) => ({ value: String(i + 1), label: `${z.name} 系（${z.area}）` })),
 ]);
+
 // 変えた項目をその場で本体に送る（run.set は指定した項目だけ変える）。本体の応答で run.get を読み直し、values に写る
 function set<K extends keyof typeof values>(key: K, value: (typeof values)[K]) {
   values[key] = value;
@@ -101,29 +114,81 @@ function setCoordFormat(format: string) {
   });
 }
 
-// ---------------------------------------------------------------- 本体
+// ---------------------------------------------------------------- 本体の設定（config.put。グループの「保存」で送る）
 
-async function editConfig() {
-  editing.value = 'loading';
-  try {
-    await rover.loadConfig();
-    if (editing.value === 'loading') editing.value = 'editing';
-  } catch (e) {
-    if (editing.value === 'loading') editing.value = '';
-    toast(e instanceof Error ? e.message : String(e));
-  }
+const view = useConfigDraft([GEOID_ENABLE.path]);
+const log = useConfigDraft([LOG_CHUNK.path]);
+const device = useConfigDraft([USB_NMEA.path, BLE_ENABLE.path, BLE_PAIRING.path, BLE_NMEA.path, SOFTAP_ENABLE.path, JSTPH_BAUD.path, JSTPH_FORMAT.path]);
+const imu = useConfigDraft([IMU_ENABLE.path, IMU_LOG.path, IMU_DR_ENABLE.path, IMU_SMOOTH.path]);
+
+// 選択の部品は文字列で扱う。本体の値（数値）と行き来する
+const str = (v: ConfigValue | undefined) => (v === undefined ? '' : String(v));
+const num = (v: string) => Number(v);
+const bool = (v: ConfigValue | undefined) => v === true;
+
+const chunkOptions = computed(() => withCurrent(CHUNK_OPTIONS, str(log.get(LOG_CHUNK.path)), v => `${v} 秒ごと`));
+const baudOptions = computed(() => withCurrent(BAUD_OPTIONS, str(device.get(JSTPH_BAUD.path)), v => `${v} bps`));
+
+// 「編集」の行に出す今の値
+const receiverName = computed(() => str(getPath(config.value, ['receiver', 'name'])));
+const tcpSummary = computed(() => {
+  const c = config.value;
+  if (!c) return '';
+  const ip = str(getPath(c, ['client', 'ip']));
+  return `ポート ${str(getPath(c, ['server', 'port']))}、送信先 ${ip ? `${ip}:${str(getPath(c, ['client', 'port']))}` : 'なし'}`;
+});
+const autoSummary = computed(() => {
+  const c = config.value;
+  if (!c) return '';
+  return `応答率 ${str(getPath(c, ['auto', 'minRate']))}% 以上、半径 ${str(getPath(c, ['auto', 'radiusKm']))} km、${str(getPath(c, ['auto', 'researchKm']))} km 動いたら探し直す`;
+});
+const mqttSummary = computed(() => {
+  const c = config.value;
+  const host = c ? str(getPath(c, ['mqtt', 'host'])) : '';
+  return host ? `${host}:${str(getPath(c!, ['mqtt', 'port']))}` : '';
+});
+const drSummary = computed(() => {
+  const c = config.value;
+  if (!c) return '';
+  return `上限 ${str(getPath(c, ['imu', 'dr', 'maxSec']))} 秒、劣化 ${str(getPath(c, ['imu', 'dr', 'degrade']))} m`;
+});
+
+// ---------------------------------------------------------------- Google MapsのAPIキー
+
+const savedKey = userMapsKey();
+const keyInput = ref(savedKey);
+const keyVisible = ref(false);     // 目のアイコンで、キーを伏せ字にするか見せるかを切り替える
+
+function saveKey() {
+  const key = keyInput.value.trim();
+  localStorage.setItem('mapsKey', key);
+  // 地図を読み込み済みの時は、読み込み直さないとキーを切り替えられない
+  if (key !== savedKey) location.reload();
 }
+
+// ---------------------------------------------------------------- 本体
 
 async function restart() {
   if (await confirmDialog('本体を再起動しますか？', '再起動の間、測位と記録が数秒止まります。')) rover.restart();
 }
+
+const wifiOpen = ref(false);
+const sourceOpen = ref(false);
 </script>
 
 <template>
-  <ConfigEditor v-if="editing === 'editing' && state.config" :config="state.config" @close="editing = ''" />
-
-  <div v-else class="grid grid-cols-[repeat(auto-fit,minmax(20rem,1fr))] items-start gap-3">
+  <div class="grid grid-cols-[repeat(auto-fit,minmax(20rem,1fr))] items-start gap-3">
     <template v-if="connected">
+      <!-- 再起動待ち、読み込めない時の帯。幅いっぱい -->
+      <div v-if="locked" class="col-span-full flex flex-wrap items-center gap-3 rounded-md border p-3 text-sm">
+        <div class="flex-1">本体を再起動するまで、本体の設定は変更できません。再起動すると、また変更できます。</div>
+        <Button size="sm" @click="restart">本体を再起動</Button>
+      </div>
+      <div v-else-if="configError" class="col-span-full flex flex-wrap items-center gap-3 rounded-md border p-3 text-sm">
+        <div class="flex-1">本体の設定を読み込めません: {{ configError }}</div>
+        <Button size="sm" variant="outline" @click="loadConfig">再読み込み</Button>
+      </div>
+
       <Section title="表示">
         <p v-if="!run">本体から読み込んでいます…</p>
         <template v-else>
@@ -143,23 +208,43 @@ async function restart() {
             v-if="run.elevation !== undefined" :model-value="values.elevation" label="標高を表示する"
             help="本体の画面とアプリの高さを、標高（SD カードのジオイドモデルで求めた値）で表示します。切ると楕円体高を表示します。NMEA の出力は変わりません"
             @update:model-value="set('elevation', $event)" />
+          <template v-if="config">
+            <SwitchField
+              :model-value="bool(view.get(GEOID_ENABLE.path))" :label="GEOID_ENABLE.label" :help="GEOID_ENABLE.help" :disabled="locked"
+              @update:model-value="view.set(GEOID_ENABLE.path, $event)" />
+            <div class="mt-4 flex items-center gap-3">
+              <p class="text-muted-foreground flex-1 text-xs">{{ view.dirty.value ? '保存していない変更があります' : '' }}</p>
+              <Button size="sm" :disabled="!view.dirty.value || view.saving.on || locked" @click="view.save">保存</Button>
+            </div>
+          </template>
         </template>
       </Section>
 
       <Section v-if="run" title="接続の設定">
         <div class="grid gap-2">
           <Label for="run-wifi">Wi-Fi</Label>
-          <SelectField id="run-wifi" :model-value="values.wifi" :options="wifiOptions" @update:model-value="set('wifi', $event)" />
+          <div class="flex items-center gap-2">
+            <SelectField id="run-wifi" class="min-w-0 flex-1" :model-value="values.wifi" :options="wifiOptions" @update:model-value="set('wifi', $event)" />
+            <Button size="sm" variant="outline" :disabled="!config || locked" @click="wifiOpen = true">編集</Button>
+          </div>
         </div>
         <div class="mt-4 grid gap-2">
           <Label for="run-source">補正データの取得先</Label>
-          <SelectField id="run-source" :model-value="values.source" :options="sourceOptions" @update:model-value="set('source', $event)" />
+          <div class="flex items-center gap-2">
+            <SelectField id="run-source" class="min-w-0 flex-1" :model-value="values.source" :options="sourceOptions" @update:model-value="set('source', $event)" />
+            <Button size="sm" variant="outline" :disabled="!config || locked" @click="sourceOpen = true">編集</Button>
+          </div>
         </div>
+        <EditRow label="自動選択の条件" :value="autoSummary" :disabled="!config || locked" @edit="editGroupDialog(AUTO_GROUP)" />
         <SwitchField
           v-if="run.mqtt !== undefined" :model-value="values.mqtt" label="MQTT で測位結果を送る" :disabled="!run.mqttReady"
-          :help="run.mqttReady ? '設定ファイルの mqtt のブローカーへ、間隔ごとに1回、SenML（JSON）で送ります' : 'ブローカーは「本体の設定を編集」の「MQTT 配信」で設定します'"
-          @update:model-value="set('mqtt', $event)" />
-        <p class="text-muted-foreground mt-3 text-xs">変更はすぐに本体に反映されます。Wi-Fi や補正データの接続先を追加・変更するには、「本体の設定を編集」を使います。</p>
+          :help="run.mqttReady ? `${mqttSummary} へ、間隔ごとに1回、SenML（JSON）で送ります` : 'ブローカーは「編集」で設定します'"
+          @update:model-value="set('mqtt', $event)">
+          <template #action>
+            <Button size="sm" variant="outline" :disabled="!config || locked" @click="editGroupDialog(MQTT_GROUP)">編集</Button>
+          </template>
+        </SwitchField>
+        <p class="text-muted-foreground mt-3 text-xs">選んだものはすぐに本体に反映されます。登録の追加や変更は「編集」で行います。</p>
       </Section>
 
       <Section v-if="run" title="ログ">
@@ -168,6 +253,87 @@ async function restart() {
           <SelectField id="run-format" :model-value="values.format" :options="formatOptions" @update:model-value="set('format', $event)" />
         </div>
         <SwitchField :model-value="values.saveAtBoot" label="起動時からログを保存する" @update:model-value="set('saveAtBoot', $event)" />
+        <template v-if="config">
+          <div class="mt-4 grid gap-2">
+            <Label for="log-chunk">{{ LOG_CHUNK.label }}</Label>
+            <SelectField id="log-chunk" :model-value="str(log.get(LOG_CHUNK.path))" :options="chunkOptions" :disabled="locked" @update:model-value="log.set(LOG_CHUNK.path, num($event))" />
+            <p class="text-muted-foreground text-xs">{{ LOG_CHUNK.help }}</p>
+          </div>
+          <div class="mt-4 flex items-center gap-3">
+            <p class="text-muted-foreground flex-1 text-xs">{{ log.dirty.value ? '保存していない変更があります' : '' }}</p>
+            <Button size="sm" :disabled="!log.dirty.value || log.saving.on || locked" @click="log.save">保存</Button>
+          </div>
+        </template>
+      </Section>
+
+      <Section title="本体">
+        <p v-if="!config && !configError && !locked" class="text-sm">本体から読み込んでいます…</p>
+        <template v-if="config">
+          <div class="-mt-4">
+            <EditRow label="受信機名" :value="receiverName" help="BLE と soft AP の名前になります" :disabled="locked" @edit="editGroupDialog(RECEIVER_NAME_GROUP)" />
+            <SwitchField :model-value="bool(device.get(USB_NMEA.path))" :label="USB_NMEA.label" :disabled="locked" @update:model-value="device.set(USB_NMEA.path, $event)" />
+            <SwitchField
+              :model-value="bool(device.get(BLE_ENABLE.path))" :label="BLE_ENABLE.label" :help="withNote(BLE_ENABLE).help" :disabled="locked"
+              @update:model-value="device.set(BLE_ENABLE.path, $event)" />
+            <SwitchField
+              :model-value="bool(device.get(BLE_PAIRING.path))" :label="BLE_PAIRING.label" :help="withNote(BLE_PAIRING).help" :disabled="locked"
+              @update:model-value="device.set(BLE_PAIRING.path, $event)" />
+            <div class="mt-4 grid gap-2">
+              <Label for="ble-nmea">{{ BLE_NMEA.label }}</Label>
+              <SelectField id="ble-nmea" :model-value="str(device.get(BLE_NMEA.path))" :options="BLE_NMEA_OPTIONS" :disabled="locked" @update:model-value="device.set(BLE_NMEA.path, num($event))" />
+              <p class="text-muted-foreground text-xs">{{ BLE_NMEA.help }}</p>
+            </div>
+            <SwitchField
+              :model-value="bool(device.get(SOFTAP_ENABLE.path))" :label="SOFTAP_ENABLE.label" :help="withNote(SOFTAP_ENABLE).help" :disabled="locked"
+              @update:model-value="device.set(SOFTAP_ENABLE.path, $event)">
+              <template #action>
+                <Button size="sm" variant="outline" :disabled="locked" @click="editGroupDialog(SOFTAP_GROUP)">編集</Button>
+              </template>
+            </SwitchField>
+            <EditRow label="測位データの配信（TCP）" :value="tcpSummary" :disabled="locked" @edit="editGroupDialog(TCP_GROUP)" />
+            <div class="mt-4 grid gap-2">
+              <Label for="jstph-baud">{{ JSTPH_BAUD.label }}</Label>
+              <SelectField id="jstph-baud" :model-value="str(device.get(JSTPH_BAUD.path))" :options="baudOptions" :disabled="locked" @update:model-value="device.set(JSTPH_BAUD.path, num($event))" />
+              <p class="text-muted-foreground text-xs">{{ withNote(JSTPH_BAUD).help }}</p>
+            </div>
+            <div class="mt-4 grid gap-2">
+              <Label for="jstph-format">{{ JSTPH_FORMAT.label }}</Label>
+              <SelectField id="jstph-format" :model-value="str(device.get(JSTPH_FORMAT.path))" :options="JSTPH_FORMAT_OPTIONS" :disabled="locked" @update:model-value="device.set(JSTPH_FORMAT.path, $event)" />
+            </div>
+          </div>
+          <div class="mt-4 flex items-center gap-3">
+            <Button size="sm" variant="outline" @click="restart">本体を再起動</Button>
+            <p class="text-muted-foreground flex-1 text-right text-xs">{{ device.dirty.value ? '保存していない変更があります' : '' }}</p>
+            <Button size="sm" :disabled="!device.dirty.value || device.saving.on || locked" @click="device.save">保存</Button>
+          </div>
+        </template>
+        <div v-else class="mt-2">
+          <Button size="sm" variant="outline" @click="restart">本体を再起動</Button>
+        </div>
+      </Section>
+
+      <Section v-if="config" title="IMU（実験的）">
+        <div class="-mt-4">
+          <SwitchField
+            :model-value="bool(imu.get(IMU_ENABLE.path))" :label="IMU_ENABLE.label" :help="withNote(IMU_ENABLE).help" :disabled="locked"
+            @update:model-value="imu.set(IMU_ENABLE.path, $event)" />
+          <SwitchField
+            :model-value="bool(imu.get(IMU_LOG.path))" :label="IMU_LOG.label" :help="IMU_LOG.help" :disabled="locked"
+            @update:model-value="imu.set(IMU_LOG.path, $event)" />
+          <SwitchField
+            :model-value="bool(imu.get(IMU_DR_ENABLE.path))" :label="IMU_DR_ENABLE.label" :help="IMU_DR_ENABLE.help" :disabled="locked"
+            @update:model-value="imu.set(IMU_DR_ENABLE.path, $event)" />
+          <EditRow label="推測航法の詳細" :value="drSummary" :disabled="locked" @edit="editGroupDialog(DR_GROUP)" />
+          <div class="mt-4 grid gap-2">
+            <Label for="imu-smooth">{{ IMU_SMOOTH.label }}</Label>
+            <SelectField id="imu-smooth" :model-value="str(imu.get(IMU_SMOOTH.path))" :options="IMU_SMOOTH_OPTIONS" :disabled="locked" @update:model-value="imu.set(IMU_SMOOTH.path, $event)" />
+            <p class="text-muted-foreground text-xs">{{ IMU_SMOOTH.help }}</p>
+          </div>
+        </div>
+        <div class="mt-4 flex items-center gap-3">
+          <p class="text-muted-foreground flex-1 text-xs">{{ imu.dirty.value ? '保存していない変更があります' : '' }}</p>
+          <Button size="sm" :disabled="!imu.dirty.value || imu.saving.on || locked" @click="imu.save">保存</Button>
+        </div>
       </Section>
     </template>
     <p v-else class="text-muted-foreground text-sm">本体の設定は、本体に接続している時に変更できます。</p>
@@ -191,13 +357,8 @@ async function restart() {
         {{ savedKey ? 'この端末に保存したキーを使います（本体には保存しません）。' : '未入力です。地図は表示されません。' }}
       </p>
     </Section>
-
-    <Section v-if="connected" title="本体">
-      <div class="grid gap-2">
-        <Button size="sm" variant="outline" @click="editConfig">本体の設定を編集</Button>
-        <p v-if="editing === 'loading'" class="text-muted-foreground text-xs">本体から読み込んでいます…</p>
-        <Button size="sm" variant="outline" @click="restart">本体を再起動</Button>
-      </div>
-    </Section>
   </div>
+
+  <ListEditDialog v-model:open="wifiOpen" :list="WIFI_LIST" />
+  <ListEditDialog v-model:open="sourceOpen" :list="SOURCE_LIST" />
 </template>

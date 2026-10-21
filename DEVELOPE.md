@@ -221,7 +221,7 @@ PORT=/dev/ttyACM1 mise run upload
 
 選んだ内容は SD カード(`m5f9p.run.json`)に保存され、次の起動でも使われる。保存したものがない初回は、既定値(Wi-Fi は1件だけ登録されていればそれ、補正データなし、NMEA)で測位を始め、Setup のページを開く。
 
-**再起動が要るのは、起動時にしか反映できない項目(受信機名、BLE の入・切とペアリング、soft AP、TCP サーバのポート、PH コネクタのボーレート)を変えたときと、設定ファイルを直接書き換えたとき(`mise run config-put`、SD カード)だけ。** アプリの「本体の設定を編集」で保存すると、本体はすぐに反映する。使用中の Wi-Fi や補正データの取得先の内容(パスワード、マウントポイントなど)を変えたときは、つなぎ直す。一覧から消したときは、使うのをやめる。再起動が要る項目を変えたときだけ、アプリが再起動を求める(要るかどうかは本体が決める。`src/config.cpp` の `configNeedsRestart`)。BLE で NMEA を送る回数は、次の接続から使われる。
+**再起動が要るのは、起動時にしか反映できない項目(受信機名、BLE の入・切とペアリング、soft AP、TCP サーバのポート、PH コネクタのボーレート)を変えたときと、設定ファイルを直接書き換えたとき(`mise run config-put`、SD カード)だけ。** アプリの設定タブ(枠の「保存」、「編集」のダイアログ)で保存すると、本体はすぐに反映する。使用中の Wi-Fi や補正データの取得先の内容(パスワード、マウントポイントなど)を変えたときは、つなぎ直す。一覧から消したときは、使うのをやめる。再起動が要る項目を変えたときだけ、アプリが再起動を求める(要るかどうかは本体が決める。`src/config.cpp` の `configNeedsRestart`)。BLE で NMEA を送る回数は、次の接続から使われる。
 
 ### 測位中の画面
 
@@ -474,7 +474,7 @@ Wi-Fi と BLE は1つの無線を時分割で使う。次の構成で、NTRIP �
 
 ### MQTT で測位結果を送る
 
-本体は、自分の MQTT ブローカー(Mosquitto 等)へ、設定の間隔ごとに1回、最新の測位結果を SenML(RFC 8428、JSON)で publish できる(`src/mqtt.cpp`)。利用者向けの説明(設定の全項目、確かめ方、うまくいかないとき)は [docs/mqtt.md](docs/mqtt.md)。設定ファイルの `mqtt` の節で有効にする(アプリの「本体の設定を編集」→「MQTT 配信」でも書ける。再起動は要らない)。
+本体は、自分の MQTT ブローカー(Mosquitto 等)へ、設定の間隔ごとに1回、最新の測位結果を SenML(RFC 8428、JSON)で publish できる(`src/mqtt.cpp`)。利用者向けの説明(設定の全項目、確かめ方、うまくいかないとき)は [docs/mqtt.md](docs/mqtt.md)。設定ファイルの `mqtt` の節で有効にする(アプリの設定タブの「MQTT で測位結果を送る」の「編集」でも書ける。再起動は要らない)。
 
 ```yaml
 mqtt:
@@ -570,8 +570,9 @@ web/
     lib/utils.ts    Origin UI の部品が使うクラス名の結合
     components/
       ui/           Origin UI から写した部品(下の表)。原則として書き換えない
-      *.vue         各タブ(StatusPage、MapPage、SatellitesPage、SettingsPage)、本体の設定の編集(ConfigEditor)、
-                    入力欄(SelectField、SwitchField、FieldInput)、ダイアログ(DialogHost)、カード(Section、Item)
+      *.vue         各タブ(StatusPage、MapPage、SatellitesPage、SettingsPage)、Wi-Fi と取得先の一覧(ListEditDialog)、
+                    入力欄(SelectField、SwitchField、FieldInput、EditRow)、ダイアログ(DialogHost)、カード(Section、Item)
+      config-fields.ts  本体の設定の項目の定義(設定タブのダイアログと選択肢)。config-draft.ts  枠ごとの下書きと保存
 ```
 
 `components/ui/` に写してある部品は次のとおり(originui-vue の 56276f4 時点)。足すときは、同じリポジトリの `app/registry/default/ui/` から写し、`@/registry/default/ui/` を `@/components/ui/` に置き換える。
@@ -801,7 +802,7 @@ M5F9P は M5Stack Basic 用の基板なので、M-BUS の同じ位置に来る C
 - **F9P へのコマンドは `ubxSendCommand()` を通す。** 応答待ちの間、測位データを処理するタスクを止める仕組みが入っている。
 - **起動時に質問をしない。** 設定の変更は、動作中にその場で切り替える関数(`main.cpp` の `appSet...`)を作り、Setup のページとコマンド(`run.set`)の両方から呼ぶ。
 - `stRunInfo` に項目を足したら、`storage.cpp` の `saveRunInfo` / `readRunInfo`(JSON)にも足す。
-- 設定の項目を増やしたら、`config.cpp` の `configToJson` / `configFromJson`、`sdcard/m5f9p/m5f9p.yaml.sample`、画面の `web/src/components/ConfigEditor.vue` も更新する。
+- 設定の項目を増やしたら、`config.cpp` の `configToJson` / `configFromJson`、`sdcard/m5f9p/m5f9p.yaml.sample`、画面の `web/src/config-fields.ts`(定義)と `SettingsPage.vue`(並び)も更新する。
 
 タスクの構成や排他の詳細は `CLAUDE.md` にある。
 

@@ -256,4 +256,12 @@ export interface FormField extends Field {
   key: string;
 }
 
+/** 本体の設定(DeviceConfig)の中の1項目。path は設定の中の位置([グループ, 項目]。3つの時は節の中の節。imu.dr.enable など) */
+export interface PathField extends Field {
+  path: ConfigPath;
+  restart?: boolean;    // 変えると、本体の再起動が要る(要るかどうかは本体が決める。src/config.cpp の configNeedsRestart。印はその注意書き)
+}
+
+export type ConfigPath = [string, string] | [string, string, string];
+
 export type FormValues = Record<string, ConfigValue>;

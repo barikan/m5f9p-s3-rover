@@ -102,7 +102,7 @@ const gigabytes = (megabytes: number) => (megabytes / 1000).toFixed(1);
   <template v-else>
     <!-- SDカードのパスワードについての警告 -->
     <div v-if="s.secretError" class="border-destructive/50 text-destructive-foreground mb-4 rounded-lg border px-4 py-3 text-sm" role="alert">
-      設定ファイルのパスワードを読めません（別の本体で保存された SD カード、または本体の初期化のため）。「設定」タブの「本体の設定を編集」で、パスワードを入れ直してください。
+      設定ファイルのパスワードを読めません（別の本体で保存された SD カード、または本体の初期化のため）。「設定」タブの「設定」タブの Wi-Fi や補正データの取得先の「編集」で、パスワードを入れ直してください。
     </div>
     <div v-if="s.iniRemains" class="border-destructive/50 text-destructive-foreground mb-4 rounded-lg border px-4 py-3 text-sm" role="alert">
       SD カードに旧形式の設定ファイル（m5f9p.ini）が残っています。パスワードが暗号化されずに書かれているので、SD カードから削除してください。
