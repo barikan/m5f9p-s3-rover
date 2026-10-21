@@ -860,7 +860,7 @@ static void drawBluetooth()
 //
 static void formatLabel( int index, char *buff, int buffSize )
 {
-	static const char *name[4] = { "NMEA", "CSV", "RAW (UBX)", "RTCM" };
+	static const char *name[5] = { "NMEA", "CSV", "CSV (custom)", "RAW (UBX)", "RTCM" };
 	snprintf( buff, buffSize, "%s", name[ index ] );
 }
 
@@ -893,8 +893,8 @@ static void onSetting( int id )
 		}
 	}
 	else if ( id == HIT_SET_FORMAT ){
-		static const int formats[4] = { SAVE_NMEA, SAVE_CSV, SAVE_RAW, SAVE_RTCM };	// formatLabel と同じ並び
-		int index = uiSelectList( "Log format", 4, formatLabel, "Back" );
+		static const int formats[5] = { SAVE_NMEA, SAVE_CSV, SAVE_CSV_CUSTOM, SAVE_RAW, SAVE_RTCM };	// formatLabel と同じ並び
+		int index = uiSelectList( "Log format", 5, formatLabel, "Back" );
 		if ( index < 0 ) return;
 		int format = formats[ index ];
 		if ( appSetSaveFormat( format ) < 0 ) uiNotice( "Log format", "The receiver did not accept the setting." );

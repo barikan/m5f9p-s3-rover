@@ -209,7 +209,7 @@ PORT=/dev/ttyACM1 mise run upload
 |---|---|
 | Wi-Fi | 設定ファイルに登録したアクセスポイントから選ぶ。`Off` で使わない |
 | Corrections | 補正データの取得先を選ぶ。`None`(使わない)、`UART (PH connector)`、設定ファイルに登録した取得先、`rtk2go.com ...`(Wi-Fi 接続中のみ。マウントポイントの一覧から選ぶ) |
-| Log format | ログの保存形式。`NMEA`、`CSV`(日付, 時刻, 緯度, 経度, 楕円体高, Fix)、`RAW (UBX)`、`RTCM`。保存中に変えると、ファイルを分けて保存し直す |
+| Log format | ログの保存形式。`NMEA`、`CSV`(日付, 時刻, 緯度, 経度, 楕円体高, Fix)、`CSV (custom)`(設定ファイルの `log.columns` で選んだ項目。`src/csvlog.cpp`。先頭に項目名の行)、`RAW (UBX)`、`RTCM`。保存中に変えると、ファイルを分けて保存し直す |
 | Display | タップするたびに、画面が 180 度回る |
 | TCP send | 測位データを TCP サーバ(設定ファイルの `client.ip`)に送るかどうか。送信先を設定しているときだけ出る |
 | Bluetooth | BLE で接続している相手を切断する(確認が出る)。接続している相手がいるときだけ出る。ペアリングの記憶は消さない |

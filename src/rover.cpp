@@ -204,7 +204,7 @@ static void distributeGpsData()
 
 	// SDカードへ保存
 	if ( mFileSaving && mQueueFileSave && 
-				( mSaveFormat == SAVE_NMEA || mSaveFormat == SAVE_CSV )){
+				( mSaveFormat == SAVE_NMEA || mSaveFormat == SAVE_CSV || mSaveFormat == SAVE_CSV_CUSTOM )){
 		if ( xQueueSend( mQueueFileSave, &mGpsData, 0 ) != pdPASS ) mQueueFileErrorCount++;
 	}
 	

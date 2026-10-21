@@ -308,7 +308,7 @@ void appSetBaseAuto()
 //
 int appSetSaveFormat( int format )
 {
-	if ( format < SAVE_NMEA || format > SAVE_CSV ) return -1;
+	if ( format < SAVE_NMEA || format > SAVE_CSV_CUSTOM ) return -1;
 	if ( format == mSaveFormat ) return 0;
 
 	bool saving = mFileSaving;

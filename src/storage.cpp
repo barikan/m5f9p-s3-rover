@@ -257,7 +257,7 @@ int logRemove( const char *name )
 //
 int saveRunInfo( struct stRunInfo *runInfo )
 {
-	static const char *formatName[] = { "nmea", "raw", "rtcm", "csv" };
+	static const char *formatName[] = { "nmea", "raw", "rtcm", "csv", "custom" };
 	JsonDocument doc;
 
 	doc["setup"] = ( runInfo->setupRequest != 0 );
@@ -394,7 +394,7 @@ int readRunInfo( struct stRunInfo *runInfo )
 	}
 
 	String format = doc["format"] | "nmea";
-	runInfo->saveFormat = ( format == "raw" ) ? SAVE_RAW : ( format == "rtcm" ) ? SAVE_RTCM : ( format == "csv" ) ? SAVE_CSV : SAVE_NMEA;
+	runInfo->saveFormat = ( format == "raw" ) ? SAVE_RAW : ( format == "rtcm" ) ? SAVE_RTCM : ( format == "csv" ) ? SAVE_CSV : ( format == "custom" ) ? SAVE_CSV_CUSTOM : SAVE_NMEA;
 	runInfo->saving = ( doc["saveAtBoot"] | false ) ? 1 : 0;
 	runInfo->solutionRate = doc["rate"] | 1;
 	runInfo->agribusConnect = ( doc["tcpClient"] | false ) ? 1 : 0;
@@ -415,7 +415,7 @@ int readRunInfo( struct stRunInfo *runInfo )
 static int setFilePath( int year, int month, int day, int hour, int minute, int sec, int saveFormat )
 {
 	char buff[64];
-	const char *extension[] = { "log", "ubx", "rtcm3", "log" };
+	const char *extension[] = { "log", "ubx", "rtcm3", "log", "csv" };
 
 	if ( ! SD.exists( mGpsLogDir ) ){
 		if ( ! SD.mkdir( mGpsLogDir ) ) {
@@ -431,7 +431,7 @@ static int setFilePath( int year, int month, int day, int hour, int minute, int 
 			return -2;
 		}
 	}
-	if ( saveFormat > 3 ) saveFormat= 0;
+	if ( saveFormat > 4 ) saveFormat= 0;
 	snprintf( mSaveFileName, sizeof( mSaveFileName ), "%s/gps_r0_%d%02d%02d_%02d%02d%02d.%s", 
 							buff, year, month, day, hour, minute, sec, extension[ saveFormat ] );
 	return 0;
@@ -458,6 +458,12 @@ static int sdSetFilePath()
 			mFileSaving = 0;
 			return -1;
 		}
+		// カスタム CSV は、新しいファイルの先頭に見出し行を書く（csvlog.cpp）
+		if ( mSaveFormat == SAVE_CSV_CUSTOM ){
+			char header[ 512 ];
+			int n = csvCustomHeader( header, sizeof( header ) );
+			if ( n > 0 ) sdSave( mSaveFileName, header, n, FILE_APPEND );
+		}
 	}
 	return 0;
 }
@@ -468,12 +474,13 @@ static int sdSetFilePath()
 //
 static int sdSaveGpsData( struct stGpsData *pGpsData )
 {
-	char buff[256];
+	char buff[512];
 
 	if ( sdSetFilePath() < 0 ) return -1;
 	
 	int numOutBytes;
 	if ( mSaveFormat == SAVE_CSV ) numOutBytes = setCsvData( pGpsData, buff, 256 );
+	else if ( mSaveFormat == SAVE_CSV_CUSTOM ) numOutBytes = csvCustomRow( pGpsData, buff, sizeof( buff ) );	// 項目を選べる CSV（csvlog.cpp）
 	else numOutBytes = setNmeaData( pGpsData, buff, 256 );
 	if ( numOutBytes <= 0 ) return numOutBytes;
 
@@ -579,7 +586,7 @@ static void taskSdSave(void* param)
 		}
 
 		// NMEA以外はUARTバッファの内容をそのまま保存
-		if ( mFileSaving && mSaveFormat != SAVE_NMEA && mSaveFormat != SAVE_CSV ){
+		if ( mFileSaving && mSaveFormat != SAVE_NMEA && mSaveFormat != SAVE_CSV && mSaveFormat != SAVE_CSV_CUSTOM ){
 			int numBytes = mUartWriteIndex - mUartSaveIndex;
 			if ( numBytes < 0 ) numBytes = UART_BUFF_MAX - mUartSaveIndex;
 			else if ( numBytes < 3000 ) continue;	// 書き込み単位を3KB以上にして高速化

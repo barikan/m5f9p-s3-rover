@@ -224,6 +224,7 @@ void configToJson( JsonDocument &doc, bool secrets )
 	doc["mqtt"]["interval"] = mMqttCfg.interval;
 	doc["mqtt"]["retain"] = ( mMqttCfg.retain != 0 );
 	doc["log"]["chunkSec"] = (int) mSaveEndSec;
+	doc["log"]["columns"] = mCsvColumns;
 	doc["geoid"]["enable"] = ( mGeoidEnable != 0 );
 	doc["auto"]["minRate"] = mAutoMinRate;
 	doc["auto"]["radiusKm"] = mAutoRadiusKm;
@@ -402,6 +403,7 @@ void configFromJson( JsonDocument &doc )
 
 	// log.csv は廃止（保存形式は m5f9p.run.json の saveFormat で、本体の画面とアプリから CSV を直接選ぶ）。残っていても読まず、次の書き出しで消える
 	mSaveEndSec = cfgInt( doc["log"]["chunkSec"], (int) mSaveEndSec );
+	csvColumnsSet( cfgStr( doc["log"]["columns"], mCsvColumns ).c_str() );	// カスタム CSV の項目（csvlog.cpp）
 
 	mGeoidEnable = cfgBool( doc["geoid"]["enable"], mGeoidEnable != 0 ) ? 1 : 0;
 

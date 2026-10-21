@@ -20,7 +20,7 @@ u-blox ZED-F9P を載せた M5F9P モジュールを M5Stack CoreS3 に重ねて
   - NEO-D9C による CLAS(補正元に接続していない間、自動で使います)
   - JST-PH コネクタの UART
 - 測位結果の出力
-  - SD カードへのログ保存(NMEA / CSV / RAW / RTCM)
+  - SD カードへのログ保存(NMEA / CSV / CSV(カスタム。出す項目を選べる) / RAW / RTCM)
   - TCP サーバ、TCP クライアント、JST-PH コネクタの UART、USB シリアル
   - BLE(状況と NMEA)
   - MQTT(SenML/JSON。TLS に対応。下の「MQTT」を参照)
@@ -208,7 +208,22 @@ SD カードに国土地理院のジオイドモデルを置くと、本体が�
 - 本体の Status(`Alt` の行が `Elev` になります)
 - アプリの状況タブ(標高、ジオイド高とモデルの名前、楕円体高)
 
-CSV 形式のログは、楕円体高のままです。
+CSV 形式のログは、楕円体高のままです。CSV(カスタム)では標高の列も選べます。
+
+### CSV(カスタム)
+
+ログの保存形式を「CSV(カスタム)」にすると、出す項目を選んだ CSV(拡張子 `.csv`、先頭に項目名の行)で保存します。項目は、アプリの設定タブの「ログ」の「CSV(カスタム)で出す項目」の「編集」で選びます(設定ファイルの `log.columns`。コンマ区切り)。順は本体が決めます。
+
+| 項目 | 内容 |
+|---|---|
+| datetime、unix | 日時(YYYY-MM-DD HH:MM:SS.sss。日本時間)、Unix 時刻(秒) |
+| lat、lon、height、elevation、geoid、geoidModel | 緯度、経度(度)、楕円体高、標高、ジオイド高(m)、ジオイド高の出所(1: ジオイドモデル、0: F9P 内蔵) |
+| quality、sats、hAcc、vAcc | 測位の状態(NMEA の quality)、衛星数、水平と垂直の推定精度(m) |
+| speed、heading、velN、velE、velD、smoothed | 速度(km/h)、進行方向(度)、速度の北・東・下成分(m/s)、なめらか化で置き換えたか(1/0) |
+| zone、x、y | 平面直角座標系の系と X、Y(m。系を選んでいるときだけ) |
+| roll、pitch、yaw、still、drHeading、drSpeed、drSec | IMU の姿勢(度)、静止(1/0)、推測航法の向き(度)と速さ(m/s)、最後に測位に合わせてからの秒数(IMU を使っているときだけ) |
+| baseLat、baseLon | 基準局の位置(度。補正データの RTCM 1005/1006 から取れたときだけ) |
+| cpuTemp、cpu、mem、heap、volt、battery、sdFree、lux、brightness | CPU の温度(℃)と使用率(%)、内蔵 RAM の使用率(%)と空き(バイト)、電圧(V)、バッテリー駆動か(1/0)、SD カードの空き(MB)、周囲の明るさ(lux)、画面の明るさ(%) |
 
 ## IMU
 

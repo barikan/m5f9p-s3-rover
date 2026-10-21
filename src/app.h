@@ -375,6 +375,17 @@ void rtcmReset();
 bool rtcmGetBase( struct stRtcmBase *out );
 
 // ************************************************************
+//                        csvlog.cpp
+// ************************************************************
+
+#define CSV_COLUMNS_MAX 256
+extern char mCsvColumns[ CSV_COLUMNS_MAX ];	// 設定ファイルの log.columns（項目の名前をコンマで並べたもの）
+
+void csvColumnsSet( const char *columns );
+int csvCustomHeader( char *buff, int size );
+int csvCustomRow( const struct stGpsData *gpsData, char *buff, int size );
+
+// ************************************************************
 //                        kuon.cpp
 // ************************************************************
 

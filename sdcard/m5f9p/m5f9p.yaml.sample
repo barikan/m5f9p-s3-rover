@@ -92,6 +92,10 @@ mqtt:
 
 log:
   chunkSec: 0          # ファイルを分割して保存する場合の、1ファイルの秒数。0:分割しない
+  columns: "datetime,lat,lon,height,quality"    # 保存形式「CSV（カスタム）」で出す項目（コンマ区切り。順は本体が決める）
+                       # datetime(日本時間) unix lat lon height elevation geoid geoidModel quality sats hAcc vAcc speed heading
+                       # velN velE velD smoothed zone x y roll pitch yaw still drHeading drSpeed drSec baseLat baseLon
+                       # cpuTemp cpu mem heap volt battery sdFree lux brightness
 
 # ジオイドモデル。SDカードの /m5f9p/geoid.bin（国土地理院のジオイドモデルから
 # mise run geoid-make で作る。READMEを参照）で、楕円体高から標高を求める。

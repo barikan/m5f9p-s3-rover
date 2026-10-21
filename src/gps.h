@@ -70,6 +70,7 @@ struct stUbxStatus
 #define SAVE_RAW 1
 #define SAVE_RTCM 2
 #define SAVE_CSV 3
+#define SAVE_CSV_CUSTOM 4	// 項目を選べる CSV（csvlog.cpp）
 
 extern int mGpsUartBaudrate;
 extern volatile bool mGpsCommandBusy;

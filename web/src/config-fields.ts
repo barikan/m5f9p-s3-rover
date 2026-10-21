@@ -129,6 +129,60 @@ export const DR_GROUP: GroupDef = {
   ],
 };
 
+// ---------------------------------------------------------------- カスタム CSV の項目(保存形式 4。本体の src/csvlog.cpp の mColumns と揃える)
+
+export const CSV_COLUMNS_PATH: ConfigPath = ['log', 'columns'];
+export const CSV_COLUMNS_DEFAULT = 'datetime,lat,lon,height,quality';
+/** 選べる項目。出す順はこの順(本体が決める)。header は CSV の列名。label に 2 バイトの括弧は使わない */
+export const CSV_COLUMNS: { key: string; header: string; label: string; group: string }[] = [
+  { key: 'datetime', header: 'datetime_jst', label: '日時 (日本時間、YYYY-MM-DD HH:MM:SS.sss)', group: '時刻' },
+  { key: 'unix', header: 'unix_time', label: 'Unix 時刻 (秒)', group: '時刻' },
+  { key: 'lat', header: 'lat', label: '緯度 (度)', group: '測位' },
+  { key: 'lon', header: 'lon', label: '経度 (度)', group: '測位' },
+  { key: 'height', header: 'height', label: '楕円体高 (m)', group: '測位' },
+  { key: 'elevation', header: 'elevation', label: '標高 (m、楕円体高 - ジオイド高)', group: '測位' },
+  { key: 'geoid', header: 'geoid', label: 'ジオイド高 (m)', group: '測位' },
+  { key: 'geoidModel', header: 'geoid_model', label: 'ジオイド高の出所 (1: ジオイドモデル、0: F9P 内蔵)', group: '測位' },
+  { key: 'quality', header: 'fix', label: '測位の状態 (1: 単独、2: DGPS、4: Fix、5: Float、6: DR)', group: '測位' },
+  { key: 'sats', header: 'sats', label: '衛星数', group: '測位' },
+  { key: 'hAcc', header: 'hacc', label: '水平の推定精度 (m)', group: '測位' },
+  { key: 'vAcc', header: 'vacc', label: '垂直の推定精度 (m)', group: '測位' },
+  { key: 'speed', header: 'speed_kmh', label: '速度 (km/h)', group: '測位' },
+  { key: 'heading', header: 'heading', label: '進行方向 (度)', group: '測位' },
+  { key: 'velN', header: 'vel_n', label: '速度 北 (m/s)', group: '測位' },
+  { key: 'velE', header: 'vel_e', label: '速度 東 (m/s)', group: '測位' },
+  { key: 'velD', header: 'vel_d', label: '速度 下 (m/s)', group: '測位' },
+  { key: 'smoothed', header: 'smoothed', label: 'なめらか化で置き換えた (1/0)', group: '測位' },
+  { key: 'zone', header: 'zone', label: '平面直角座標系の系', group: '平面直角座標' },
+  { key: 'x', header: 'x', label: 'X (m、系を選んでいる時)', group: '平面直角座標' },
+  { key: 'y', header: 'y', label: 'Y (m、系を選んでいる時)', group: '平面直角座標' },
+  { key: 'roll', header: 'roll', label: 'ロール (度)', group: 'IMU' },
+  { key: 'pitch', header: 'pitch', label: 'ピッチ (度)', group: 'IMU' },
+  { key: 'yaw', header: 'yaw', label: 'ヨー (度、相対値)', group: 'IMU' },
+  { key: 'still', header: 'still', label: '静止 (1/0)', group: 'IMU' },
+  { key: 'drHeading', header: 'dr_heading', label: '推測航法の向き (度)', group: 'IMU' },
+  { key: 'drSpeed', header: 'dr_speed_ms', label: '推測航法の速さ (m/s)', group: 'IMU' },
+  { key: 'drSec', header: 'dr_sec', label: '最後に測位に合わせてからの秒数', group: 'IMU' },
+  { key: 'baseLat', header: 'base_lat', label: '基準局の緯度 (度、RTCM 1005/1006)', group: '基準局' },
+  { key: 'baseLon', header: 'base_lon', label: '基準局の経度 (度)', group: '基準局' },
+  { key: 'cpuTemp', header: 'cpu_temp_c', label: 'CPU の温度 (C)', group: '本体' },
+  { key: 'cpu', header: 'cpu_percent', label: 'CPU 使用率 (%)', group: '本体' },
+  { key: 'mem', header: 'mem_percent', label: '内蔵 RAM の使用率 (%)', group: '本体' },
+  { key: 'heap', header: 'heap_free', label: '内蔵 RAM の空き (バイト)', group: '本体' },
+  { key: 'volt', header: 'voltage', label: '電圧 (V)', group: '本体' },
+  { key: 'battery', header: 'on_battery', label: 'バッテリー駆動 (1/0)', group: '本体' },
+  { key: 'sdFree', header: 'sd_free_mb', label: 'SD カードの空き (MB)', group: '本体' },
+  { key: 'lux', header: 'lux', label: '周囲の明るさ (lux)', group: '本体' },
+  { key: 'brightness', header: 'brightness', label: '画面の明るさ (%)', group: '本体' },
+];
+/** 項目を選ぶ画面に出す文言。日本語の名前と CSV の列名 */
+export const csvColumnLabel = (c: { header: string; label: string }) => `${c.label} [${c.header}]`;
+/** 短い名前(一覧の要約に使う)。括弧の中を除く */
+export const csvColumnShort = (c: { label: string }) => c.label.replace(/ \(.*$/, '');
+/** log.columns(コンマ区切り)を項目の名前の集合にする。以前の date / time は datetime にする */
+export const csvColumnsOf = (value: ConfigValue | undefined) =>
+  new Set(String(value ?? CSV_COLUMNS_DEFAULT).split(',').map(s => s.trim()).filter(Boolean).map(k => (k === 'date' || k === 'time' ? 'datetime' : k)));
+
 // ---------------------------------------------------------------- 設定タブの選択と入・切(path と文言)
 
 export const GEOID_ENABLE: PathField = {

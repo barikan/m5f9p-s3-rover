@@ -67,7 +67,7 @@
 //               {"source":"名前"} 基準局データ取得先。"":接続しない "uart":UART
 //                                "auto":近くの無料の局を自動で選ぶ（kuon.cpp）
 //                                それ以外は "アドレス/マウントポイント"
-//               {"format":n}     保存形式 0:NMEA 1:RAW 2:RTCM 3:CSV
+//               {"format":n}     保存形式 0:NMEA 1:RAW 2:RTCM 3:CSV 4:CSV（項目を選べる。設定ファイルの log.columns。csvlog.cpp）
 //               {"saveAtBoot":b} 起動時から保存する
 //               {"rate":n}       1秒あたりの測位回数
 //               {"rotation":n}   画面の向き 0:回転無 1:180度回転
@@ -435,7 +435,7 @@ static void cmdRunSet( JsonDocument &cmd, JsonDocument &re )
 	}
 	if ( cmd["format"].is<int>() ){
 		int n = cmd["format"];
-		if ( n < SAVE_NMEA || n > SAVE_CSV ) { re["error"] = "bad format"; return; }
+		if ( n < SAVE_NMEA || n > SAVE_CSV_CUSTOM ) { re["error"] = "bad format"; return; }
 	}
 	if ( cmd["rate"].is<int>() ){
 		int n = cmd["rate"];

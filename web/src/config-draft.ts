@@ -11,7 +11,7 @@ import { computed, reactive, watch } from 'vue';
 import * as rover from './rover';
 import { state, toast } from './store';
 import { confirmDialog, formDialog } from './dialogs';
-import { CLEAR_LABEL, KEEP_HELP, KEPT_GROUPS, getPath, pathId, setPath, withNote } from './config-fields';
+import { CLEAR_LABEL, CSV_COLUMNS, CSV_COLUMNS_PATH, KEEP_HELP, KEPT_GROUPS, csvColumnLabel, csvColumnsOf, getPath, pathId, setPath, withNote } from './config-fields';
 import type { GroupDef } from './config-fields';
 import type { ConfigPath, ConfigValue, DeviceConfig, FormField, FormValues } from './types';
 
@@ -128,6 +128,37 @@ export async function editGroupDialog(def: GroupDef) {
     } catch (e) {
       toast(`保存できません: ${errorText(e)}`);
       // 入力した値を失わないよう、同じ値で開き直す(PEM の貼り付けなど)
+    }
+  }
+}
+
+/**
+ * カスタム CSV（保存形式「CSV（カスタム）」）で出す項目を選ぶ。項目ごとの入・切のダイアログで、
+ * OK で log.columns（コンマ区切り。順は本体の表の順）を本体に送る
+ */
+export async function editCsvColumnsDialog() {
+  const config = state.config;
+  if (!config) return;
+  const selected = csvColumnsOf(getPath(config, CSV_COLUMNS_PATH));
+  const fields: FormField[] = CSV_COLUMNS.map(c => ({ key: c.key, label: csvColumnLabel(c), type: 'bool' as const }));
+  const initial: FormValues = Object.fromEntries(CSV_COLUMNS.map(c => [c.key, selected.has(c.key)]));
+  let values: FormValues | null = initial;
+  for (;;) {
+    values = await formDialog('CSV (カスタム) で出す項目', fields, values);
+    if (!values) return;
+    const columns = CSV_COLUMNS.filter(c => values![c.key] === true).map(c => c.key).join(',');
+    if (!columns) {
+      toast('項目を 1 つ以上選んでください');
+      continue;
+    }
+    const partial: DeviceConfig = {};
+    setPath(partial, CSV_COLUMNS_PATH, columns);
+    try {
+      const restartNeeded = await rover.saveConfig(partial);
+      await afterConfigSave(restartNeeded);
+      return;
+    } catch (e) {
+      toast(`保存できません: ${errorText(e)}`);
     }
   }
 }

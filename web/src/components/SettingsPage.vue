@@ -18,11 +18,11 @@ import * as rover from '../rover';
 import { state } from '../store';
 import { confirmDialog } from '../dialogs';
 import { userMapsKey } from '../map';
-import { editGroupDialog, useConfigDraft } from '../config-draft';
+import { editCsvColumnsDialog, editGroupDialog, useConfigDraft } from '../config-draft';
 import {
-  AUTO_GROUP, BAUD_OPTIONS, BLE_ENABLE, BLE_NMEA, BLE_NMEA_OPTIONS, BLE_PAIRING, CHUNK_OPTIONS, DR_GROUP, GEOID_ENABLE,
+  AUTO_GROUP, BAUD_OPTIONS, BLE_ENABLE, BLE_NMEA, BLE_NMEA_OPTIONS, BLE_PAIRING, CHUNK_OPTIONS, CSV_COLUMNS, CSV_COLUMNS_PATH, DR_GROUP, GEOID_ENABLE,
   IMU_DR_ENABLE, IMU_ENABLE, IMU_LOG, IMU_SMOOTH, IMU_SMOOTH_OPTIONS, JSTPH_BAUD, JSTPH_FORMAT, JSTPH_FORMAT_OPTIONS, LOG_CHUNK,
-  MQTT_GROUP, RECEIVER_NAME_GROUP, SOFTAP_ENABLE, SOFTAP_GROUP, SOURCE_LIST, TCP_GROUP, USB_NMEA, WIFI_LIST, getPath, withCurrent, withNote,
+  MQTT_GROUP, RECEIVER_NAME_GROUP, SOFTAP_ENABLE, SOFTAP_GROUP, SOURCE_LIST, TCP_GROUP, USB_NMEA, WIFI_LIST, csvColumnShort, csvColumnsOf, getPath, withCurrent, withNote,
 } from '../config-fields';
 import type { ConfigValue, Option } from '../types';
 import Section from './Section.vue';
@@ -32,7 +32,7 @@ import SegmentGroup from './SegmentGroup.vue';
 import EditRow from './EditRow.vue';
 import ListEditDialog from './ListEditDialog.vue';
 
-const SAVE_FORMATS = ['NMEA', 'RAW', 'RTCM', 'CSV'];
+const SAVE_FORMATS = ['NMEA', 'RAW', 'RTCM', 'CSV', 'CSV (カスタム)'];     // 本体の保存形式 0〜4 の順
 const connected = computed(() => state.conn === 'connected');
 
 // ---------------------------------------------------------------- 本体の設定の読み込み
@@ -147,6 +147,12 @@ const mqttSummary = computed(() => {
   const host = c ? str(getPath(c, ['mqtt', 'host'])) : '';
   return host ? `${host}:${str(getPath(c!, ['mqtt', 'port']))}` : '';
 });
+// カスタム CSV で出す項目（本体の表の順。多い時は数で示す）
+const csvSummary = computed(() => {
+  const selected = csvColumnsOf(getPath(config.value, CSV_COLUMNS_PATH));
+  const names = CSV_COLUMNS.filter(c => selected.has(c.key)).map(csvColumnShort);
+  return names.length > 6 ? `${names.slice(0, 6).join('、')} ほか ${names.length - 6} 項目` : names.join('、');
+});
 const drSummary = computed(() => {
   const c = config.value;
   if (!c) return '';
@@ -254,6 +260,9 @@ const sourceOpen = ref(false);
         </div>
         <SwitchField :model-value="values.saveAtBoot" label="起動時からログを保存する" @update:model-value="set('saveAtBoot', $event)" />
         <template v-if="config">
+          <EditRow
+            label="CSV (カスタム) で出す項目" :value="csvSummary" help="保存形式を「CSV (カスタム)」にした時に出す項目です。先頭に項目名 (列名) の行が付き、日時は日本時間です"
+            :disabled="locked" @edit="editCsvColumnsDialog()" />
           <div class="mt-4 grid gap-2">
             <Label for="log-chunk">{{ LOG_CHUNK.label }}</Label>
             <SelectField id="log-chunk" :model-value="str(log.get(LOG_CHUNK.path))" :options="chunkOptions" :disabled="locked" @update:model-value="log.set(LOG_CHUNK.path, num($event))" />
