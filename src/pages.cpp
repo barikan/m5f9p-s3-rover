@@ -860,8 +860,8 @@ static void drawBluetooth()
 //
 static void formatLabel( int index, char *buff, int buffSize )
 {
-	static const char *name[3] = { "NMEA", "RAW (UBX)", "RTCM" };
-	snprintf( buff, buffSize, "%s", ( index == 0 && mCsvFormat ) ? "CSV" : name[ index ] );
+	static const char *name[4] = { "NMEA", "CSV", "RAW (UBX)", "RTCM" };
+	snprintf( buff, buffSize, "%s", name[ index ] );
 }
 
 // 座標の表示の一覧
@@ -893,10 +893,10 @@ static void onSetting( int id )
 		}
 	}
 	else if ( id == HIT_SET_FORMAT ){
-		static const int formats[3] = { SAVE_NMEA, SAVE_RAW, SAVE_RTCM };
-		int index = uiSelectList( "Log format", 3, formatLabel, "Back" );
+		static const int formats[4] = { SAVE_NMEA, SAVE_CSV, SAVE_RAW, SAVE_RTCM };	// formatLabel と同じ並び
+		int index = uiSelectList( "Log format", 4, formatLabel, "Back" );
 		if ( index < 0 ) return;
-		int format = ( index == 0 && mCsvFormat ) ? SAVE_CSV : formats[ index ];
+		int format = formats[ index ];
 		if ( appSetSaveFormat( format ) < 0 ) uiNotice( "Log format", "The receiver did not accept the setting." );
 	}
 	else if ( id == HIT_SET_DISPLAY ) appSetRotation( ! mRunInfo.lcdRotation );

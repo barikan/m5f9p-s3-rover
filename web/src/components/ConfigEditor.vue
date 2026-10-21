@@ -104,7 +104,6 @@ const OTHER_GROUPS: { title: string; fields: PathField[] }[] = [
   },
   {
     title: 'ログ', fields: [
-      { path: ['log', 'csv'], label: 'NMEA の代わりに CSV で保存する', type: 'bool' },
       { path: ['log', 'chunkSec'], label: 'ファイルを分割する秒数', type: 'number', help: '0 は分割しません' },
     ],
   },

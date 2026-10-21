@@ -129,7 +129,6 @@ struct stMqttConfig {
 };
 extern struct stMqttConfig mMqttCfg;
 extern int mServerPort;
-extern int mCsvFormat;
 extern unsigned long mSaveEndSec;
 extern int mPhUartBaudrate;
 extern int mPhUartFormat;

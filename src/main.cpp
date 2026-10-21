@@ -108,7 +108,7 @@ void setup() {
 	bool firstBoot = ( readRunInfo( &mRunInfo ) != 0 );
 	if ( firstBoot ){
 		memset( &mRunInfo, 0, sizeof( mRunInfo ) );
-		mRunInfo.saveFormat = mCsvFormat ? SAVE_CSV : SAVE_NMEA;
+		mRunInfo.saveFormat = SAVE_NMEA;
 		mRunInfo.solutionRate = 1;
 		mRunInfo.elevation = 1;
 		if ( mNumWifi == 1 ) strlcpy( mRunInfo.wifiSsid, mWifiList[0].ssid, sizeof( mRunInfo.wifiSsid ) );	// 1件だけなら、それを使う

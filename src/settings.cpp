@@ -44,7 +44,6 @@ struct stMqttConfig mMqttCfg = { 0, "", 8883, 1, "/m5f9p/mqtt_ca.pem", "", "", "
 
 int mServerPort = 10000;	// サーバのポート番号　既定値
 
-int mCsvFormat;		// CSVフォーマット 0:無効 
 					// 1:CSV形式１   時刻、緯度、経度、高さ、Fix
 
 unsigned long mSaveEndSec = 0;		// ファイル保存最大秒数 0:制限無し
@@ -233,9 +232,6 @@ int readIniFile( const char *path )
 	// Server 移動局データ配信ポート
 	mServerPort = iniFile->readInt( "server", "port", mServerPort );
 
-	// CSVフォーマット
-	mCsvFormat = iniFile->readInt( "format", "csv", 0 );
-	
 	// ファイル保存最大秒数
 	mSaveEndSec = iniFile->readInt( "file", "chunksec", 0 );
 	

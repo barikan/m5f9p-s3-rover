@@ -91,7 +91,6 @@ mqtt:
   retain: false                 # true にすると、最後の位置をブローカーが保持する
 
 log:
-  csv: false           # true にすると、NMEAの代わりにCSV（日付,時刻,緯度,経度,楕円体高,Fix）で保存する
   chunkSec: 0          # ファイルを分割して保存する場合の、1ファイルの秒数。0:分割しない
 
 # ジオイドモデル。SDカードの /m5f9p/geoid.bin（国土地理院のジオイドモデルから
