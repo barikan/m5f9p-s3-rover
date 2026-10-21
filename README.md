@@ -280,6 +280,7 @@ SoftAP は既定で無効にしています。SoftAP に端末が接続してい
 | [docs/screens-windows.md](docs/screens-windows.md) | Windows アプリの画面と、画面の移り方(画像つき) |
 | [docs/screens-android.md](docs/screens-android.md) | Android アプリの画面と、画面の移り方(画像つき) |
 | [docs/mqtt.md](docs/mqtt.md) | MQTT で測位結果を送る(設定、送られる内容、確かめ方、TLS と内蔵 RAM の注意) |
+| [docs/imu-log.md](docs/imu-log.md) | IMU の記録ファイル(`imu_*.csv`)の列の意味 |
 | [CLAUDE.md](CLAUDE.md) | コードを変更するときの決まりごと(タスク構成、排他のルールなど) |
 | [m5f9p_src_v1_0_48/](m5f9p_src_v1_0_48/) | 移植元のプログラム(参照用。ビルドには使いません) |
 
