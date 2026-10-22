@@ -22,7 +22,7 @@ import { editCsvColumnsDialog, editGroupDialog, useConfigDraft } from '../config
 import {
   AUTO_GROUP, BAUD_OPTIONS, BLE_ENABLE, BLE_NMEA, BLE_NMEA_OPTIONS, BLE_PAIRING, CHUNK_OPTIONS, CSV_COLUMNS, CSV_COLUMNS_PATH, DR_GROUP, GEOID_ENABLE,
   IMU_DR_ENABLE, IMU_ENABLE, IMU_LOG, IMU_SMOOTH, IMU_SMOOTH_OPTIONS, JSTPH_BAUD, JSTPH_FORMAT, JSTPH_FORMAT_OPTIONS, LOG_CHUNK,
-  MQTT_GROUP, RECEIVER_NAME_GROUP, SOFTAP_ENABLE, SOFTAP_GROUP, SOURCE_LIST, TCP_GROUP, USB_NMEA, WIFI_LIST, csvColumnShort, csvColumnsOf, getPath, withCurrent, withNote,
+  MQTT_GROUP, RECEIVER_NAME_GROUP, SOFTAP_ENABLE, SOFTAP_GROUP, SOURCE_LIST, TCP_GROUP, TIME_ZONE, TZ_OPTIONS, USB_NMEA, WIFI_LIST, csvColumnShort, csvColumnsOf, getPath, withCurrent, withNote,
 } from '../config-fields';
 import type { ConfigValue, Option } from '../types';
 import Section from './Section.vue';
@@ -117,7 +117,7 @@ function setCoordFormat(format: string) {
 // ---------------------------------------------------------------- 本体の設定（config.put。グループの「保存」で送る）
 
 const view = useConfigDraft([GEOID_ENABLE.path]);
-const log = useConfigDraft([LOG_CHUNK.path]);
+const log = useConfigDraft([LOG_CHUNK.path, TIME_ZONE.path]);
 const device = useConfigDraft([USB_NMEA.path, BLE_ENABLE.path, BLE_PAIRING.path, BLE_NMEA.path, SOFTAP_ENABLE.path, JSTPH_BAUD.path, JSTPH_FORMAT.path]);
 const imu = useConfigDraft([IMU_ENABLE.path, IMU_LOG.path, IMU_DR_ENABLE.path, IMU_SMOOTH.path]);
 
@@ -127,6 +127,7 @@ const num = (v: string) => Number(v);
 const bool = (v: ConfigValue | undefined) => v === true;
 
 const chunkOptions = computed(() => withCurrent(CHUNK_OPTIONS, str(log.get(LOG_CHUNK.path)), v => `${v} 秒ごと`));
+const tzOptions = computed(() => withCurrent(TZ_OPTIONS, str(log.get(TIME_ZONE.path)), v => `UTC との差 ${v} 時間`));
 const baudOptions = computed(() => withCurrent(BAUD_OPTIONS, str(device.get(JSTPH_BAUD.path)), v => `${v} bps`));
 
 // 「編集」の行に出す今の値
@@ -261,12 +262,17 @@ const sourceOpen = ref(false);
         <SwitchField :model-value="values.saveAtBoot" label="起動時からログを保存する" @update:model-value="set('saveAtBoot', $event)" />
         <template v-if="config">
           <EditRow
-            label="CSV (カスタム) で出す項目" :value="csvSummary" help="保存形式を「CSV (カスタム)」にした時に出す項目です。先頭に項目名 (列名) の行が付き、日時は日本時間です"
+            label="CSV (カスタム) で出す項目" :value="csvSummary" help="保存形式を「CSV (カスタム)」にした時に出す項目です。先頭に項目名 (列名) の行が付き、日時はタイムゾーンの設定に従います"
             :disabled="locked" @edit="editCsvColumnsDialog()" />
           <div class="mt-4 grid gap-2">
             <Label for="log-chunk">{{ LOG_CHUNK.label }}</Label>
             <SelectField id="log-chunk" :model-value="str(log.get(LOG_CHUNK.path))" :options="chunkOptions" :disabled="locked" @update:model-value="log.set(LOG_CHUNK.path, num($event))" />
             <p class="text-muted-foreground text-xs">{{ LOG_CHUNK.help }}</p>
+          </div>
+          <div class="mt-4 grid gap-2">
+            <Label for="time-zone">{{ TIME_ZONE.label }}</Label>
+            <SelectField id="time-zone" :model-value="str(log.get(TIME_ZONE.path))" :options="tzOptions" :disabled="locked" @update:model-value="log.set(TIME_ZONE.path, num($event))" />
+            <p class="text-muted-foreground text-xs">{{ TIME_ZONE.help }}</p>
           </div>
           <div class="mt-4 flex items-center gap-3">
             <p class="text-muted-foreground flex-1 text-xs">{{ log.dirty.value ? '保存していない変更があります' : '' }}</p>

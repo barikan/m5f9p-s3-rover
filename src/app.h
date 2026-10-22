@@ -375,6 +375,15 @@ void rtcmReset();
 bool rtcmGetBase( struct stRtcmBase *out );
 
 // ************************************************************
+//                        clock.cpp
+// ************************************************************
+
+extern int mUtcOffsetMin;		// UTC との差（分）。設定ファイルの time.utcOffset（時間）
+
+void clockPoll();
+void clockLocalTime( const struct stGpsData *g, struct tm *out, int *msec );
+
+// ************************************************************
 //                        csvlog.cpp
 // ************************************************************
 

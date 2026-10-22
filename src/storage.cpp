@@ -6,6 +6,8 @@
 #include <SPI.h>
 #include <SD.h>
 #include <ArduinoJson.h>
+#include <utime.h>
+#include <time.h>
 
 #include "app.h"
 
@@ -27,6 +29,7 @@ QueueHandle_t mQueueFileSave;
 int mQueueFileErrorCount;
 
 static char mSaveFileName[64];
+static char mImuFileName[64];				// IMU の同時記録のファイル（測位データのログと同じ名前で imu_*.csv）
 static char mSdBuff[ SD_BUFF_MAX ];			// SDカード保存用バッファ
 static unsigned long mSdSavedTime;			// SDカードに保存した通算ミリ秒
 static unsigned long mSaveStartMillis;		// ファイル保存開始ミリ秒
@@ -188,6 +191,7 @@ void logList( JsonDocument &re, int start, int max )
 							JsonObject item = files.add<JsonObject>();
 							item["name"] = dirName + "/" + file.name();
 							item["size"] = (uint32_t) file.size();
+							item["mtime"] = (uint32_t) file.getLastWrite();	// 更新日時（Unix 秒）。停止した時刻
 						}
 					}
 					index++;
@@ -437,22 +441,48 @@ static int setFilePath( int year, int month, int day, int hour, int minute, int 
 	return 0;
 }
 
+// いまのファイルを書き終える。溜めている分（mSdBuff）を書き、更新日時を今の時刻にする
+// （FatFs は書くたびに更新日時を付けるが、停止や分割の時刻を正確に残すため utime で付け直す。
+// 時計は clock.cpp が測位の時刻で合わせ、TZ も設定しているのでローカル時刻になる）。
+// spiLock を持って呼ぶ
+//
+static void sdFlushCurrent()
+{
+	if ( mSdBuff[0] && mSaveFileName[0] ){
+		int saveBytes = strlen( mSdBuff );
+		int nret = sdSave( mSaveFileName, mSdBuff, saveBytes, FILE_APPEND );
+		if ( nret == saveBytes ) mFileSaved++;
+		else dbgPrintf( "file save error n=%d ret=%d\r\n", saveBytes, nret );
+		mSdBuff[0] = '\0';
+	}
+	if ( time( NULL ) > 1600000000 ){
+		char path[72];
+		if ( mSaveFileName[0] ){ snprintf( path, sizeof( path ), "/sd%s", mSaveFileName ); utime( path, NULL ); }
+		if ( mImuFileName[0] ){ snprintf( path, sizeof( path ), "/sd%s", mImuFileName ); utime( path, NULL ); }
+	}
+}
+
 static int sdSetFilePath()
 {
-	// ファイルの保存最大秒数のチェック
+	// ファイルの保存最大秒数のチェック。前のファイルを書き終えてから名前を変える
 	if ( mSaveEndSec > 0 ){
 		if ( (millis() - mSaveStartMillis)  > (mSaveEndSec * 1000) ){
+			sdFlushCurrent();
 			strcpy( mSaveFileName, "" );
+			mImuFileName[0] = '\0';
 			mSaveStartMillis = millis();
 		}
 	}
 
 	// パスの設定。GNSS の日時がまだ無い時（起動時から保存する設定で、測位の前）は、
-	// "gps_r0_00000_000000" のような名前にならないよう、日時が入るまで待つ（その間の分は保存しない）
+	// "gps_r0_00000_000000" のような名前にならないよう、日時が入るまで待つ（その間の分は保存しない）。
+	// フォルダの日付とファイル名はローカル時刻（clock.cpp のタイムゾーン）
 	if ( strlen( mSaveFileName ) == 0 ){
 		struct stGpsData *p = &mGpsData;
 		if ( ! p->ubxDone || p->year < 2020 ) return -2;
-		int nret = setFilePath( p->year, p->month, p->day, p->hour, p->minute, p->second, mSaveFormat );
+		struct tm lt;
+		clockLocalTime( p, &lt, NULL );
+		int nret = setFilePath( lt.tm_year + 1900, lt.tm_mon + 1, lt.tm_mday, lt.tm_hour, lt.tm_min, lt.tm_sec, mSaveFormat );
 		if ( nret < 0 ) {
 			dbgPrintf( "setFilePath nret=%d\r\n", nret );
 			mFileSaving = 0;
@@ -526,7 +556,6 @@ static int sdSaveRaw( char *buffer, int numBytes )
 //
 static int sdSaveImuLog( char *buff, int numBytes )
 {
-	static char imuFileName[64];
 	char path[64];
 
 	if ( sdSetFilePath() < 0 ) return -1;
@@ -542,13 +571,13 @@ static int sdSaveImuLog( char *buff, int numBytes )
 	if ( ext && ( ext - path ) + 5 < (int) sizeof( path ) ) strcpy( ext, ".csv" );
 	else if ( n + 4 < (int) sizeof( path ) ) strcat( path, ".csv" );
 
-	if ( strcmp( path, imuFileName ) != 0 ){
-		strlcpy( imuFileName, path, sizeof( imuFileName ) );
+	if ( strcmp( path, mImuFileName ) != 0 ){
+		strlcpy( mImuFileName, path, sizeof( mImuFileName ) );
 		const char *header = "# I,micros,ax(g),ay,az,gx(dps),gy,gz,mx(uT),my,mz / G,micros,iTOW,lat,lon,height,quality,hAcc,velN,velE,velD,sAcc,headMot,headAcc\n";
-		sdSave( imuFileName, (char *) header, strlen( header ), FILE_APPEND );
+		sdSave( mImuFileName, (char *) header, strlen( header ), FILE_APPEND );
 	}
 
-	int nret = sdSave( imuFileName, buff, numBytes, FILE_APPEND );
+	int nret = sdSave( mImuFileName, buff, numBytes, FILE_APPEND );
 	if ( nret != numBytes ) dbgPrintf( "imu log save error n=%d ret=%d\r\n", numBytes, nret );
 	return nret;
 }
@@ -569,7 +598,7 @@ static void taskSdSave(void* param)
 		vTaskDelay(1);
 
 		// NMEAデータはキュー経由
-		if ( xQueueReceive( mQueueFileSave, &gpsData, 0) == pdPASS ){
+		if ( xQueueReceive( mQueueFileSave, &gpsData, 0) == pdPASS && mFileSaving ){	// 停止後の分は sdSaveStop が片付ける
 			spiLock();
 			sdSaveGpsData( &gpsData );
 			spiUnlock();
@@ -631,11 +660,40 @@ void sdSaveStart()
 	mSaveStartMillis = millis();
 	mUartSaveIndex = mUartWriteIndex;
 	strcpy( mSaveFileName, "" );
+	mImuFileName[0] = '\0';
 	mSdBuff[0] = '\0';
 	mFileSaving = 1;
 }
 
+// ファイルへの保存を止める。loopTask から呼ぶ（appSetSaving、appSetSaveFormat）
+//
+// ・止める前に積まれた行（キューと mSdBuff）と、RAW / RTCM の書き残し（3KB 未満）を書き終え、
+//   ファイルの更新日時を止めた時刻にする（sdFlushCurrent）。
+// ・taskSdSave と同じ spiLock（再帰ミューテックス）を持って行うので、書き込みは直列になる。
+//   appSetSaveFormat は直後に sdSaveStart を呼んで名前とバッファを消すため、ここで同期して終える。
+//
 void sdSaveStop()
 {
+	if ( ! mFileSaving ) return;
 	mFileSaving = 0;
+	if ( ! mSdSaveReady ) return;
+
+	spiLock();
+	struct stGpsData gpsData;
+	if ( mSaveFormat == SAVE_NMEA || mSaveFormat == SAVE_CSV || mSaveFormat == SAVE_CSV_CUSTOM ){
+		while( xQueueReceive( mQueueFileSave, &gpsData, 0 ) == pdPASS ) sdSaveGpsData( &gpsData );
+	}
+	else if ( mSaveFileName[0] ){
+		// RAW / RTCM の書き残し。リングバッファの折り返しは2回に分ける
+		int numBytes = mUartWriteIndex - mUartSaveIndex;
+		if ( numBytes < 0 ){
+			sdSaveRaw( mUartBuff + mUartSaveIndex, UART_BUFF_MAX - mUartSaveIndex );
+			mUartSaveIndex = 0;
+			numBytes = mUartWriteIndex;
+		}
+		if ( numBytes > 0 ) sdSaveRaw( mUartBuff + mUartSaveIndex, numBytes );
+		mUartSaveIndex = mUartWriteIndex;
+	}
+	sdFlushCurrent();
+	spiUnlock();
 }

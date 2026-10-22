@@ -97,6 +97,10 @@ log:
                        # velN velE velD smoothed zone x y roll pitch yaw still drHeading drSpeed drSec baseLat baseLon
                        # cpuTemp cpu mem heap volt battery sdFree lux brightness
 
+# 時刻。ログのフォルダとファイル名、CSV の時刻、ファイルの更新日時に使うタイムゾーン（NMEA は UTC のまま）
+time:
+  utcOffset: 9         # UTC との差（時間。例 9、5.5、-3.5）。夏時間の自動切替は無い
+
 # ジオイドモデル。SDカードの /m5f9p/geoid.bin（国土地理院のジオイドモデルから
 # mise run geoid-make で作る。READMEを参照）で、楕円体高から標高を求める。
 # NMEA(GGA)の標高とジオイド高、本体の画面(Elev)、アプリの標高が、この値になる。

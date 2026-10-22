@@ -11,8 +11,8 @@
 //   内蔵 RAM に取られる。core の設定で、変えられない）。接続している間だけ確保され、切れると
 //   戻る。足りない時は tls: false（LAN や VPN の中だけで使う）、IMU を切る、を検討する。
 //   測った数字は DEVELOPE.md。
-// ・証明書の検証には時計が要る。本体は時計を合わせていないので、TLS で接続する前に測位の
-//   時刻で settimeofday() する。測位が無い間は接続しない。
+// ・証明書の検証には時計が要る。時計は clock.cpp が測位の時刻で合わせる。合うまで（測位が無い間）は
+//   接続しない。
 // ・CA は、設定の mqtt.ca が "-----BEGIN" で始まればその PEM、それ以外は SD カードのパス、
 //   空なら core 内蔵の公開 CA の一覧（証明書バンドル）で検証する。
 // ・SenML の形（1回1パック、約 430 バイト）:
@@ -152,22 +152,14 @@ static void takeConfig()
 
 // ---------------------------------------------------------------- 時計
 
-// TLS の証明書の検証のために、測位の時刻で時計を合わせる
+// TLS の証明書の検証には時計が要る。時計は clock.cpp（loopTask の clockPoll）が測位の時刻で合わせる。
+// ここでは合っているかを見るだけ（taskMqtt からは時計を書かない）
 //
 // 戻り値＝ true:時計が使える
 //
 static bool ensureClock()
 {
-	if ( time( NULL ) > 1600000000 ) return true;
-	struct stGpsData g;
-	roverGetGpsData( &g );
-	if ( g.quality == 0 || g.year < 2024 ) return false;
-	struct timeval tv;
-	tv.tv_sec = gpsUnixTime( &g );
-	tv.tv_usec = g.msec * 1000;
-	settimeofday( &tv, NULL );
-	dbgPrintf( "MQTT: clock set %04d-%02d-%02d %02d:%02d:%02d UTC\r\n", g.year, g.month, g.day, g.hour, g.minute, g.second );
-	return true;
+	return time( NULL ) > 1600000000;
 }
 
 // ---------------------------------------------------------------- 接続

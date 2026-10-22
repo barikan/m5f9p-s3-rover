@@ -78,19 +78,23 @@ static int mTrackNext;					// 次に書き込む位置
 static int mTrackCount;					// 保持している点数
 static portMUX_TYPE mTrackMux = portMUX_INITIALIZER_UNLOCKED;
 
-// 測位時刻(UTC)を1970-1-1からの秒数に変換する（mqtt.cpp でも使う）
+// 測位時刻(UTC)を1970-1-1からの秒数に変換する（mqtt.cpp、clock.cpp、csvlog.cpp でも使う）
 //
+// mktime() は TZ 環境変数（clock.cpp が設定する）の影響を受けるので使わず、暦から日数を数える
+//
+static uint32_t daysFromCivil( int y, int m, int d )
+{
+	y -= ( m <= 2 );
+	int era = ( y >= 0 ? y : y - 399 ) / 400;
+	unsigned yoe = (unsigned)( y - era * 400 );
+	unsigned doy = ( 153 * ( m + ( m > 2 ? -3 : 9 ) ) + 2 ) / 5 + d - 1;
+	unsigned doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+	return (uint32_t)( era * 146097 + (int) doe - 719468 );
+}
+
 uint32_t gpsUnixTime( const struct stGpsData *p )
 {
-	struct tm t;
-	memset( &t, 0, sizeof(t) );
-	t.tm_year = p->year - 1900;
-	t.tm_mon = p->month - 1;
-	t.tm_mday = p->day;
-	t.tm_hour = p->hour;
-	t.tm_min = p->minute;
-	t.tm_sec = p->second;
-	return (uint32_t) mktime( &t );		// タイムゾーンは設定していないのでUTC
+	return daysFromCivil( p->year, p->month, p->day ) * 86400UL + p->hour * 3600UL + p->minute * 60UL + p->second;
 }
 
 // 測位データを移動履歴に加える

@@ -135,7 +135,7 @@ export const CSV_COLUMNS_PATH: ConfigPath = ['log', 'columns'];
 export const CSV_COLUMNS_DEFAULT = 'datetime,lat,lon,height,quality';
 /** 選べる項目。出す順はこの順(本体が決める)。header は CSV の列名。label に 2 バイトの括弧は使わない */
 export const CSV_COLUMNS: { key: string; header: string; label: string; group: string }[] = [
-  { key: 'datetime', header: 'datetime_jst', label: '日時 (日本時間、YYYY-MM-DD HH:MM:SS.sss)', group: '時刻' },
+  { key: 'datetime', header: 'datetime_local', label: '日時 (YYYY-MM-DD HH:MM:SS.sss、タイムゾーンの設定に従う)', group: '時刻' },
   { key: 'unix', header: 'unix_time', label: 'Unix 時刻 (秒)', group: '時刻' },
   { key: 'lat', header: 'lat', label: '緯度 (度)', group: '測位' },
   { key: 'lon', header: 'lon', label: '経度 (度)', group: '測位' },
@@ -203,6 +203,10 @@ export const SOFTAP_ENABLE: PathField = {
 export const JSTPH_BAUD: PathField = { path: ['jstph', 'baudrate'], label: 'PH コネクタのボーレート', restart: true };
 export const JSTPH_FORMAT: PathField = { path: ['jstph', 'format'], label: 'PH コネクタの出力フォーマット' };
 export const LOG_CHUNK: PathField = { path: ['log', 'chunkSec'], label: 'ファイルの分割', help: 'ログを、この長さごとに別のファイルにします' };
+export const TIME_ZONE: PathField = {
+  path: ['time', 'utcOffset'], label: 'タイムゾーン',
+  help: 'ログのフォルダとファイル名、CSV の時刻、ファイルの更新日時に使います。NMEA は UTC のままです。夏時間の自動切替はありません',
+};
 export const IMU_ENABLE: PathField = {
   path: ['imu', 'enable'], label: '内蔵 IMU を使う', type: 'bool', restart: true,
   help: '姿勢、静止の判定、推測航法とすべり止めに使います',
@@ -224,6 +228,24 @@ export const CHUNK_OPTIONS: Option[] = [
   { value: '0', label: '分割しない' }, { value: '600', label: '10 分ごと' }, { value: '1800', label: '30 分ごと' }, { value: '3600', label: '1 時間ごと' },
   { value: '10800', label: '3 時間ごと' }, { value: '21600', label: '6 時間ごと' }, { value: '86400', label: '24 時間ごと' },
 ];
+/** タイムゾーンの代表的な都市(標準時。夏時間は考えない)。分のオフセット → 英語の都市名 */
+const TZ_CITIES: Record<number, string> = {
+  [-720]: 'Baker Island', [-660]: 'Pago Pago', [-600]: 'Honolulu', [-570]: 'Marquesas', [-540]: 'Anchorage',
+  [-480]: 'Los Angeles, Vancouver', [-420]: 'Denver, Phoenix', [-360]: 'Chicago, Mexico City', [-300]: 'New York, Toronto, Bogota',
+  [-240]: 'Halifax, Santiago', [-210]: "St. John's", [-180]: 'Sao Paulo, Buenos Aires', [-120]: 'South Georgia', [-60]: 'Azores, Cape Verde',
+  [0]: 'London, Lisbon, Accra', [60]: 'Paris, Berlin, Lagos', [120]: 'Cairo, Athens, Johannesburg', [180]: 'Moscow, Istanbul, Nairobi',
+  [210]: 'Tehran', [240]: 'Dubai, Baku', [270]: 'Kabul', [300]: 'Karachi, Tashkent', [330]: 'New Delhi, Mumbai, Colombo',
+  [360]: 'Dhaka, Almaty', [390]: 'Yangon', [420]: 'Bangkok, Jakarta, Hanoi', [480]: 'Beijing, Singapore, Manila, Perth',
+  [540]: 'Tokyo, Seoul', [570]: 'Adelaide, Darwin', [600]: 'Sydney, Brisbane, Guam', [630]: 'Lord Howe Island', [660]: 'Noumea, Solomon Islands',
+  [720]: 'Auckland, Fiji', [780]: 'Tonga, Apia', [840]: 'Kiritimati',
+};
+/** タイムゾーン。UTC との差を 30 分刻みで。value は時間(本体の time.utcOffset と同じ。"9"、"5.5"、"-3.5") */
+export const TZ_OPTIONS: Option[] = Array.from({ length: (840 + 720) / 30 + 1 }, (_, i) => -720 + i * 30).map(m => {
+  const sign = m < 0 ? '-' : '+';
+  const a = Math.abs(m);
+  const city = TZ_CITIES[m];
+  return { value: String(m / 60), label: `UTC${sign}${String(Math.floor(a / 60)).padStart(2, '0')}:${String(a % 60).padStart(2, '0')}${city ? `  ${city}` : ''}` };
+});
 export const IMU_SMOOTH_OPTIONS: Option[] = [{ value: 'float', label: 'Fix 以外' }, { value: 'all', label: '全部' }, { value: 'none', label: 'しない' }];
 
 /** 今の値が選択肢に無い時、その値を選択肢に足す(wifiOptions の「設定に無い」と同じ流儀) */

@@ -176,8 +176,9 @@ export interface Satellite {
 
 /** 本体のSDカードにあるログファイル（log.list の応答） */
 export interface LogFile {
-  name: string;             // "20261006/gps_r0_20261006_123456.log" の形
+  name: string;             // "20261006/gps_r0_20261006_123456.log" の形。日時はローカル時刻（本体の time.utcOffset）
   size: number;             // バイト数
+  mtime?: number;           // 更新日時（Unix 秒）。保存を止めた時刻。古いファームウェアには無い
 }
 
 /** 軌跡の1点 */

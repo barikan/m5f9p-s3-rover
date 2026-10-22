@@ -128,6 +128,7 @@ mise run android-screenshot          # 端末の画面を screenshot.png に保�
 - **SD アクセスと液晶への描画は `spiLock()` / `spiUnlock()` で囲む**(storage.cpp、再帰ミューテックス)。測位中の画面は、液晶に送る `screenFlush()` の中だけでロックする(描画領域に描く間はロックしない)。
 - **UBX コマンドの Ack 待ち中は `mGpsCommandBusy` が立ち、`taskRover` はバッファを読まない。** コマンド送信は `ubxSendCommand()` を通す。
 - **`taskRover` から SD カードを読まない。** ジオイドモデル(`src/geoid.cpp`)は、loopTask の `geoidPoll()` が現在地のまわりの格子点を読んでおき、`taskRover` の `geoidApply()` はその中で補間するだけにしている。
+- **時計(`settimeofday`)と TZ 環境変数を書くのは `clock.cpp` の `clockPoll()`(loopTask)だけ。** FatFs のファイルの更新日時と `utime()` はこの時計と TZ でローカル時刻になる。`gpsUnixTime()`(rover.cpp)は `mktime` を使わず TZ に依存しない計算にしてある(戻さない)。ローカル時刻が要る所は `clockLocalTime()` を使う。NMEA は UTC のまま。
 - `taskUartRead` は `mGpsUartReady` が立つまで `Serial1` を読まない。`Serial1.begin()` は `gpsSyncBaudrate()`(gps.cpp)が1回だけ行い、以後のボーレート変更は `updateBaudRate()` で行う。
 
 ### コマンドと BLE

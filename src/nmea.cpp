@@ -140,7 +140,7 @@ int setNmeaData( struct stGpsData* pGpsData, char* buff, int buffSize )
 // 測位データをCSV形式に変換する。
 //
 // CSVフィールド
-//  Date(YYYY-MM-DD),Time(HH:MM:SS.SSS),Lat(度),Lon(度),Height(m),Fix<CR/LF>
+//  Date(YYYY-MM-DD),Time(HH:MM:SS.SSS),Lat(度),Lon(度),Height(m),Fix<CR/LF>   日時はローカル時刻（clock.cpp）
 //
 //  Fix= 0:測位不能 1:単独測位 2:DGPS測位 4:RTK測位fix  5:RTK測位float    
 //
@@ -151,12 +151,13 @@ int setCsvData( struct stGpsData* pGpsData, char* buff, int buffSize )
 {
 	if ( buffSize < 128 ) return -1;	
 	
-	struct stDateTime t;
-	getGpsDateTime( pGpsData, &t );
+	struct tm t;		// ローカル時刻（設定のタイムゾーン。clock.cpp）
+	int msec;
+	clockLocalTime( pGpsData, &t, &msec );
 
 	// 64bytes
 	sprintf( buff, "%d-%02d-%02d,%02d:%02d:%02d.%.3d,%.9f,%.9f,%.3f,%d\r\n",
-			t.year, t.month, t.day, t.hour, t.minute, t.second, t.msec, 
+			t.tm_year + 1900, t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec, msec, 
 			pGpsData->lat, pGpsData->lon, pGpsData->height, pGpsData->quality );
 
 	return strlen( buff );

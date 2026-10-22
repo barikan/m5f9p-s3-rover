@@ -458,6 +458,7 @@ void appBackground()
 	kuonPoll();
 	sysmonPoll();
 	lightPoll();
+	clockPoll();
 	cmdPollUsb();
 	screenShotPoll( Serial );
 	blePoll();

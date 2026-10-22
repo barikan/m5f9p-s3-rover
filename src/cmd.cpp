@@ -54,7 +54,8 @@
 //   ble.unpair  BLEのペアリングの記憶を消す。USBのみ。{"address":"30:E3:A4:5B:F1:4D"} で、その相手だけ消す
 //   ログファイルの取り出し（USBのみ。BLEでは時間がかかりすぎるため）
 //   log.list    {"start":n}  SDカードのログファイルの一覧を返す。1回に LOG_LIST_MAX 件まで
-//                 "files":[{"name":"20261006/gps_r0_20261006_123456.log","size":バイト数},...]
+//                 "files":[{"name":"20261006/gps_r0_20261006_123456.log","size":バイト数,"mtime":更新日時(Unix秒)},...]
+//                 名前の日時はローカル時刻（設定の time.utcOffset）。mtime は停止した時刻（電源断では最後の書き込み）
 //                 "saving": いま書き込んでいるファイルの名前  "more": 続きがある時 true
 //   log.get     {"name":"...","offset":n}  ファイルの offset から LOG_CHUNK バイトまでを返す
 //                 "data": Base64  "size": ファイル全体のバイト数  "bytes": 返したバイト数

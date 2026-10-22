@@ -47,10 +47,17 @@ const days = computed(() => {
 
 const baseName = (f: LogFile) => f.name.slice(9);
 
-/** ファイル名の時刻（UTC）を "12:34:56" の形にする。形が違う時は名前のまま */
+/** ファイル名の時刻（本体のタイムゾーンのローカル時刻）を "12:34:56" の形にする。形が違う時は名前のまま */
 function timeOf(f: LogFile) {
   const m = baseName(f).match(/_(\d{2})(\d{2})(\d{2})\.(\w+)$/);
-  return m ? `${m[1]}:${m[2]}:${m[3]} UTC　.${m[4]}` : baseName(f);
+  return m ? `${m[1]}:${m[2]}:${m[3]}　.${m[4]}` : baseName(f);
+}
+
+/** 保存を止めた時刻（本体が付けた更新日時）。無い時は空 */
+function stoppedAt(f: LogFile) {
+  if (!f.mtime) return '';
+  const d = new Date(f.mtime * 1000);
+  return `〜 ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
 function sizeText(bytes: number) {
@@ -103,7 +110,7 @@ async function remove(f: LogFile) {
               <div class="min-w-0 flex-1">
                 <div class="font-mono text-xs">{{ timeOf(f) }}</div>
                 <div class="text-muted-foreground text-xs">
-                  {{ sizeText(f.size) }}<span v-if="f.name === saving">　書き込み中</span>
+                  {{ sizeText(f.size) }}<span v-if="stoppedAt(f)">　{{ stoppedAt(f) }}</span><span v-if="f.name === saving">　書き込み中</span>
                 </div>
               </div>
               <Button variant="outline" size="sm" :disabled="!!busy" @click="download(f)">ダウンロード</Button>

@@ -34,13 +34,13 @@ struct stCsvColumn {
 	CsvFormat format;
 };
 
-// 日時は日本時間（UTC+9）。GNSS の時刻（UTC）に 9 時間足して年月日時分秒に戻す
+// 日時はローカル時刻（設定のタイムゾーン。clock.cpp）
 static int fDateTime( const stCsvRow *r, char *b, int n )
 {
-	time_t t = (time_t) gpsUnixTime( r->g ) + 9 * 3600;
 	struct tm tm;
-	gmtime_r( &t, &tm );
-	return snprintf( b, n, "%04d-%02d-%02d %02d:%02d:%02d.%03d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec, r->g->msec );
+	int ms;
+	clockLocalTime( r->g, &tm, &ms );
+	return snprintf( b, n, "%04d-%02d-%02d %02d:%02d:%02d.%03d", tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec, ms );
 }
 static int fUnix( const stCsvRow *r, char *b, int n ){ return snprintf( b, n, "%lu.%03d", (unsigned long) gpsUnixTime( r->g ), r->g->msec ); }
 static int fLat( const stCsvRow *r, char *b, int n ){ return snprintf( b, n, "%.9f", r->g->lat ); }
@@ -84,7 +84,7 @@ static int fBrightness( const stCsvRow *r, char *b, int n ){ return snprintf( b,
 
 // 出す順はこの表の順（log.columns に書いた順ではない）
 static const struct stCsvColumn mColumns[] = {
-	{ "datetime", "datetime_jst", fDateTime },	// 日本時間。設定の古い名前 date / time もこれにする
+	{ "datetime", "datetime_local", fDateTime },	// ローカル時刻（タイムゾーンの設定）。設定の古い名前 date / time もこれにする
 	{ "unix", "unix_time", fUnix },
 	{ "lat", "lat", fLat },
 	{ "lon", "lon", fLon },
