@@ -35,7 +35,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 // ************************************************************
 
 byte mVersionMajor = 2;
-byte mVersionMinor = 0;
+byte mVersionMinor = 1;
 byte mVersionPatch = 0;
 
 // 2.0.0 M5Stack CoreS3用に書き換え。移動局専用とし、基準局、Moving Base、

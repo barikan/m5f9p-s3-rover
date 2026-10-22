@@ -1,7 +1,7 @@
 {
   "name": "m5f9p-rover-web",
   "private": true,
-  "version": "0.2.0",
+  "version": "2.1.0",
   "description": "M5F9P Rover の操作画面(WindowsアプリとAndroidアプリで共用)",
   "type": "module",
   "scripts": {

@@ -181,6 +181,10 @@ async function restart() {
 
 const wifiOpen = ref(false);
 const sourceOpen = ref(false);
+
+// 版。アプリは package.json の version(ビルド時に埋め込む)、本体は status の ver
+const appVersion = __APP_VERSION__;
+const deviceVersion = computed(() => state.status?.ver ?? '');
 </script>
 
 <template>
@@ -372,6 +376,10 @@ const sourceOpen = ref(false);
         {{ savedKey ? 'この端末に保存したキーを使います（本体には保存しません）。' : '未入力です。地図は表示されません。' }}
       </p>
     </Section>
+
+    <p class="text-muted-foreground col-span-full text-right text-xs">
+      アプリ {{ appVersion }}<template v-if="deviceVersion">　本体 {{ deviceVersion }}</template>
+    </p>
   </div>
 
   <ListEditDialog v-model:open="wifiOpen" :list="WIFI_LIST" />

@@ -5,6 +5,11 @@
 
 import type { FoundDevice, PairingReply, PairingRequest, Storage } from './types';
 
+/** アプリの版(package.json の version。vite.config.js の define で埋め込む) */
+declare global {
+  const __APP_VERSION__: string;
+}
+
 /** Androidアプリ(MainActivity.kt の Bridge)が渡す窓口 */
 interface AndroidBridge {
   startScan(): void;

@@ -1,7 +1,7 @@
 {
   "name": "m5f9p-rover",
   "productName": "M5F9P Rover",
-  "version": "0.1.0",
+  "version": "2.1.0",
   "description": "M5F9P Rover の Windows クライアント",
   "main": "main.js",
   "private": true,

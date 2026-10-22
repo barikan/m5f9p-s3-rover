@@ -11,8 +11,8 @@ android {
         applicationId = "jp.azukimap.m5f9p"
         minSdk = 31     // Android 12。Bluetoothの権限が新しい方式だけで済む
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "2.1.0"
     }
 
     // 画面は、Windowsアプリと共用の web/ をビルドしたもの(mise run web-build)を取り込む
