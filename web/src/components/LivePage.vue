@@ -1,9 +1,9 @@
 <script setup lang="ts">
 // 測位タブ。本体の画面の Status（src/pages.cpp の drawStatus）と同じ項目を、大きな文字で出す。
-// 屋外で端末を表示器として見る時用。速度、方角、IMU の推測航法（DR）は、本体の画面には無く、ここだけに出す（IMU の姿勢は状況タブ）。
+// 屋外で端末を表示器として見る時用。速度、方角、IMU の推測航法（DR）は、本体の画面には無く、ここだけに出す。
 // 見出しは本体の画面と同じく英語。1行に見出しと値を並べ、値は右寄せ。
 //
-// 下段に操作（ログ保存、測位レート、座標の形）を、ラベル付きの3行で並べる。
+// 下段に操作（ログ保存、測位レート、座標の形）を、ラベル付きの3行で並べる（部品は右寄せ）。
 //
 // 表示している間は、画面が自動で消えないようにする（host.keepScreenOn）。
 import { computed, onUnmounted, watch } from 'vue';
@@ -111,21 +111,35 @@ const degrees = (deg: number) => `${Math.round(deg) % 360}°`;
       </LiveRow>
     </template>
 
-    <!-- 操作: ログ保存、測位レート、座標の形。ラベルと部品を1行ずつ -->
+    <!-- IMU（設定の imu.enable が入っている時だけ届く）。見出しは付けない -->
+    <template v-if="imu">
+      <LiveRow label="Roll" small>{{ imu.roll.toFixed(1) }}°</LiveRow>
+      <LiveRow label="Pitch" small>{{ imu.pitch.toFixed(1) }}°</LiveRow>
+      <LiveRow label="Yaw" small>{{ imu.yaw.toFixed(1) }}°</LiveRow>
+      <LiveRow label="Motion" small>{{ imu.still ? 'Still' : 'Moving' }}</LiveRow>
+      <LiveRow label="Forward cal" small>{{ imu.forwardOk ? 'OK' : `${(imu.forwardWeight ?? 0).toFixed(1)} / 5` }}</LiveRow>
+      <LiveRow v-if="imu.test" label="DR test" small>
+        {{ imu.test.remain }}<span :class="unit">s</span> {{ imu.test.err.toFixed(2) }}<span :class="unit">m (max {{ imu.test.errMax.toFixed(2) }})</span>
+      </LiveRow>
+    </template>
+
+    <!-- 操作: ログ保存、測位レート、座標の形。ラベルを左、部品を右に寄せて1行ずつ -->
     <div class="mt-auto grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-2 border-t pt-3 text-sm">
       <span class="text-muted-foreground">ログ</span>
-      <div class="flex items-center gap-3">
+      <div class="flex items-center justify-end gap-3">
         <Button v-if="s.save.on" variant="outline" size="sm" @click="rover.setSaving(false)">保存停止</Button>
         <Button v-else size="sm" :disabled="!s.save.ready" @click="rover.setSaving(true)">保存開始</Button>
-        <span class="text-muted-foreground text-xs">{{ !s.save.ready ? 'SDカードが使えません' : s.save.on ? `保存中（${SAVE_FORMATS[s.save.format] || '?'}）` : '' }}</span>
+        <span class="text-muted-foreground order-first text-xs">{{ !s.save.ready ? 'SDカードが使えません' : s.save.on ? `保存中（${SAVE_FORMATS[s.save.format] || '?'}）` : '' }}</span>
       </div>
       <span class="text-muted-foreground">測位レート</span>
-      <SegmentGroup label="測位レート" :options="RATES" :model-value="String(s.rate)" @update:model-value="rover.setRate(Number($event))" />
+      <div class="flex justify-end">
+        <SegmentGroup label="測位レート" :options="RATES" :model-value="String(s.rate)" @update:model-value="rover.setRate(Number($event))" />
+      </div>
       <template v-if="s.dms !== undefined">
         <span class="text-muted-foreground">座標の形</span>
-        <div class="flex flex-wrap items-center gap-3">
-          <SegmentGroup label="座標の形" :options="COORD_FORMATS" :model-value="coordFormat" @update:model-value="setCoordFormat" />
+        <div class="flex flex-wrap items-center justify-end gap-3">
           <span v-if="s.coordXY && !s.zone" class="text-muted-foreground text-xs">平面直角座標系は設定タブで選びます</span>
+          <SegmentGroup label="座標の形" :options="COORD_FORMATS" :model-value="coordFormat" @update:model-value="setCoordFormat" />
         </div>
       </template>
     </div>
