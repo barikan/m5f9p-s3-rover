@@ -136,7 +136,7 @@ const degrees = (deg: number) => `${Math.round(deg) % 360}°`;
   </div>
 
     <!-- 操作: ログ保存、測位レート、座標の形。ラベルを左、部品を右に寄せて1行ずつ -->
-    <div class="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-2 border-t pt-3 text-sm">
+    <div class="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-2 border-t py-1.5 text-sm">
       <span class="text-muted-foreground whitespace-nowrap">ログ</span>
       <div class="flex items-center justify-end gap-3">
         <Button v-if="s.save.on" variant="outline" size="sm" @click="rover.setSaving(false)">保存停止</Button>
@@ -157,7 +157,7 @@ const degrees = (deg: number) => `${Math.round(deg) % 360}°`;
     </div>
 
     <!-- 最下段: 本体の状態（本体の画面と同じ並び） -->
-    <div v-if="s.sys" class="text-muted-foreground flex flex-wrap items-center justify-end gap-x-4 gap-y-1 border-t pt-3 text-sm">
+    <div v-if="s.sys" class="text-muted-foreground flex flex-wrap items-center justify-end gap-x-4 gap-y-0 border-t pt-1.5 text-sm leading-tight">
       <span class="flex items-center gap-1"><Thermometer class="size-4" />{{ s.sys.temp }}°</span>
       <span class="flex items-center gap-1"><Cpu class="size-4" />{{ s.sys.cpu }}%</span>
       <span class="flex items-center gap-1"><MemoryStick class="size-4" />{{ s.sys.mem }}%</span>
