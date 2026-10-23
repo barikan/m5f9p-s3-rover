@@ -4,6 +4,7 @@
 // 見出しは本体の画面と同じく英語。1行に見出しと値を並べ、値は右寄せ。
 //
 // 下段に操作（ログ保存、測位レート、座標の形）を、ラベル付きの3行で並べる（部品は右寄せ）。
+// 操作の帯と本体の状態は下に固定し、高さが足りない時は表示の部分だけがスクロールする。
 //
 // 表示している間は、画面が自動で消えないようにする（host.keepScreenOn）。
 import { computed, onUnmounted, watch } from 'vue';
@@ -53,7 +54,9 @@ const degrees = (deg: number) => `${Math.round(deg) % 360}°`;
 </script>
 
 <template>
-  <div v-if="s" class="mx-auto flex min-h-full max-w-3xl flex-col gap-1.5 py-1">
+  <!-- 表示の部分だけがスクロールし、操作の帯と本体の状態は下に固定する -->
+  <div v-if="s" class="mx-auto flex h-full max-w-3xl flex-col gap-1.5 py-1">
+  <div class="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto">
     <!-- 上段: 測位の状態と補正の方法、ログの保存中の REC、衛星数 -->
     <div class="flex items-center gap-2">
       <StateBadge kind="fix" class="rounded-lg px-3 py-1 text-base" />
@@ -124,20 +127,22 @@ const degrees = (deg: number) => `${Math.round(deg) % 360}°`;
       </LiveRow>
     </template>
 
+  </div>
+
     <!-- 操作: ログ保存、測位レート、座標の形。ラベルを左、部品を右に寄せて1行ずつ -->
-    <div class="mt-auto grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-2 border-t pt-3 text-sm">
-      <span class="text-muted-foreground">ログ</span>
+    <div class="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-2 border-t pt-3 text-sm">
+      <span class="text-muted-foreground whitespace-nowrap">ログ</span>
       <div class="flex items-center justify-end gap-3">
         <Button v-if="s.save.on" variant="outline" size="sm" @click="rover.setSaving(false)">保存停止</Button>
         <Button v-else size="sm" :disabled="!s.save.ready" @click="rover.setSaving(true)">保存開始</Button>
         <span class="text-muted-foreground order-first text-xs">{{ !s.save.ready ? 'SDカードが使えません' : s.save.on ? `保存中（${SAVE_FORMATS[s.save.format] || '?'}）` : '' }}</span>
       </div>
-      <span class="text-muted-foreground">測位レート</span>
+      <span class="text-muted-foreground whitespace-nowrap">測位レート</span>
       <div class="flex justify-end">
         <SegmentGroup label="測位レート" :options="RATES" :model-value="String(s.rate)" @update:model-value="rover.setRate(Number($event))" />
       </div>
       <template v-if="s.dms !== undefined">
-        <span class="text-muted-foreground">座標の形</span>
+        <span class="text-muted-foreground whitespace-nowrap">座標の形</span>
         <div class="flex flex-wrap items-center justify-end gap-3">
           <span v-if="s.coordXY && !s.zone" class="text-muted-foreground text-xs">平面直角座標系は設定タブで選びます</span>
           <SegmentGroup label="座標の形" :options="COORD_FORMATS" :model-value="coordFormat" @update:model-value="setCoordFormat" />
