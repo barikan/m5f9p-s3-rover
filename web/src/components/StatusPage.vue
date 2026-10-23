@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// 状況タブ。未接続の時は接続先の選択、接続中は測位・補正データ・本体の状況と操作。
+// 状況タブ。未接続の時は接続先の選択、接続中は測位・補正データ・本体の状況（操作は測位タブ）。
 // どちらも、ページの幅いっぱいに表示する。
 import { computed, ref } from 'vue';
 import { Button } from '@/components/ui/button';
@@ -13,8 +13,7 @@ import Section from './Section.vue';
 import SegmentGroup from './SegmentGroup.vue';
 import StateBadge from './StateBadge.vue';
 
-const SAVE_FORMATS = ['NMEA', 'RAW', 'RTCM', 'CSV'];
-const RATES = [1, 2, 5, 10].map(hz => ({ value: String(hz), label: `${hz} Hz` }));
+const SAVE_FORMATS = ['NMEA', 'RAW', 'RTCM', 'CSV', 'CSV (カスタム)'];
 const MQTT_STATES: Record<number, string> = { 0: '使わない', 1: 'Wi-Fi の接続待ち', 2: '測位待ち（時計合わせ）', 3: '再接続待ち', 4: '接続しています', 5: '接続中' };
 
 // ---------------------------------------------------------------- 接続先の選択
@@ -157,25 +156,6 @@ const gigabytes = (megabytes: number) => (megabytes / 1000).toFixed(1);
       <Item v-if="s.imu.log" label="記録">IMU と GNSS を同時記録中</Item>
     </Section>
 
-    <Section title="操作">
-      <div class="flex items-center gap-3">
-        <div class="flex-1">
-          <div>{{ s.save.on ? `ログを保存中（${SAVE_FORMATS[s.save.format] || '?'}）` : 'ログ保存は停止中' }}</div>
-          <div class="text-muted-foreground text-xs">{{ s.save.ready ? `書き込み ${s.save.count} 回` : 'SDカードが使えません' }}</div>
-        </div>
-        <Button v-if="s.save.on" variant="outline" size="sm" @click="rover.setSaving(false)">停止</Button>
-        <Button v-else size="sm" :disabled="!s.save.ready" @click="rover.setSaving(true)">保存開始</Button>
-      </div>
-      <!-- ログファイルの取り出しは、USBで接続している時だけ（BLEでは時間がかかりすぎる）。AndroidはUSBで接続できないので出さない -->
-      <div v-if="host.platform !== 'android'" class="mt-3 flex items-center gap-3">
-        <Button variant="outline" size="sm" :disabled="state.kind !== 'usb' || !s.save.ready" @click="logsOpen = true">ログファイル…</Button>
-        <span v-if="state.kind !== 'usb'" class="text-muted-foreground text-xs">ダウンロードは USB で接続している時に使えます</span>
-      </div>
-      <LogFilesDialog v-model:open="logsOpen" />
-      <div class="text-muted-foreground mt-4 mb-2 text-xs">測位レート</div>
-      <SegmentGroup label="測位レート" :options="RATES" :model-value="String(s.rate)" @update:model-value="rover.setRate(Number($event))" />
-    </Section>
-
     <Section title="本体">
       <Item v-if="!s.wifi.ssid" label="Wi-Fi">使用しない</Item>
       <template v-else-if="s.wifi.connected">
@@ -192,6 +172,18 @@ const gigabytes = (megabytes: number) => (megabytes / 1000).toFixed(1);
         <template v-else-if="s.sys && s.sys.sdFreeMB >= 0">空き {{ gigabytes(s.sys.sdFreeMB) }} / {{ gigabytes(s.sdMB) }} GB</template>
         <template v-else>{{ gigabytes(s.sdMB) }} GB</template>
       </Item>
+      <!-- ログの保存は測位タブで操作する。ここは状態の表示と、ファイルの取り出し -->
+      <Item label="ログ">
+        <template v-if="!s.save.ready">SDカードが使えません</template>
+        <template v-else-if="s.save.on">保存中（{{ SAVE_FORMATS[s.save.format] || '?' }}）<span class="text-muted-foreground">　書き込み {{ s.save.count }} 回</span></template>
+        <template v-else>停止中</template>
+      </Item>
+      <!-- ログファイルの取り出しは、USBで接続している時だけ（BLEでは時間がかかりすぎる）。AndroidはUSBで接続できないので出さない -->
+      <div v-if="host.platform !== 'android'" class="my-2 flex items-center gap-3">
+        <Button variant="outline" size="sm" :disabled="state.kind !== 'usb' || !s.save.ready" @click="logsOpen = true">ログファイル…</Button>
+        <span v-if="state.kind !== 'usb'" class="text-muted-foreground text-xs">ダウンロードは USB で接続している時に使えます</span>
+      </div>
+      <LogFilesDialog v-model:open="logsOpen" />
       <template v-if="s.sys">
         <Item label="CPU">{{ s.sys.cpu }} %　{{ s.sys.temp }} ℃</Item>
         <Item label="メモリ">{{ s.sys.mem }} %</Item>

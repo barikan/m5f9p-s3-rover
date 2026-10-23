@@ -3,14 +3,22 @@
 // 屋外で端末を表示器として見る時用。速度、方角、IMU（姿勢、動き、推測航法）は、本体の画面には無く、ここだけに出す。
 // 見出しは本体の画面と同じく英語。1行に見出しと値を並べ、値は右寄せ。
 //
+// 下段に操作（ログ保存、測位レート、座標の形）を並べる。操作だけで、見出しは付けない。
+//
 // 表示している間は、画面が自動で消えないようにする（host.keepScreenOn）。
 import { computed, onUnmounted, watch } from 'vue';
 import { Battery, Cpu, HardDrive, MemoryStick, MoveHorizontal, MoveVertical, Navigation2, Satellite, Thermometer, Zap } from 'lucide-vue-next';
+import { Button } from '@/components/ui/button';
 import * as host from '../host';
 import * as rover from '../rover';
 import { state } from '../store';
 import LiveRow from './LiveRow.vue';
+import SegmentGroup from './SegmentGroup.vue';
 import StateBadge from './StateBadge.vue';
+
+const RATES = [1, 2, 5, 10].map(hz => ({ value: String(hz), label: `${hz} Hz` }));
+// 座標の形。度 / 度分秒 / XY のどれか（本体の coordXY と dms の組み合わせ）
+const COORD_FORMATS = [{ value: 'deg', label: '度' }, { value: 'dms', label: '度分秒' }, { value: 'xy', label: 'XY' }];
 
 const props = defineProps<{ visible: boolean }>();
 
@@ -28,6 +36,13 @@ const dr = computed(() => {
   const i = imu.value;
   return i?.heading !== undefined && i.speed !== undefined ? { heading: i.heading, speed: i.speed } : null;
 });
+
+// 座標の形は状況（status）の値から作る。選んだ結果は、次の状況が届いた時（約1秒後）に表示に反映される
+const coordFormat = computed(() => (s.value?.coordXY ? 'xy' : s.value?.dms ? 'dms' : 'deg'));
+function setCoordFormat(format: string) {
+  const xy = format === 'xy';
+  rover.applyRunConfig({ coordXY: xy, ...(xy ? {} : { dms: format === 'dms' }) });
+}
 
 watch(() => props.visible && state.conn === 'connected', on => host.keepScreenOn(on), { immediate: true });
 onUnmounted(() => host.keepScreenOn(false));
@@ -108,8 +123,17 @@ const degrees = (deg: number) => `${Math.round(deg) % 360}°`;
       </LiveRow>
     </template>
 
+    <!-- 操作: ログ保存、測位レート、座標の形。狭い幅では折り返す -->
+    <div class="mt-auto flex flex-wrap items-center gap-x-4 gap-y-2 border-t pt-3">
+      <Button v-if="s.save.on" variant="outline" size="sm" @click="rover.setSaving(false)">保存停止</Button>
+      <Button v-else size="sm" :disabled="!s.save.ready" @click="rover.setSaving(true)">保存開始</Button>
+      <SegmentGroup label="測位レート" :options="RATES" :model-value="String(s.rate)" @update:model-value="rover.setRate(Number($event))" />
+      <SegmentGroup v-if="s.dms !== undefined" label="座標の形" :options="COORD_FORMATS" :model-value="coordFormat" @update:model-value="setCoordFormat" />
+      <span v-if="s.coordXY && !s.zone" class="text-muted-foreground text-xs">平面直角座標系は設定タブで選びます</span>
+    </div>
+
     <!-- 最下段: 本体の状態（本体の画面と同じ並び） -->
-    <div v-if="s.sys" class="text-muted-foreground mt-auto flex flex-wrap items-center justify-end gap-x-4 gap-y-1 border-t pt-3 text-sm">
+    <div v-if="s.sys" class="text-muted-foreground flex flex-wrap items-center justify-end gap-x-4 gap-y-1 border-t pt-3 text-sm">
       <span class="flex items-center gap-1"><Thermometer class="size-4" />{{ s.sys.temp }}°</span>
       <span class="flex items-center gap-1"><Cpu class="size-4" />{{ s.sys.cpu }}%</span>
       <span class="flex items-center gap-1"><MemoryStick class="size-4" />{{ s.sys.mem }}%</span>

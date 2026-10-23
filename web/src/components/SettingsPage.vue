@@ -1,8 +1,8 @@
 <script setup lang="ts">
 // 設定タブ。上から、表示 / 接続の設定 / ログ / 本体 / IMU（実験的） / Google Maps の API キー。
 //
-//   ・起動時の設定（run.set: 座標の形、系、標高の表示、Wi-Fi、取得先、MQTT の入・切、保存形式、起動時から保存）は、
-//     変えた時点で本体に送る（すぐに反映される）。
+//   ・起動時の設定（run.set: 系、標高の表示、Wi-Fi、取得先、MQTT の入・切、保存形式、起動時から保存）は、
+//     変えた時点で本体に送る（すぐに反映される）。座標の形（度 / 度分秒 / XY）は測位タブで変える。
 //   ・本体の設定（設定ファイルの内容。config.put）のうち、選択と入・切はグループの下書き（config-draft.ts の
 //     useConfigDraft）に溜め、グループの「保存」で変えた項目だけを送る。自由入力（受信機名、ブローカー、ポート、
 //     しきい値）と一覧（Wi-Fi、取得先）は、項目のそばの「編集」で開くダイアログで編集し、そのダイアログの保存で送る。
@@ -28,7 +28,6 @@ import type { ConfigValue, Option } from '../types';
 import Section from './Section.vue';
 import SelectField from './SelectField.vue';
 import SwitchField from './SwitchField.vue';
-import SegmentGroup from './SegmentGroup.vue';
 import EditRow from './EditRow.vue';
 import ListEditDialog from './ListEditDialog.vue';
 
@@ -61,10 +60,10 @@ watch(connected, on => {
 // ---------------------------------------------------------------- 起動時の設定（run.set。その場で反映）
 
 const run = computed(() => state.runConfig);
-const values = reactive({ wifi: '', source: '', format: '0', saveAtBoot: false, elevation: true, zone: '0', coordXY: false, dms: false, mqtt: false });
+const values = reactive({ wifi: '', source: '', format: '0', saveAtBoot: false, elevation: true, zone: '0', coordXY: false, mqtt: false });   // coordXY は系の選択を有効にする判定にだけ使う（座標の形は測位タブ）
 watch(run, c => {
   if (c) Object.assign(values, { wifi: c.wifi, source: c.source, format: String(c.format), saveAtBoot: c.saveAtBoot, elevation: c.elevation ?? true,
-    zone: String(c.zone ?? 0), coordXY: c.coordXY ?? false, dms: c.dms ?? false, mqtt: c.mqtt ?? false });
+    zone: String(c.zone ?? 0), coordXY: c.coordXY ?? false, mqtt: c.mqtt ?? false });
 }, { immediate: true });
 
 const wifiOptions = computed<Option[]>(() => {
@@ -98,20 +97,6 @@ function set<K extends keyof typeof values>(key: K, value: (typeof values)[K]) {
   if (key === 'format') rover.applyRunConfig({ format: Number(value) });
   else if (key === 'zone') { if (value !== '0') rover.applyRunConfig({ zone: Number(value) }); }
   else rover.applyRunConfig({ [key]: value });
-}
-
-// 座標の形。度 / 度分秒 / XY のどれか（本体の coordXY と dms の組み合わせ）
-const COORD_FORMATS = [{ value: 'deg', label: '度' }, { value: 'dms', label: '度分秒' }, { value: 'xy', label: 'XY' }];
-const coordFormat = computed(() => (values.coordXY ? 'xy' : values.dms ? 'dms' : 'deg'));
-function setCoordFormat(format: string) {
-  const c = run.value;
-  if (!c) return;
-  values.coordXY = format === 'xy';
-  if (format !== 'xy') values.dms = format === 'dms';
-  rover.applyRunConfig({
-    ...(c.zone !== undefined ? { coordXY: values.coordXY } : {}),
-    ...(c.dms !== undefined ? { dms: values.dms } : {}),
-  });
 }
 
 // ---------------------------------------------------------------- 本体の設定（config.put。グループの「保存」で送る）
@@ -203,18 +188,11 @@ const deviceVersion = computed(() => state.status?.ver ?? '');
       <Section title="表示">
         <p v-if="!run">本体から読み込んでいます…</p>
         <template v-else>
-          <template v-if="run.zone !== undefined">
-            <div class="grid gap-2">
-              <Label>座標の形</Label>
-              <SegmentGroup label="座標の形" :options="COORD_FORMATS" :model-value="coordFormat" @update:model-value="setCoordFormat" />
-              <p class="text-muted-foreground text-xs">本体の画面とアプリの座標を、緯度経度の度（小数）、度分秒（35°41'28.50705&quot;N）、平面直角座標の X、Y のどれで表示するかです。NMEA の出力は変わりません</p>
-            </div>
-            <div class="mt-4 grid gap-2">
-              <Label for="run-zone">平面直角座標系</Label>
-              <SelectField id="run-zone" :model-value="values.zone" :options="zoneOptions" :disabled="!values.coordXY" @update:model-value="set('zone', $event)" />
-              <p class="text-muted-foreground text-xs">XY のときに使います。系は自動では決まらないので、今いる場所の系を選んでください</p>
-            </div>
-          </template>
+          <div v-if="run.zone !== undefined" class="grid gap-2">
+            <Label for="run-zone">平面直角座標系</Label>
+            <SelectField id="run-zone" :model-value="values.zone" :options="zoneOptions" :disabled="!values.coordXY" @update:model-value="set('zone', $event)" />
+            <p class="text-muted-foreground text-xs">測位タブの座標の形で XY を選んだときに使います。系は自動では決まらないので、今いる場所の系を選んでください</p>
+          </div>
           <SwitchField
             v-if="run.elevation !== undefined" :model-value="values.elevation" label="標高を表示する"
             help="本体の画面とアプリの高さを、標高（SD カードのジオイドモデルで求めた値）で表示します。切ると楕円体高を表示します。NMEA の出力は変わりません"
