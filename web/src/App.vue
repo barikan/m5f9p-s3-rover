@@ -30,6 +30,8 @@ watch(tab, t => rover.watchSatellites(t === 'sats'));
 // 切断したら、接続先の選択に戻す
 watch(() => state.conn, conn => { if (conn === 'disconnected') tab.value = 'status'; });
 const page = 'absolute inset-0 overflow-y-auto px-4 pt-1 pb-4 data-[state=inactive]:hidden';
+// 測位タブは下端に本体の状態の行を固定するので、下の余白を小さくする
+const livePage = 'absolute inset-0 overflow-y-auto px-4 pt-1 pb-1 data-[state=inactive]:hidden';
 </script>
 
 <template>
@@ -44,7 +46,7 @@ const page = 'absolute inset-0 overflow-y-auto px-4 pt-1 pb-4 data-[state=inacti
       <Button v-if="state.conn !== 'disconnected'" variant="ghost" size="sm" @click="rover.disconnect()">切断</Button>
     </header>
     <main class="relative min-h-0 flex-1">
-      <TabsContent value="live" :class="page"><LivePage :visible="tab === 'live'" /></TabsContent>
+      <TabsContent value="live" :class="livePage"><LivePage :visible="tab === 'live'" /></TabsContent>
       <TabsContent value="status" :class="page"><StatusPage /></TabsContent>
       <!-- 地図は作り直さないよう、隠れている間も残す -->
       <TabsContent value="map" force-mount class="absolute inset-0 overflow-hidden data-[state=inactive]:hidden">

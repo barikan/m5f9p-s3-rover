@@ -55,7 +55,7 @@ const degrees = (deg: number) => `${Math.round(deg) % 360}°`;
 
 <template>
   <!-- 表示の部分だけがスクロールし、操作の帯と本体の状態は下に固定する -->
-  <div v-if="s" class="mx-auto flex h-full max-w-3xl flex-col gap-1.5 py-1">
+  <div v-if="s" class="mx-auto flex h-full max-w-3xl flex-col gap-1.5 pt-1">
   <div class="flex min-h-0 flex-1 flex-col gap-1.5 overflow-y-auto">
     <!-- 上段: 測位の状態と補正の方法、ログの保存中の REC、衛星数 -->
     <div class="flex items-center gap-2">
