@@ -239,7 +239,12 @@ export function send(command: { cmd: string; [key: string]: unknown }) {
 export const setSaving = (on: boolean) => send({ cmd: 'save', on });
 export const setRate = (hz: number) => send({ cmd: 'rate', hz });
 export const loadRunConfig = () => send({ cmd: 'run.get' });
-export const applyRunConfig = (values: RunValues) => send({ cmd: 'run.set', ...values });
+// quiet: 応答の「設定を変更しました」を出さない（測位タブの座標の形など、結果が表示に見えて分かる操作）
+let runSetQuiet = false;
+export function applyRunConfig(values: RunValues, quiet = false) {
+  runSetQuiet = quiet;
+  send({ cmd: 'run.set', ...values });
+}
 export const restart = () => send({ cmd: 'restart' });
 
 const RESTART_REQUIRED = 'restart required';
@@ -341,7 +346,7 @@ function onLine(line: string) {
   switch (m.re) {
     case 'status': onStatus(m as unknown as Status); break;
     case 'run.get': state.runConfig = m as unknown as RunConfig; notify('runConfig'); break;
-    case 'run.set': say('設定を変更しました'); loadRunConfig(); break;      // 本体はすぐに反映する（再起動しない）
+    case 'run.set': if (!runSetQuiet) say('設定を変更しました'); runSetQuiet = false; loadRunConfig(); break;      // 本体はすぐに反映する（再起動しない）
     case 'track.get': onTrackReply(m); break;
     case 'sats.get': onSatsReply(m); break;
   }

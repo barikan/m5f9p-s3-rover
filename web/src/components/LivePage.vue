@@ -42,7 +42,7 @@ const dr = computed(() => {
 const coordFormat = computed(() => (s.value?.coordXY ? 'xy' : s.value?.dms ? 'dms' : 'deg'));
 function setCoordFormat(format: string) {
   const xy = format === 'xy';
-  rover.applyRunConfig({ coordXY: xy, ...(xy ? {} : { dms: format === 'dms' }) });
+  rover.applyRunConfig({ coordXY: xy, ...(xy ? {} : { dms: format === 'dms' }) }, true);   // 結果は表示で分かるので、メッセージは出さない
 }
 
 watch(() => props.visible && state.conn === 'connected', on => host.keepScreenOn(on), { immediate: true });
@@ -111,8 +111,9 @@ const degrees = (deg: number) => `${Math.round(deg) % 360}°`;
       </LiveRow>
     </template>
 
-    <!-- IMU（設定の imu.enable が入っている時だけ届く）。見出しは付けない -->
+    <!-- IMU（設定の imu.enable が入っている時だけ届く）。見出しは付けず、線で区切る -->
     <template v-if="imu">
+      <div class="my-1.5 border-t" />
       <LiveRow label="Roll" small>{{ imu.roll.toFixed(1) }}°</LiveRow>
       <LiveRow label="Pitch" small>{{ imu.pitch.toFixed(1) }}°</LiveRow>
       <LiveRow label="Yaw" small>{{ imu.yaw.toFixed(1) }}°</LiveRow>
