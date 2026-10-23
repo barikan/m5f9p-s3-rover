@@ -114,6 +114,12 @@ const degrees = (deg: number) => `${Math.round(deg) % 360}°`;
       </LiveRow>
     </template>
 
+    <!-- 基準局（RTK サーバー）までの距離。取得先があって、局の位置が分かっている時だけ -->
+    <LiveRow v-if="s.base.valid" label="Base dist">
+      <template v-if="s.base.km !== undefined">{{ s.base.km.toFixed(1) }}<span :class="unit">km</span></template>
+      <template v-else>--</template>
+    </LiveRow>
+
     <!-- IMU（設定の imu.enable が入っている時だけ届く）。見出しは付けず、線で区切る -->
     <template v-if="imu">
       <div class="my-1.5 border-t" />
